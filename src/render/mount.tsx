@@ -1,0 +1,71 @@
+import { flushSync } from 'react-dom';
+import { createRoot, type Root } from 'react-dom/client';
+import type { GenuiDocument } from '../protocol/types';
+import cardCss from './card.css?inline';
+import { CardErrorBoundary } from './boundaries';
+import { Card } from './Card';
+import { ElementRegistry } from './registry';
+
+/**
+ * Card 挂载（阶段 2）：Shadow DOM 局部挂载 + 样式隔离。
+ *
+ * - host 挂在原始代码块之前的同级位置，卡片与页面其余部分互不影响；
+ * - open shadow root + ?inline 注入样式，页面 CSS 无法渗入、卡片样式
+ *   也无法泄漏到页面（阶段 2 样式隔离的实现方式）；
+ * - 首次渲染用 flushSync 同步完成，内容脚本执行后卡片立即可见；
+ * - CardErrorBoundary 是卡片级失败的唯一兜底，onFatal 由调用方
+ *   （enhance）实现「恢复原始块」。
+ */
+
+export interface MountCardOptions {
+  /** 已通过协议校验的 genui 文档。 */
+  document: GenuiDocument;
+  /** 原始代码块文本，用于页脚透明度说明。 */
+  rawJson: string;
+  /** 元素注册表；缺省为 ElementRegistry.withDefaults()。 */
+  registry?: ElementRegistry;
+  /** 「查看原始 JSON」切换回调。 */
+  onToggleRaw?: (showRaw: boolean) => void;
+  /** 卡片级渲染异常回调（恢复原始块的入口）。 */
+  onFatal?: (error: Error) => void;
+}
+
+export interface MountedCard {
+  /** 卸载 React 根（host 的移除由调用方负责）。 */
+  unmount(): void;
+}
+
+export function mountCard(host: HTMLElement, options: MountCardOptions): MountedCard {
+  const doc = host.ownerDocument;
+  const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
+  shadow.replaceChildren();
+
+  const style = doc.createElement('style');
+  style.textContent = cardCss;
+  shadow.appendChild(style);
+
+  const container = doc.createElement('div');
+  container.className = 'genui-card-root';
+  shadow.appendChild(container);
+
+  const registry = options.registry ?? ElementRegistry.withDefaults();
+  const root: Root = createRoot(container);
+  flushSync(() => {
+    root.render(
+      <CardErrorBoundary onFatal={options.onFatal}>
+        <Card
+          document={options.document}
+          rawJson={options.rawJson}
+          registry={registry}
+          onToggleRaw={options.onToggleRaw}
+        />
+      </CardErrorBoundary>,
+    );
+  });
+
+  return {
+    unmount: () => {
+      root.unmount();
+    },
+  };
+}

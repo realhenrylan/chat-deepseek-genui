@@ -1,8 +1,8 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-// 阶段 1 构建目标：单入口内容脚本（IIFE 单文件，依赖全部本地打包）。
-// 渲染样式引入方式（?inline 注入）在阶段 2 出现首个 UI 组件时启用。
+// 构建目标：单入口内容脚本（IIFE 单文件，依赖全部本地打包）。
+// 阶段 2 起渲染样式经 `?inline` 导入并注入 Shadow DOM（card.css），产物无远程样式引用。
 export default defineConfig({
   plugins: [react()],
   build: {

@@ -113,8 +113,12 @@ try {
 for (const file of files) {
   const text = readFileSync(file, 'utf8');
   for (const { name, re } of FORBIDDEN) {
-    const match = text.match(re);
-    if (match) fail(`${relative(root, file)} 含 ${name}：${match[0].slice(0, 120)}`);
+    // 全局匹配逐条检查：text.match(re) 只返回首个命中，会漏检其后的违规。
+    const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+    for (const match of text.matchAll(global)) {
+      fail(`${relative(root, file)} 含 ${name}：${match[0].slice(0, 120)}`);
+      break; // 每个模式每个文件只报告首个违规（保持原有信息量）
+    }
   }
 }
 

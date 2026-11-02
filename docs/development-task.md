@@ -1,6 +1,6 @@
 # DeepSeek GenUI — MVP v0.1 开发任务
 
-更新日期：2026-11-02。状态：阶段 0 调查及补测记录已完成，交付物见[兼容性调查](compatibility-investigation.md)；阶段 1 工程初始化与最小扩展已完成，交付与检查结果见下文阶段 1 及仓库 CHANGELOG、README；阶段 2–8 尚未完成。默认增强仅完成可行性调查，扩展功能尚未实现和验收。
+更新日期：2026-11-02。状态：阶段 0 调查及补测记录已完成，交付物见[兼容性调查](compatibility-investigation.md)；阶段 1 工程初始化与最小扩展已完成；阶段 2 单个 Card 的完整呈现链路已完成，交付与检查结果见下文阶段 2 及仓库 CHANGELOG、README；阶段 3–8 尚未完成。默认增强仅完成可行性调查，模型真实生成的自动验收尚未进行。
 
 产品目标与验收范围见[产品规格](product-spec.md)。Edge 官方资料、技术基线、权限和工程规范见[开发指南](development-guide.md)。执行前先阅读这两份文档。
 
@@ -49,17 +49,26 @@
 
 ### 待办
 
-- [ ] 定义带版本的最小 genui JSON 协议、Card Schema 和正确与错误样本。
-- [ ] 先覆盖合法与非法 JSON、未知类型、额外字段和规模限制，再实现解析与验证。
-- [ ] 按真实调查依据定位 AI 回复中的 genui 代码块，不处理用户消息或其他内容。
-- [ ] 建立注册表、Card、局部挂载与样式隔离。
-- [ ] 保留原始内容和查看入口，解析、验证或渲染失败时安全回退。
-- [ ] 覆盖普通 Markdown 不受影响、多个代码块独立呈现及组件异常隔离。
-- [ ] 在模拟页面验证完整链路，在真实网页单独验证最小案例。
+- [x] 定义带版本的最小 genui JSON 协议、Card Schema 和正确与错误样本。
+- [x] 先覆盖合法与非法 JSON、未知类型、额外字段和规模限制，再实现解析与验证。
+- [x] 按真实调查依据定位 AI 回复中的 genui 代码块，不处理用户消息或其他内容。
+- [x] 建立注册表、Card、局部挂载与样式隔离。
+- [x] 保留原始内容和查看入口，解析、验证或渲染失败时安全回退。
+- [x] 覆盖普通 Markdown 不受影响、多个代码块独立呈现及组件异常隔离。
+- [x] 在模拟页面验证完整链路，在真实网页单独验证最小案例。
 
 ### 交付物与通过条件
 
 交付最小协议、验证器、Card、识别与挂载模块及测试记录。合法 Card 在回答原位置呈现，其他内容正常；失败不丢失原始内容，不影响其他界面或聊天页面。
+
+### 阶段 2 完成记录（2026-11-02）
+
+- 交付物：带版本最小 genui 协议 v1 —— `src/protocol/types.ts`（`PROTOCOL_VERSION=1`、`LIMITS`：raw 64 KiB、深度 16、元素 50、标题 120、文本 2000）、`src/protocol/schema.ts`（Card Schema `additionalProperties:false`，未知字段即拒）、`src/protocol/validate.ts`（`parseGenui` 守卫顺序：长度→深度（字符串感知扫描）→JSON.parse→结构→版本；失败码 `too-large|too-deep|invalid-json|schema-violation|unsupported-version`，错误详情逐字段列出前 5 条）、`src/protocol/genui-validator.generated.ts`（构建期 Ajv standalone 生成产物，`npm run gen-validator` 再生成、prebuild 自动执行、勿手改）；识别 `src/content/detect.ts`（仅 `div.ds-assistant-message-main-content` 容器内、语言标签 `span.d813de27` 文本为 `genui` 的代码块，banner 叶子回退；用户消息/json/python/无标签一律跳过）；渲染与挂载 `src/render/`（`registry.ts` 元素注册表、`Card.tsx`、`boundaries.tsx` 元素级+卡片级错误边界、`elements.tsx` 纯文本元素、`mount.tsx` Shadow DOM 局部挂载、`card.css` 经 `?inline` 注入）；增强 `src/content/enhance.ts`（幂等 `data-genui-state`、原块隐藏保留、查看原始 JSON 切换、失败 `data-genui-state=failed` + `data-genui-reason` 保留原内容、渲染致命错误恢复原内容并卸载卡片）+ `src/content/index.ts` document_idle 一次性执行；`scripts/gen-validator.ts` 校验器生成脚本（ajv/ajv-formats 随之移入 devDependencies，运行时不再打包 ajv）；测试 `tests/unit/{protocol,detect,card,enhance,generated-validator}.test.ts`、`tests/fixtures/assistant-genui-message.html`（由阶段 0 真实快照逐字提取，仅含合成内容）、`tests/e2e/extension-load.spec.ts` 扩展为完整结构模拟页与阶段 2 断言。
+- 检查命令：`npm run typecheck`、`npm run lint`、`npm test`、`npm run gen-validator`、`npm run build`（prebuild 再生成 + postbuild dist 校验）、`npm run check`（聚合）、`npm run test:e2e`、`REAL_SITE=1 npm run test:e2e`。
+- 实际结果：`npm run check` 通过（typecheck、lint、70 单测、校验器再生成、build 25 模块 231.38 kB、dist 校验零豁免）；e2e 模拟页 4 通过/2 跳过（Edge/Chrome × 阶段 1+阶段 2，断言 host 挂载、影子样式隔离、原块隐藏、查看切换、非法回退、普通 Markdown 与用户消息零影响、多块独立、扩展零错误）；`REAL_SITE=1` e2e 4 通过/2 跳过（含两渠道真实网页合成结构最小案例）；单测覆盖合法与非法 JSON、未知类型、额外字段、规模限制、识别正反例、组件异常隔离与回退；dist 校验负向测试（追加远程 URL）确认违规即失败。
+- 真实网页人工验证（2026-11-02，Edge 156 真实会话，用户执行）：genui 代码块原位渲染为 Card（GenUI 徽标、文本元素、底部透明说明齐全）；「查看原始 JSON」双向切换正常且卡片常驻；json 标签代码块与用户消息零影响；页面其他功能正常；控制台过滤 `[dsgenui]` 无任何错误（debug 日志默认级别隐藏，需 Verbose 级别可见）。页面既有的红色错误为第三方采集 SDK `collect-rangers-v5.2.11.js` → `gator.volces.com` 的 `ERR_BLOCKED_BY_CLIENT`，经关闭本扩展对照测试确认依旧存在，且本扩展零权限不具备请求拦截能力，与本扩展无关。
+- 关键发现与修复：首次 e2e 全数失败——Ajv 运行时 `new Function` 编译被 MV3 内容脚本 CSP（无 `unsafe-eval`）以 `EvalError` 拒绝，init 中断、Card 零挂载；单测（Node/jsdom 允许 eval）无法暴露此问题。修复为构建期 Ajv standalone 代码生成，运行时零动态执行，产物逐字节一致与不含 `eval(`/`new Function(` 由单测锁定；dist 由 346.61 kB/92 模块降至 231.38 kB/25 模块。check-dist 曾为 Ajv `$id` URL 引入精确豁免，负向测试暴露「`text.match` 首个命中 + 豁免」造成同文件后续违规漏检，改为 `matchAll` 逐条扫描；Ajv 移出运行时后豁免整体移除，恢复零豁免。
+- 已知项：真实网页最小案例的自动验证为合成结构（在真实 origin 注入结构忠实的合成消息），站点原生 genui 输出已由用户人工验证通过（见上）；其自动化识别验收待阶段 7 模型真实生成后进行；查看原始 JSON 切换仅切换原代码块显隐、卡片常驻可见（保证收起入口在真实浏览器始终可点）；`.tmp/` 存放阶段 0 真实页面快照（含真实页面结构），已加入 `.gitignore` 不入库；模型输出中的 HTML 一律按纯文本渲染，未知元素类型与渲染异常均降级占位，单元素异常不拖垮卡片、卡片级异常回退原始内容。
 
 ## 阶段 3：页面生命周期与安全回退
 
