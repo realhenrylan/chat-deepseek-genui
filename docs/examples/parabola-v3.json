@@ -1,0 +1,352 @@
+{
+  "type": "genui",
+  "version": 3,
+  "title": "抛物线图像（交互）",
+  "state": [
+    {
+      "id": "a",
+      "label": "二次项系数 a",
+      "kind": "number",
+      "initial": -1,
+      "min": -2,
+      "max": 2,
+      "step": 0.1
+    },
+    {
+      "id": "b",
+      "label": "一次项系数 b",
+      "kind": "number",
+      "initial": 0,
+      "min": -4,
+      "max": 4,
+      "step": 0.5
+    },
+    {
+      "id": "c",
+      "label": "常数项 c",
+      "kind": "number",
+      "initial": 1,
+      "min": -5,
+      "max": 5,
+      "step": 0.5
+    }
+  ],
+  "derived": [
+    {
+      "id": "discriminant",
+      "label": "判别式 b² - 4ac",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "multiply",
+          "left": {
+            "op": "state",
+            "id": "b"
+          },
+          "right": {
+            "op": "state",
+            "id": "b"
+          }
+        },
+        "right": {
+          "op": "multiply",
+          "left": {
+            "op": "const",
+            "value": 4
+          },
+          "right": {
+            "op": "multiply",
+            "left": {
+              "op": "state",
+              "id": "a"
+            },
+            "right": {
+              "op": "state",
+              "id": "c"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "elements": [
+    {
+      "kind": "section",
+      "title": "参数与判别式",
+      "children": [
+        {
+          "kind": "columns",
+          "columns": [
+            [
+              {
+                "kind": "slider",
+                "bind": "a"
+              },
+              {
+                "kind": "slider",
+                "bind": "b"
+              },
+              {
+                "kind": "slider",
+                "bind": "c"
+              }
+            ],
+            [
+              {
+                "kind": "value",
+                "label": "判别式",
+                "source": {
+                  "kind": "derived",
+                  "id": "discriminant"
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "warn",
+                "text": "a = 0 时 y = bx + c 退化为一次函数，图像不再是抛物线。",
+                "visibleIf": {
+                  "op": "num-eq",
+                  "left": {
+                    "op": "state",
+                    "id": "a"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "判别式小于 0：抛物线与 x 轴没有交点。",
+                "visibleIf": {
+                  "op": "num-lt",
+                  "left": {
+                    "op": "derived",
+                    "id": "discriminant"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "判别式等于 0：抛物线与 x 轴只有一个交点。",
+                "visibleIf": {
+                  "op": "num-eq",
+                  "left": {
+                    "op": "derived",
+                    "id": "discriminant"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "a > 0：抛物线开口向上。",
+                "visibleIf": {
+                  "op": "num-gt",
+                  "left": {
+                    "op": "state",
+                    "id": "a"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "a < 0：抛物线开口向下。",
+                "visibleIf": {
+                  "op": "num-lt",
+                  "left": {
+                    "op": "state",
+                    "id": "a"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "判别式大于 0：抛物线与 x 轴有两个交点。",
+                "visibleIf": {
+                  "op": "num-gt",
+                  "left": {
+                    "op": "derived",
+                    "id": "discriminant"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "section",
+      "title": "图像",
+      "children": [
+        {
+          "kind": "chart",
+          "chartType": "line",
+          "title": "y = ax² + bx + c",
+          "xLabel": "x",
+          "yLabel": "y",
+          "legend": false,
+          "series": [
+            {
+              "label": "y",
+              "points": [
+                {
+                  "x": -2,
+                  "y": {
+                    "op": "add",
+                    "left": {
+                      "op": "add",
+                      "left": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "state",
+                          "id": "a"
+                        },
+                        "right": {
+                          "op": "const",
+                          "value": 4
+                        }
+                      },
+                      "right": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "state",
+                          "id": "b"
+                        },
+                        "right": {
+                          "op": "const",
+                          "value": -2
+                        }
+                      }
+                    },
+                    "right": {
+                      "op": "state",
+                      "id": "c"
+                    }
+                  }
+                },
+                {
+                  "x": -1,
+                  "y": {
+                    "op": "add",
+                    "left": {
+                      "op": "add",
+                      "left": {
+                        "op": "state",
+                        "id": "a"
+                      },
+                      "right": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "state",
+                          "id": "b"
+                        },
+                        "right": {
+                          "op": "const",
+                          "value": -1
+                        }
+                      }
+                    },
+                    "right": {
+                      "op": "state",
+                      "id": "c"
+                    }
+                  }
+                },
+                {
+                  "x": 0,
+                  "y": {
+                    "op": "state",
+                    "id": "c"
+                  }
+                },
+                {
+                  "x": 1,
+                  "y": {
+                    "op": "add",
+                    "left": {
+                      "op": "add",
+                      "left": {
+                        "op": "state",
+                        "id": "a"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "b"
+                      }
+                    },
+                    "right": {
+                      "op": "state",
+                      "id": "c"
+                    }
+                  }
+                },
+                {
+                  "x": 2,
+                  "y": {
+                    "op": "add",
+                    "left": {
+                      "op": "add",
+                      "left": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "state",
+                          "id": "a"
+                        },
+                        "right": {
+                          "op": "const",
+                          "value": 4
+                        }
+                      },
+                      "right": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "state",
+                          "id": "b"
+                        },
+                        "right": {
+                          "op": "const",
+                          "value": 2
+                        }
+                      }
+                    },
+                    "right": {
+                      "op": "state",
+                      "id": "c"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

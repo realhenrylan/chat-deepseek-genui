@@ -1,34 +1,563 @@
 import { LIMITS } from './types.ts';
 
-/**
- * genui v1 JSON Schema（阶段 2）。
- *
- * 白名单原则：根与元素均 additionalProperties: false，未知字段一律判为
- * schema-violation——宁可回退到原始代码块，也不猜测模型的意图。
- * version 用 integer ≥ 1 表达「至少是 1」，具体是否等于当前版本由
- * validate 的后置检查决定（不等于 → unsupported-version）。
- */
-export const genuiSchema = {
+const idSchema = {
+  type: 'string',
+  minLength: 1,
+  maxLength: LIMITS.maxIdLength,
+  pattern: '^[A-Za-z][A-Za-z0-9_]*$',
+};
+
+const labelSchema = { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength };
+const unitSchema = { type: 'string', minLength: 1, maxLength: LIMITS.maxUnitLength };
+const boundedNumberSchema = {
+  type: 'number',
+  minimum: -LIMITS.maxNumberMagnitude,
+  maximum: LIMITS.maxNumberMagnitude,
+};
+// 只接受 6 位十六进制颜色，避免远程 paint server / 任意 CSS 值进入 SVG。
+const colorSchema = { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' };
+
+const textElementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'value'],
+  properties: {
+    kind: { const: 'text' },
+    value: { type: 'string', maxLength: LIMITS.maxTextLength },
+  },
+};
+
+const v1Schema = {
   type: 'object',
   additionalProperties: false,
   required: ['type', 'version', 'elements'],
   properties: {
-    type: { type: 'string', const: 'genui' },
-    version: { type: 'integer', minimum: 1 },
-    title: { type: 'string', maxLength: LIMITS.maxTitleLength },
+    type: { const: 'genui' },
+    version: { const: 1 },
+    title: labelSchema,
     elements: {
       type: 'array',
       minItems: 1,
       maxItems: LIMITS.maxElements,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['kind', 'value'],
-        properties: {
-          kind: { type: 'string', const: 'text' },
-          value: { type: 'string', maxLength: LIMITS.maxTextLength },
+      items: textElementSchema,
+    },
+  },
+};
+
+const expressionRef = { $ref: '#/definitions/expression' };
+const conditionRef = { $ref: '#/definitions/condition' };
+const elementRef = { $ref: '#/definitions/element' };
+
+const stateVariableSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'label', 'kind', 'initial', 'min', 'max', 'step'],
+      properties: {
+        id: idSchema,
+        label: labelSchema,
+        kind: { const: 'number' },
+        initial: boundedNumberSchema,
+        min: boundedNumberSchema,
+        max: boundedNumberSchema,
+        step: {
+          type: 'number',
+          exclusiveMinimum: 0,
+          maximum: LIMITS.maxNumberMagnitude,
+        },
+        unit: unitSchema,
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'label', 'kind', 'initial', 'options'],
+      properties: {
+        id: idSchema,
+        label: labelSchema,
+        kind: { const: 'select' },
+        initial: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
+        options: {
+          type: 'array',
+          minItems: 1,
+          maxItems: LIMITS.maxSelectOptions,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['label', 'value'],
+            properties: {
+              label: labelSchema,
+              value: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
+            },
+          },
         },
       },
     },
+  ],
+};
+
+const interactiveElementSchema = {
+  oneOf: [
+    textElementSchema,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'number-input' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'slider' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'select' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'label', 'source'],
+      properties: {
+        kind: { const: 'value' },
+        label: labelSchema,
+        source: {
+          oneOf: [
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['kind', 'id'],
+              properties: { kind: { const: 'state' }, id: idSchema },
+            },
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['kind', 'id'],
+              properties: { kind: { const: 'derived' }, id: idSchema },
+            },
+          ],
+        },
+        unit: unitSchema,
+      },
+    },
+  ],
+};
+
+const expressionDefinitions = {
+  expression: {
+    // Keep recursion linear: a recursive oneOf per operator causes exponential
+    // validation cost. Operator-specific required keys are checked by the
+    // semantic pass, while this schema enforces the property and type whitelist.
+    type: 'object',
+    additionalProperties: false,
+    required: ['op'],
+    properties: {
+      op: {
+        enum: [
+          'const', 'state', 'derived', 'negate', 'abs', 'round', 'floor', 'ceil',
+          'add', 'subtract', 'multiply', 'divide', 'min', 'max',
+        ],
+      },
+      id: idSchema,
+      value: { anyOf: [boundedNumberSchema, expressionRef] },
+      left: expressionRef,
+      right: expressionRef,
+    },
+  },
+};
+
+const conditionDefinition = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['op', 'id', 'value'],
+      properties: {
+        op: { enum: ['state-eq', 'state-neq'] },
+        id: idSchema,
+        value: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['op', 'left', 'right'],
+      properties: {
+        op: { enum: ['num-eq', 'num-neq', 'num-gt', 'num-gte', 'num-lt', 'num-lte'] },
+        left: expressionRef,
+        right: expressionRef,
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['op', 'conditions'],
+      properties: {
+        op: { enum: ['and', 'or'] },
+        conditions: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 10,
+          items: conditionRef,
+        },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['op', 'condition'],
+      properties: {
+        op: { const: 'not' },
+        condition: conditionRef,
+      },
+    },
+  ],
+};
+
+const v3TextSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'value'],
+  properties: {
+    kind: { const: 'text' },
+    value: { type: 'string', maxLength: LIMITS.maxTextLength },
+    visibleIf: conditionRef,
+  },
+};
+
+const noteSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'text'],
+  properties: {
+    kind: { const: 'note' },
+    text: { type: 'string', minLength: 1, maxLength: LIMITS.maxTextLength },
+    tone: { enum: ['info', 'warn', 'error'] },
+    visibleIf: conditionRef,
+  },
+};
+
+const chartBarPieSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'chartType', 'items'],
+  properties: {
+    kind: { const: 'chart' },
+    chartType: { enum: ['bar', 'pie'] },
+    title: labelSchema,
+    legend: { type: 'boolean' },
+    items: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxChartItems,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'value'],
+        properties: {
+          label: labelSchema,
+          value: expressionRef,
+        },
+      },
+    },
+  },
+};
+
+const chartLineSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'chartType', 'series'],
+  properties: {
+    kind: { const: 'chart' },
+    chartType: { const: 'line' },
+    title: labelSchema,
+    xLabel: labelSchema,
+    yLabel: labelSchema,
+    legend: { type: 'boolean' },
+    series: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxChartSeries,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'points'],
+        properties: {
+          label: labelSchema,
+          color: colorSchema,
+          points: {
+            type: 'array',
+            minItems: 2,
+            maxItems: LIMITS.maxChartPointsPerSeries,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['x', 'y'],
+              properties: {
+                x: boundedNumberSchema,
+                y: expressionRef,
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+const tableCellValueSchema = {
+  anyOf: [
+    { type: 'string', maxLength: LIMITS.maxLabelLength },
+    boundedNumberSchema,
+    { type: 'null' },
+    expressionRef,
+  ],
+};
+
+const tableSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'columns', 'rows'],
+  properties: {
+    kind: { const: 'table' },
+    title: labelSchema,
+    columns: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxTableColumns,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'label'],
+        properties: {
+          key: idSchema,
+          label: labelSchema,
+          numeric: { type: 'boolean' },
+          unit: unitSchema,
+        },
+      },
+    },
+    rows: {
+      type: 'array',
+      maxItems: LIMITS.maxTableRows,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['cells'],
+        properties: {
+          cells: {
+            type: 'object',
+            minProperties: 1,
+            propertyNames: { pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
+            patternProperties: {
+              '^[A-Za-z][A-Za-z0-9_]*$': tableCellValueSchema,
+            },
+            additionalProperties: false,
+          },
+          visibleIf: conditionRef,
+        },
+      },
+    },
+    sortable: { type: 'boolean' },
+    initialSort: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['key', 'dir'],
+      properties: {
+        key: idSchema,
+        dir: { enum: ['asc', 'desc'] },
+      },
+    },
+    emptyText: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
+    visibleIf: conditionRef,
+  },
+};
+
+const sectionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'children'],
+  properties: {
+    kind: { const: 'section' },
+    title: labelSchema,
+    children: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      items: elementRef,
+    },
+  },
+};
+
+const columnsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'columns'],
+  properties: {
+    kind: { const: 'columns' },
+    columns: {
+      type: 'array',
+      minItems: LIMITS.minColumns,
+      maxItems: LIMITS.maxColumnsLayout,
+      items: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 20,
+        items: elementRef,
+      },
+    },
+  },
+};
+
+const elementDefinition = {
+  oneOf: [
+    v3TextSchema,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'number-input' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'slider' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'select' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'label', 'source'],
+      properties: {
+        kind: { const: 'value' },
+        label: labelSchema,
+        source: {
+          oneOf: [
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['kind', 'id'],
+              properties: { kind: { const: 'state' }, id: idSchema },
+            },
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['kind', 'id'],
+              properties: { kind: { const: 'derived' }, id: idSchema },
+            },
+          ],
+        },
+        unit: unitSchema,
+      },
+    },
+    noteSchema,
+    chartBarPieSchema,
+    chartLineSchema,
+    tableSchema,
+    sectionSchema,
+    columnsSchema,
+  ],
+};
+
+const v2Schema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'version', 'state', 'derived', 'elements'],
+  properties: {
+    type: { const: 'genui' },
+    version: { const: 2 },
+    title: labelSchema,
+    state: {
+      type: 'array',
+      maxItems: LIMITS.maxStateVariables,
+      items: stateVariableSchema,
+    },
+    derived: {
+      type: 'array',
+      maxItems: LIMITS.maxDerivedValues,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'label', 'expression'],
+        properties: {
+          id: idSchema,
+          label: labelSchema,
+          unit: unitSchema,
+          expression: expressionRef,
+        },
+      },
+    },
+    elements: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxElementsV2,
+      items: interactiveElementSchema,
+    },
+  },
+};
+
+const v3Schema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'version', 'state', 'derived', 'elements'],
+  properties: {
+    type: { const: 'genui' },
+    version: { const: 3 },
+    title: labelSchema,
+    state: {
+      type: 'array',
+      maxItems: LIMITS.maxStateVariables,
+      items: stateVariableSchema,
+    },
+    derived: {
+      type: 'array',
+      maxItems: LIMITS.maxDerivedValues,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'label', 'expression'],
+        properties: {
+          id: idSchema,
+          label: labelSchema,
+          unit: unitSchema,
+          expression: expressionRef,
+        },
+      },
+    },
+    elements: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxElementsV3,
+      items: elementRef,
+    },
+  },
+};
+
+/**
+ * Versioned genui JSON Schema.
+ *
+ * v1 remains available for existing static cards. v2 adds bounded state,
+ * controls, output references, and a recursive but finite arithmetic whitelist.
+ * v3 adds composition elements (note/chart/table/section/columns) plus
+ * conditional display, all bound to the same state/derived values.
+ * Semantic checks that JSON Schema cannot express (references and dependency
+ * cycles) run after generated-schema validation in validate.ts.
+ */
+export const genuiSchema = {
+  oneOf: [v1Schema, v2Schema, v3Schema],
+  definitions: {
+    expression: expressionDefinitions.expression,
+    condition: conditionDefinition,
+    element: elementDefinition,
   },
 };

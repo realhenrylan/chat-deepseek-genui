@@ -5,6 +5,7 @@ import cardCss from './card.css?inline';
 import { CardErrorBoundary } from './boundaries';
 import { Card } from './Card';
 import { ElementRegistry } from './registry';
+import { attachThemeAttribute } from './theme';
 
 /**
  * Card 挂载（阶段 2）：Shadow DOM 局部挂载 + 样式隔离。
@@ -28,6 +29,11 @@ export interface MountCardOptions {
   onToggleRaw?: (showRaw: boolean) => void;
   /** 卡片级渲染异常回调（恢复原始块的入口）。 */
   onFatal?: (error: Error) => void;
+  /**
+   * 「继续讨论」回调（阶段 6，用户主动点击时调用）：生产接线为
+   * content/followup.fillContinueIntoInput，返回填充结果用于卡片反馈。
+   */
+  onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
 }
 
 export interface MountedCard {
@@ -47,6 +53,8 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
   const container = doc.createElement('div');
   container.className = 'genui-card-root';
   shadow.appendChild(container);
+  // 阶段 6：跟随站点亮暗主题；属性写在卡片根上，阴影内样式据此切换。
+  const disposeTheme = attachThemeAttribute(container, doc);
 
   const registry = options.registry ?? ElementRegistry.withDefaults();
   const root: Root = createRoot(container);
@@ -58,6 +66,7 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
           rawJson={options.rawJson}
           registry={registry}
           onToggleRaw={options.onToggleRaw}
+          onContinue={options.onContinue}
         />
       </CardErrorBoundary>,
     );
@@ -65,6 +74,7 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
 
   return {
     unmount: () => {
+      disposeTheme();
       root.unmount();
     },
   };

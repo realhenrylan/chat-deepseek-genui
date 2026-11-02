@@ -1,0 +1,481 @@
+{
+  "type": "genui",
+  "version": 3,
+  "title": "月度预算规划（交互）",
+  "state": [
+    {
+      "id": "income",
+      "label": "月收入",
+      "kind": "number",
+      "initial": 12000,
+      "min": 0,
+      "max": 50000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "fixedCost",
+      "label": "固定支出",
+      "kind": "number",
+      "initial": 4500,
+      "min": 0,
+      "max": 30000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "savingsGoal",
+      "label": "储蓄目标",
+      "kind": "number",
+      "initial": 500,
+      "min": 0,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "rent",
+      "label": "房租",
+      "kind": "number",
+      "initial": 3500,
+      "min": 0,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "food",
+      "label": "餐饮",
+      "kind": "number",
+      "initial": 2000,
+      "min": 0,
+      "max": 10000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "transport",
+      "label": "交通",
+      "kind": "number",
+      "initial": 600,
+      "min": 0,
+      "max": 5000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "entertainment",
+      "label": "娱乐",
+      "kind": "number",
+      "initial": 800,
+      "min": 0,
+      "max": 5000,
+      "step": 100,
+      "unit": "元"
+    }
+  ],
+  "derived": [
+    {
+      "id": "plannedExpense",
+      "label": "分类预算合计",
+      "unit": "元",
+      "expression": {
+        "op": "add",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "add",
+            "left": {
+              "op": "state",
+              "id": "rent"
+            },
+            "right": {
+              "op": "state",
+              "id": "food"
+            }
+          },
+          "right": {
+            "op": "state",
+            "id": "transport"
+          }
+        },
+        "right": {
+          "op": "state",
+          "id": "entertainment"
+        }
+      }
+    },
+    {
+      "id": "balance",
+      "label": "可支配余额",
+      "unit": "元",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "subtract",
+          "left": {
+            "op": "state",
+            "id": "income"
+          },
+          "right": {
+            "op": "state",
+            "id": "fixedCost"
+          }
+        },
+        "right": {
+          "op": "derived",
+          "id": "plannedExpense"
+        }
+      }
+    },
+    {
+      "id": "afterSavings",
+      "label": "储蓄后结余",
+      "unit": "元",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "derived",
+          "id": "balance"
+        },
+        "right": {
+          "op": "state",
+          "id": "savingsGoal"
+        }
+      }
+    }
+  ],
+  "elements": [
+    {
+      "kind": "section",
+      "title": "收入与目标",
+      "children": [
+        {
+          "kind": "columns",
+          "columns": [
+            [
+              {
+                "kind": "slider",
+                "bind": "income"
+              },
+              {
+                "kind": "number-input",
+                "bind": "fixedCost"
+              },
+              {
+                "kind": "slider",
+                "bind": "savingsGoal"
+              }
+            ],
+            [
+              {
+                "kind": "value",
+                "label": "月收入",
+                "source": {
+                  "kind": "state",
+                  "id": "income"
+                },
+                "unit": "元"
+              },
+              {
+                "kind": "value",
+                "label": "分类预算合计",
+                "source": {
+                  "kind": "derived",
+                  "id": "plannedExpense"
+                },
+                "unit": "元"
+              },
+              {
+                "kind": "value",
+                "label": "可支配余额",
+                "source": {
+                  "kind": "derived",
+                  "id": "balance"
+                },
+                "unit": "元"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "columns",
+      "columns": [
+        [
+          {
+            "kind": "section",
+            "title": "分类预算",
+            "children": [
+              {
+                "kind": "number-input",
+                "bind": "rent"
+              },
+              {
+                "kind": "number-input",
+                "bind": "food"
+              },
+              {
+                "kind": "number-input",
+                "bind": "transport"
+              },
+              {
+                "kind": "number-input",
+                "bind": "entertainment"
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "section",
+            "title": "储蓄计划",
+            "children": [
+              {
+                "kind": "value",
+                "label": "储蓄目标",
+                "source": {
+                  "kind": "state",
+                  "id": "savingsGoal"
+                },
+                "unit": "元"
+              },
+              {
+                "kind": "value",
+                "label": "储蓄后结余",
+                "source": {
+                  "kind": "derived",
+                  "id": "afterSavings"
+                },
+                "unit": "元"
+              },
+              {
+                "kind": "note",
+                "tone": "warn",
+                "text": "预算超支：储蓄后结余为负，请降低分类预算或储蓄目标。",
+                "visibleIf": {
+                  "op": "num-lt",
+                  "left": {
+                    "op": "derived",
+                    "id": "afterSavings"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "储蓄后仍有余量，可按计划执行。",
+                "visibleIf": {
+                  "op": "num-gte",
+                  "left": {
+                    "op": "derived",
+                    "id": "afterSavings"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "warn",
+                "text": "尚未输入收入：所有金额都按 0 计算。",
+                "visibleIf": {
+                  "op": "num-eq",
+                  "left": {
+                    "op": "state",
+                    "id": "income"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "kind": "chart",
+      "chartType": "bar",
+      "title": "预算分配",
+      "legend": true,
+      "items": [
+        {
+          "label": "固定支出",
+          "value": {
+            "op": "state",
+            "id": "fixedCost"
+          }
+        },
+        {
+          "label": "分类预算",
+          "value": {
+            "op": "derived",
+            "id": "plannedExpense"
+          }
+        },
+        {
+          "label": "储蓄目标",
+          "value": {
+            "op": "state",
+            "id": "savingsGoal"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "chart",
+      "chartType": "pie",
+      "title": "分类预算构成",
+      "legend": true,
+      "items": [
+        {
+          "label": "房租",
+          "value": {
+            "op": "state",
+            "id": "rent"
+          }
+        },
+        {
+          "label": "餐饮",
+          "value": {
+            "op": "state",
+            "id": "food"
+          }
+        },
+        {
+          "label": "交通",
+          "value": {
+            "op": "state",
+            "id": "transport"
+          }
+        },
+        {
+          "label": "娱乐",
+          "value": {
+            "op": "state",
+            "id": "entertainment"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "table",
+      "title": "预算明细",
+      "sortable": true,
+      "initialSort": {
+        "key": "amount",
+        "dir": "desc"
+      },
+      "emptyText": "暂无预算项",
+      "columns": [
+        {
+          "key": "category",
+          "label": "项目"
+        },
+        {
+          "key": "amount",
+          "label": "金额",
+          "numeric": true,
+          "unit": "元"
+        },
+        {
+          "key": "kind",
+          "label": "类型"
+        }
+      ],
+      "rows": [
+        {
+          "cells": {
+            "category": "房租",
+            "amount": {
+              "op": "state",
+              "id": "rent"
+            },
+            "kind": "分类预算"
+          }
+        },
+        {
+          "cells": {
+            "category": "餐饮",
+            "amount": {
+              "op": "state",
+              "id": "food"
+            },
+            "kind": "分类预算"
+          }
+        },
+        {
+          "cells": {
+            "category": "交通",
+            "amount": {
+              "op": "state",
+              "id": "transport"
+            },
+            "kind": "分类预算"
+          }
+        },
+        {
+          "cells": {
+            "category": "娱乐",
+            "amount": {
+              "op": "state",
+              "id": "entertainment"
+            },
+            "kind": "分类预算"
+          }
+        },
+        {
+          "cells": {
+            "category": "固定支出",
+            "amount": {
+              "op": "state",
+              "id": "fixedCost"
+            },
+            "kind": "固定"
+          }
+        },
+        {
+          "cells": {
+            "category": "储蓄目标",
+            "amount": {
+              "op": "state",
+              "id": "savingsGoal"
+            },
+            "kind": "储蓄"
+          }
+        },
+        {
+          "cells": {
+            "category": "储蓄后结余",
+            "amount": {
+              "op": "derived",
+              "id": "afterSavings"
+            },
+            "kind": "结余"
+          },
+          "visibleIf": {
+            "op": "num-gt",
+            "left": {
+              "op": "state",
+              "id": "income"
+            },
+            "right": {
+              "op": "const",
+              "value": 0
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "DeepSeek GenUI",
   "version": "0.1.0",
-  "description": "为 DeepSeek 网页回答提供声明式交互界面增强（开发阶段骨架，尚无交互功能）。",
+  "description": "为 DeepSeek 网页回答提供可关闭的声明式交互界面增强。",
+  "permissions": ["storage"],
   "content_scripts": [
     {
       "matches": ["https://chat.deepseek.com/*"],

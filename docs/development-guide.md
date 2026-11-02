@@ -1,6 +1,6 @@
 # DeepSeek GenUI — 开发指南
 
-更新日期：2026-11-02。当前处于规格阶段，本文规定后续实现方式，不表示功能已经实现（阶段 1 工程骨架已按 §6 落地并验证，功能实现见后续阶段）。
+更新日期：2026-11-02。本文规定后续实现方式和当前工程约束。阶段 1–3 已完成；阶段 4 的本地协议、控件、运行时、自动化验证、真实会话单案例手工复核及两项审查 P2 修复均已完成并通过本地验证（见开发任务）。组合场景、默认提示词增强与完整产品验收仍在后续阶段。
 
 产品目标见[产品规格](product-spec.md)，按顺序执行的清单见[开发任务](development-task.md)。
 
@@ -44,7 +44,7 @@ Edge 与 Chrome 可以共用大部分 Chromium 扩展代码，但部分 API 存�
 
 - 页面匹配范围限定为 https://chat.deepseek.com/*，不申请所有网站访问权限。
 - 按实际 API 调用声明权限，不为尚未实现的功能预先申请权限。
-- 本地设置需要存储时使用受支持的扩展存储 API；所用 API 逐项核对官方支持列表。
+- 本项目目前仅为可见增强开关声明 `storage`，通过 `chrome.storage.local` 保存 `genuiEnabled` 布尔值；不存储聊天正文、代码块或输入内容。Edge API 支持列表已复核 `storage`，Chrome 官方参考说明使用该 API 需声明 `storage` 权限。
 - 不申请 Cookie、历史记录、调试器或与 UI 增强无关的访问能力。
 - 不调用 DeepSeek 非公开 API，不读取或使用认证信息，不批量读取历史聊天。
 - 权限清单逐项记录使用位置、必要性和用户可见说明。
@@ -61,6 +61,7 @@ MV3 不允许远程托管代码，可执行的 JavaScript 应随扩展包提供�
 - 模型提供的字符串不作为 HTML、CSS 或事件处理代码解释。
 - 模型不能选择浏览器权限、网络目标或本地文件。
 - 派生计算使用白名单运算，限制输入规模、嵌套深度、依赖关系和计算量。
+- v2 协议字段、运算符和资源上限见[GenUI 协议](genui-protocol.md)；交互状态仅在单张 Card 内存中生效，不持久化。
 - 拒绝循环依赖、未知组件和无效引用；失败后仍能查看原始内容。
 - 发布前审查协议解释器与生产产物，不把 JSON 格式本身当作安全证明。
 
@@ -93,7 +94,7 @@ MV3 不允许远程托管代码，可执行的 JavaScript 应随扩展包提供�
 | `npm test` | `vitest run` 单元测试 |
 | `npm run build` | `vite build` 产出 `dist/`，postbuild 自动执行 `scripts/check-dist.mjs` 静态校验 |
 | `npm run check` | 聚合：typecheck + lint + test + build（含生产包校验） |
-| `npm run test:e2e` | Playwright 在 Edge/Chrome 加载 `dist/` 验证注入；`REAL_SITE=1` 走真实网页，`HEADED=1` 强制有头 |
+| `npm run test:e2e` | Playwright 在 Edge/Chrome 加载 `dist/` 验证注入、生命周期、开关和页面交互；`REAL_SITE=1` 在真实网页 origin 注入合成回复结构，`HEADED=1` 强制有头 |
 
 产物路径：`dist/manifest.json` 与 `dist/content.js`（IIFE 单文件），本地加载选择 `dist/` 目录。
 

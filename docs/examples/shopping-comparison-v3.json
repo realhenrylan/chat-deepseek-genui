@@ -1,0 +1,688 @@
+{
+  "type": "genui",
+  "version": 3,
+  "title": "选购比较（交互）",
+  "state": [
+    {
+      "id": "budget",
+      "label": "预算",
+      "kind": "number",
+      "initial": 8000,
+      "min": 1000,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "priceA",
+      "label": "笔记本 A 单价",
+      "kind": "number",
+      "initial": 7000,
+      "min": 1000,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "priceB",
+      "label": "笔记本 B 单价",
+      "kind": "number",
+      "initial": 8600,
+      "min": 1000,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "priceC",
+      "label": "笔记本 C 单价",
+      "kind": "number",
+      "initial": 5300,
+      "min": 1000,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "performanceA",
+      "label": "A 性能分",
+      "kind": "number",
+      "initial": 82,
+      "min": 0,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "id": "performanceB",
+      "label": "B 性能分",
+      "kind": "number",
+      "initial": 91,
+      "min": 0,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "id": "performanceC",
+      "label": "C 性能分",
+      "kind": "number",
+      "initial": 74,
+      "min": 0,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "id": "priority",
+      "label": "优先考虑",
+      "kind": "select",
+      "initial": "value",
+      "options": [
+        {
+          "label": "综合分优先",
+          "value": "value"
+        },
+        {
+          "label": "价格优先",
+          "value": "price"
+        }
+      ]
+    }
+  ],
+  "derived": [
+    {
+      "id": "scoreA",
+      "label": "A 综合分",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "state",
+          "id": "performanceA"
+        },
+        "right": {
+          "op": "divide",
+          "left": {
+            "op": "state",
+            "id": "priceA"
+          },
+          "right": {
+            "op": "const",
+            "value": 1000
+          }
+        }
+      }
+    },
+    {
+      "id": "scoreB",
+      "label": "B 综合分",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "state",
+          "id": "performanceB"
+        },
+        "right": {
+          "op": "divide",
+          "left": {
+            "op": "state",
+            "id": "priceB"
+          },
+          "right": {
+            "op": "const",
+            "value": 1000
+          }
+        }
+      }
+    },
+    {
+      "id": "scoreC",
+      "label": "C 综合分",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "state",
+          "id": "performanceC"
+        },
+        "right": {
+          "op": "divide",
+          "left": {
+            "op": "state",
+            "id": "priceC"
+          },
+          "right": {
+            "op": "const",
+            "value": 1000
+          }
+        }
+      }
+    }
+  ],
+  "elements": [
+    {
+      "kind": "section",
+      "title": "筛选与偏好",
+      "children": [
+        {
+          "kind": "columns",
+          "columns": [
+            [
+              {
+                "kind": "number-input",
+                "bind": "budget"
+              },
+              {
+                "kind": "select",
+                "bind": "priority"
+              }
+            ],
+            [
+              {
+                "kind": "text",
+                "value": "综合分 = 性能分 − 单价/1000；分数越高越优先。"
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "以下价格与性能为可调整的示例数据，不是实时报价。"
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "当前按综合分排序：点击表格列头可改为按价格或预算余量查看。",
+                "visibleIf": {
+                  "op": "state-eq",
+                  "id": "priority",
+                  "value": "value"
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "info",
+                "text": "当前按价格排序：预算余量从高到低，表示更省钱。",
+                "visibleIf": {
+                  "op": "state-eq",
+                  "id": "priority",
+                  "value": "price"
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "columns",
+      "columns": [
+        [
+          {
+            "kind": "section",
+            "title": "价格与性能",
+            "children": [
+              {
+                "kind": "number-input",
+                "bind": "priceA"
+              },
+              {
+                "kind": "number-input",
+                "bind": "performanceA"
+              },
+              {
+                "kind": "number-input",
+                "bind": "priceB"
+              },
+              {
+                "kind": "number-input",
+                "bind": "performanceB"
+              },
+              {
+                "kind": "number-input",
+                "bind": "priceC"
+              },
+              {
+                "kind": "number-input",
+                "bind": "performanceC"
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "section",
+            "title": "预算内排名",
+            "children": [
+              {
+                "kind": "table",
+                "title": "综合分优先（预算内）",
+                "sortable": true,
+                "initialSort": {
+                  "key": "score",
+                  "dir": "desc"
+                },
+                "emptyText": "没有符合预算的候选，请提高预算。",
+                "columns": [
+                  {
+                    "key": "name",
+                    "label": "候选"
+                  },
+                  {
+                    "key": "price",
+                    "label": "单价",
+                    "numeric": true,
+                    "unit": "元"
+                  },
+                  {
+                    "key": "performance",
+                    "label": "性能分",
+                    "numeric": true
+                  },
+                  {
+                    "key": "score",
+                    "label": "综合分",
+                    "numeric": true
+                  },
+                  {
+                    "key": "remaining",
+                    "label": "预算余量",
+                    "numeric": true,
+                    "unit": "元"
+                  }
+                ],
+                "rows": [
+                  {
+                    "cells": {
+                      "name": "笔记本 A",
+                      "price": {
+                        "op": "state",
+                        "id": "priceA"
+                      },
+                      "performance": {
+                        "op": "state",
+                        "id": "performanceA"
+                      },
+                      "score": {
+                        "op": "derived",
+                        "id": "scoreA"
+                      },
+                      "remaining": {
+                        "op": "subtract",
+                        "left": {
+                          "op": "state",
+                          "id": "budget"
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "priceA"
+                        }
+                      }
+                    },
+                    "visibleIf": {
+                      "op": "num-lte",
+                      "left": {
+                        "op": "state",
+                        "id": "priceA"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "budget"
+                      }
+                    }
+                  },
+                  {
+                    "cells": {
+                      "name": "笔记本 B",
+                      "price": {
+                        "op": "state",
+                        "id": "priceB"
+                      },
+                      "performance": {
+                        "op": "state",
+                        "id": "performanceB"
+                      },
+                      "score": {
+                        "op": "derived",
+                        "id": "scoreB"
+                      },
+                      "remaining": {
+                        "op": "subtract",
+                        "left": {
+                          "op": "state",
+                          "id": "budget"
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "priceB"
+                        }
+                      }
+                    },
+                    "visibleIf": {
+                      "op": "num-lte",
+                      "left": {
+                        "op": "state",
+                        "id": "priceB"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "budget"
+                      }
+                    }
+                  },
+                  {
+                    "cells": {
+                      "name": "笔记本 C",
+                      "price": {
+                        "op": "state",
+                        "id": "priceC"
+                      },
+                      "performance": {
+                        "op": "state",
+                        "id": "performanceC"
+                      },
+                      "score": {
+                        "op": "derived",
+                        "id": "scoreC"
+                      },
+                      "remaining": {
+                        "op": "subtract",
+                        "left": {
+                          "op": "state",
+                          "id": "budget"
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "priceC"
+                        }
+                      }
+                    },
+                    "visibleIf": {
+                      "op": "num-lte",
+                      "left": {
+                        "op": "state",
+                        "id": "priceC"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "budget"
+                      }
+                    }
+                  }
+                ],
+                "visibleIf": {
+                  "op": "state-eq",
+                  "id": "priority",
+                  "value": "value"
+                }
+              },
+              {
+                "kind": "table",
+                "title": "价格优先（预算内）",
+                "sortable": true,
+                "initialSort": {
+                  "key": "remaining",
+                  "dir": "desc"
+                },
+                "emptyText": "没有符合预算的候选，请提高预算。",
+                "columns": [
+                  {
+                    "key": "name",
+                    "label": "候选"
+                  },
+                  {
+                    "key": "price",
+                    "label": "单价",
+                    "numeric": true,
+                    "unit": "元"
+                  },
+                  {
+                    "key": "performance",
+                    "label": "性能分",
+                    "numeric": true
+                  },
+                  {
+                    "key": "score",
+                    "label": "综合分",
+                    "numeric": true
+                  },
+                  {
+                    "key": "remaining",
+                    "label": "预算余量",
+                    "numeric": true,
+                    "unit": "元"
+                  }
+                ],
+                "rows": [
+                  {
+                    "cells": {
+                      "name": "笔记本 A",
+                      "price": {
+                        "op": "state",
+                        "id": "priceA"
+                      },
+                      "performance": {
+                        "op": "state",
+                        "id": "performanceA"
+                      },
+                      "score": {
+                        "op": "derived",
+                        "id": "scoreA"
+                      },
+                      "remaining": {
+                        "op": "subtract",
+                        "left": {
+                          "op": "state",
+                          "id": "budget"
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "priceA"
+                        }
+                      }
+                    },
+                    "visibleIf": {
+                      "op": "num-lte",
+                      "left": {
+                        "op": "state",
+                        "id": "priceA"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "budget"
+                      }
+                    }
+                  },
+                  {
+                    "cells": {
+                      "name": "笔记本 B",
+                      "price": {
+                        "op": "state",
+                        "id": "priceB"
+                      },
+                      "performance": {
+                        "op": "state",
+                        "id": "performanceB"
+                      },
+                      "score": {
+                        "op": "derived",
+                        "id": "scoreB"
+                      },
+                      "remaining": {
+                        "op": "subtract",
+                        "left": {
+                          "op": "state",
+                          "id": "budget"
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "priceB"
+                        }
+                      }
+                    },
+                    "visibleIf": {
+                      "op": "num-lte",
+                      "left": {
+                        "op": "state",
+                        "id": "priceB"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "budget"
+                      }
+                    }
+                  },
+                  {
+                    "cells": {
+                      "name": "笔记本 C",
+                      "price": {
+                        "op": "state",
+                        "id": "priceC"
+                      },
+                      "performance": {
+                        "op": "state",
+                        "id": "performanceC"
+                      },
+                      "score": {
+                        "op": "derived",
+                        "id": "scoreC"
+                      },
+                      "remaining": {
+                        "op": "subtract",
+                        "left": {
+                          "op": "state",
+                          "id": "budget"
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "priceC"
+                        }
+                      }
+                    },
+                    "visibleIf": {
+                      "op": "num-lte",
+                      "left": {
+                        "op": "state",
+                        "id": "priceC"
+                      },
+                      "right": {
+                        "op": "state",
+                        "id": "budget"
+                      }
+                    }
+                  }
+                ],
+                "visibleIf": {
+                  "op": "state-eq",
+                  "id": "priority",
+                  "value": "price"
+                }
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "kind": "chart",
+      "chartType": "bar",
+      "title": "预算与候选单价",
+      "legend": true,
+      "items": [
+        {
+          "label": "预算",
+          "value": {
+            "op": "state",
+            "id": "budget"
+          }
+        },
+        {
+          "label": "笔记本 A",
+          "value": {
+            "op": "state",
+            "id": "priceA"
+          }
+        },
+        {
+          "label": "笔记本 B",
+          "value": {
+            "op": "state",
+            "id": "priceB"
+          }
+        },
+        {
+          "label": "笔记本 C",
+          "value": {
+            "op": "state",
+            "id": "priceC"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "note",
+      "tone": "warn",
+      "text": "三款候选都超出预算，当前没有可推荐的选项。可以提高预算，或查看下方资料不全的商品。",
+      "visibleIf": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "num-gt",
+            "left": {
+              "op": "state",
+              "id": "priceA"
+            },
+            "right": {
+              "op": "state",
+              "id": "budget"
+            }
+          },
+          {
+            "op": "num-gt",
+            "left": {
+              "op": "state",
+              "id": "priceB"
+            },
+            "right": {
+              "op": "state",
+              "id": "budget"
+            }
+          },
+          {
+            "op": "num-gt",
+            "left": {
+              "op": "state",
+              "id": "priceC"
+            },
+            "right": {
+              "op": "state",
+              "id": "budget"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "title": "资料不完整",
+      "emptyText": "无",
+      "columns": [
+        {
+          "key": "name",
+          "label": "商品"
+        },
+        {
+          "key": "missing",
+          "label": "缺失项"
+        }
+      ],
+      "rows": [
+        {
+          "cells": {
+            "name": "笔记本 D",
+            "missing": "缺少报价与性能数据，未参与排名"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "note",
+      "tone": "info",
+      "text": "笔记本 D 缺少价格和性能资料，因此未计算综合分或排名，也没有用估计值填补。"
+    }
+  ]
+}

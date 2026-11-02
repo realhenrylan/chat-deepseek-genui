@@ -4,8 +4,8 @@
  *
  * 检查项：
  * 1. dist/manifest.json 存在且为 MV3，匹配范围严格限定 https://chat.deepseek.com/*；
- * 2. 阶段 1 权限决议：不申请任何 permissions / host_permissions / background（开发指南 §3
- *    “按实际 API 调用声明权限”，storage 等待阶段 3 实现开关时按调用补充）；
+ * 2. 按实际 API 调用检查权限：仅允许阶段 3 本地开关所需的 storage；
+ *    不申请 host_permissions 或 background（开发指南 §3）；
  * 3. 内容脚本产物 content.js 存在且非空，manifest 与 package.json 版本一致；
  * 4. 全包扫描：禁止 eval / new Function / importScripts、远程脚本与样式 URL、常见 CDN 域名、
  *    动态 <script src> —— 确保生产包只加载本地资源（开发指南 §4、Manifest V3 禁止远程代码）。
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 
-const ALLOWED_PERMISSIONS = []; // 阶段 1：零额外权限。阶段 3 需要时在此登记 storage。
+const ALLOWED_PERMISSIONS = ['storage']; // 阶段 3：本地增强开关持久化。
 const ALLOWED_HOST_PERMISSIONS = [];
 
 /** 违规即构建失败的模式（violation patterns）。 */
@@ -69,13 +69,13 @@ if (manifest) {
 
   const permissions = manifest.permissions ?? [];
   if (JSON.stringify([...permissions].sort()) !== JSON.stringify(ALLOWED_PERMISSIONS)) {
-    fail(`permissions 应为 [${ALLOWED_PERMISSIONS.join(', ')}]（阶段 1 零额外权限），实际：[${permissions.join(', ')}]`);
+    fail(`permissions 应为 [${ALLOWED_PERMISSIONS.join(', ')}]（仅含阶段 3 开关所需权限），实际：[${permissions.join(', ')}]`);
   }
   const hostPermissions = manifest.host_permissions ?? [];
   if (JSON.stringify([...hostPermissions].sort()) !== JSON.stringify(ALLOWED_HOST_PERMISSIONS)) {
     fail(`host_permissions 应为空，实际：[${hostPermissions.join(', ')}]`);
   }
-  if (manifest.background) fail('阶段 1 不应包含 background（阶段 0 结论：无后台逻辑需求）');
+  if (manifest.background) fail('不应包含 background（阶段 0 结论：无后台逻辑需求）');
 
   const js = manifest.content_scripts?.flatMap((cs) => cs.js ?? []) ?? [];
   if (JSON.stringify(js) !== JSON.stringify(['content.js'])) {
@@ -132,5 +132,5 @@ if (errors.length > 0) {
 const sizes = files.map((f) => `${relative(dist, f)} (${statSync(f).size} B)`);
 console.log(`生产包校验通过：${files.length} 个文件`);
 for (const size of sizes.sort()) console.log(`  - ${size}`);
-console.log('  - 权限：无 permissions / host_permissions / background（阶段 1 决议）');
+console.log('  - 权限：storage（本地增强开关）；无 host_permissions / background');
 console.log('  - 未发现远程脚本、CDN 或动态执行模式');

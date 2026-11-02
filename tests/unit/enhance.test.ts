@@ -85,7 +85,7 @@ describe('enhanceDocument 整链路', () => {
 
   it('未知版本安全回退并记录 unsupported-version', () => {
     const doc = buildDoc(
-      assistant(codeBlock({ raw: '{"type":"genui","version":2,"elements":[{"kind":"text","value":"x"}]}' })),
+      assistant(codeBlock({ raw: '{"type":"genui","version":4,"elements":[{"kind":"text","value":"x"}]}' })),
     );
 
     expect(enhanceDocument(doc).failed).toBe(1);
@@ -150,7 +150,8 @@ describe('enhanceDocument 整链路', () => {
     expect(host).not.toBeNull();
     expect(block).not.toBeNull();
 
-    const button = host?.shadowRoot?.querySelector('button');
+    // 阶段 6 起 header 上还有展开按钮；原始 JSON 入口必须用专属类定位。
+    const button = host?.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-toggle');
     expect(button).not.toBeNull();
     // React 19 的状态更新在后续任务刷入，等待后再断言。
     const flushUi = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -189,5 +190,63 @@ describe('enhanceDocument 整链路', () => {
     expect(block?.getAttribute(STATE_ATTR)).toBe('failed');
     expect(block?.getAttribute(REASON_ATTR)).toBe('render-error');
     expect(block?.querySelector('pre')?.textContent).toContain('异常恢复');
+  });
+});
+
+describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）', () => {
+  const V2_JSON = JSON.stringify({
+    type: 'genui',
+    version: 2,
+    title: '预算复核',
+    state: [{ id: 'budget', label: '总预算', kind: 'number', initial: 100, min: 0, max: 100000, step: 1, unit: '元' }],
+    derived: [],
+    elements: [{ kind: 'value', label: '当前预算', source: { kind: 'state', id: 'budget' } }],
+  });
+
+  it('点击继续讨论按钮：摘要交给 onContinue，反馈提及已填入输入框', async () => {
+    const doc = buildDoc(assistant(codeBlock({ raw: V2_JSON })));
+    const summaries: string[] = [];
+    const flushUi = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    enhanceDocument(doc, {
+      onContinue: (summary) => {
+        summaries.push(summary);
+        return 'filled';
+      },
+    });
+    const host = doc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+
+    // 初始挂载绝不自动调用：必须由用户点击触发。
+    expect(summaries).toHaveLength(0);
+
+    const button = host?.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-followup');
+    expect(button).not.toBeNull();
+    await flushUi();
+    button?.click();
+    await flushUi();
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toContain('总预算：100 元');
+    const feedback = host?.shadowRoot?.querySelector('.genui-card-followup-feedback');
+    expect(feedback?.textContent).toContain('已填入输入框');
+  });
+
+  it('未接线（未提供 onContinue）点击不抛异常；v1 卡片没有该入口', async () => {
+    const doc = buildDoc(
+      assistant(codeBlock({ raw: VALID_JSON('旧卡片') }) + codeBlock({ raw: V2_JSON })),
+    );
+    const flushUi = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(() => enhanceDocument(doc)).not.toThrow();
+    const hosts = doc.querySelectorAll<HTMLElement>('.genui-card-host');
+    expect(hosts).toHaveLength(2);
+    // v1（第 1 个块）没有继续讨论按钮；v2 有且点击安全（无 onContinue → 不可用反馈）。
+    expect(hosts[0]?.shadowRoot?.querySelector('.genui-card-followup')).toBeNull();
+    const followup = hosts[1]?.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-followup');
+    expect(followup).not.toBeNull();
+    await flushUi();
+    expect(() => followup?.click()).not.toThrow();
+    await flushUi();
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "chat-deepseek-genui",
   "version": "0.1.0",
-  "description": "DeepSeek GenUI 浏览器扩展：开发阶段骨架（阶段 1，无 GenUI 功能）",
+  "description": "DeepSeek GenUI 浏览器扩展：本地交互与受限计算（阶段 4）",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

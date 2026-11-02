@@ -1,3 +1,5 @@
+import { attachThemeAttribute } from '../render/theme';
+
 const CONTROL_ATTR = 'data-genui-control';
 
 export interface ToggleControl {
@@ -21,6 +23,18 @@ export function createToggleControl(
   const style = doc.createElement('style');
   style.textContent = `
     :host { all: initial; }
+    .wrap {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font: 14px/1.4 system-ui, sans-serif;
+    }
+    .column {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
     button {
       appearance: none;
       border: 1px solid rgba(120, 120, 120, .35);
@@ -30,23 +44,35 @@ export function createToggleControl(
       background: #fff;
       box-shadow: 0 2px 10px rgba(0, 0, 0, .14);
       font: 600 12px/1.2 system-ui, sans-serif;
-      cursor: grab;
+      cursor: pointer;
       white-space: nowrap;
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
     }
-    button:active,
-    button[data-dragging] { cursor: grabbing; }
+    .column > button:first-child { cursor: grab; }
+    .column > button:first-child:active,
+    .column > button:first-child[data-dragging] { cursor: grabbing; }
     button:hover { background: #f4f4f4; }
     button:focus-visible { outline: 3px solid #4f8cff; outline-offset: 2px; }
     button[aria-pressed="false"] { color: #555; background: #f3f3f3; }
+    /* 无站点主题标记（旧环境）时才回退系统偏好；有标记时跟随站点。 */
     @media (prefers-color-scheme: dark) {
-      button { color: #eee; background: #282828; border-color: #555; }
-      button:hover { background: #383838; }
-      button[aria-pressed="false"] { color: #bbb; background: #202020; }
+      :host(:not([data-site-theme])) button { color: #eee; background: #282828; border-color: #555; }
+      :host(:not([data-site-theme])) button:hover { background: #383838; }
+      :host(:not([data-site-theme])) button[aria-pressed="false"] { color: #bbb; background: #202020; }
     }
+    /* 阶段 6：跟随站点亮暗主题（data-site-theme 由 attachThemeAttribute 维护）。 */
+    :host([data-site-theme="dark"]) button { color: #eee; background: #282828; border-color: #555; }
+    :host([data-site-theme="dark"]) button:hover { background: #383838; }
+    :host([data-site-theme="dark"]) button[aria-pressed="false"] { color: #bbb; background: #202020; }
   `;
+
+  const wrap = doc.createElement('div');
+  wrap.className = 'wrap';
+  const column = doc.createElement('div');
+  column.className = 'column';
+
   const button = doc.createElement('button');
   button.type = 'button';
   button.addEventListener('click', handleClick);
@@ -55,8 +81,13 @@ export function createToggleControl(
   button.addEventListener('pointerup', handlePointerUp);
   button.addEventListener('pointercancel', handlePointerCancel);
   button.addEventListener('keydown', handleKeyDown);
-  shadow.append(style, button);
+
+  column.append(button);
+  wrap.append(column);
+  shadow.append(style, wrap);
   (doc.documentElement ?? doc.body).append(host);
+  // 阶段 6：开关视觉跟随站点亮暗主题。
+  const disposeTheme = attachThemeAttribute(host, doc);
 
   let enabled = initialEnabled;
   let dragState: {
@@ -71,6 +102,8 @@ export function createToggleControl(
   let suppressDraggedClick = false;
   let suppressClickTimer: number | null = null;
   const win = doc.defaultView;
+
+
 
   function clampPosition(left: number, top: number): { left: number; top: number } {
     const rect = host.getBoundingClientRect();
@@ -215,6 +248,7 @@ export function createToggleControl(
       button.removeEventListener('keydown', handleKeyDown);
       win?.removeEventListener('resize', handleResize);
       clearSuppressedClick();
+      disposeTheme();
       host.remove();
     },
   };

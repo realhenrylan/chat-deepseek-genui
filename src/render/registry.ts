@@ -1,9 +1,9 @@
 import type { ComponentType } from 'react';
-import type { GenuiElement } from '../protocol/types';
+import type { TextElement } from '../protocol/types';
 import { TextElementView } from './elements';
 
 /** 元素视图组件：接收一个已通过协议校验的元素。 */
-export type ElementComponent = ComponentType<{ element: GenuiElement }>;
+export type ElementComponent = ComponentType<{ element: TextElement }>;
 
 /**
  * kind → 组件 注册表（阶段 2）。

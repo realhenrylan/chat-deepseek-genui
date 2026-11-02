@@ -1,0 +1,336 @@
+import {
+  LIMITS,
+  type Condition,
+  type DerivedCalculation,
+  type GenuiV2Document,
+  type GenuiV3Document,
+  type InteractiveStateValues,
+  type NumericExpression,
+} from '../protocol/types';
+
+/**
+ * 受限本地计算运行时（v2 派生值 + v3 内联表达式与条件）。
+ *
+ * 所有计算都只解释协议白名单内的数值 AST，不接受代码、属性路径或动态函数名。
+ * v2 的派生值按需缓存；v3 在进入渲染前一次性求值图表、表格与条件中的内联
+ * 表达式，渲染阶段只读结果，避免渲染副作用与重复计费。
+ */
+
+type StatefulDocument = GenuiV2Document | GenuiV3Document;
+
+/** 运行时只需要状态与派生定义；v2/v3 文档都满足该结构。 */
+interface StatefulDocumentLike {
+  state: StatefulDocument['state'];
+  derived: StatefulDocument['derived'];
+}
+
+export type ExpressionResult = { ok: true; value: number } | { ok: false; error: string };
+export type ConditionResult = { ok: true; value: boolean } | { ok: false; error: string };
+
+/** v3 文档一次状态更新后的完整求值快照。 */
+export interface CompositeEvaluation {
+  derived: DerivedCalculation;
+  expressions: Map<NumericExpression, ExpressionResult>;
+  conditions: Map<Condition, ConditionResult>;
+  operations: number;
+}
+
+function calculationError(message: string): Error {
+  return new Error(message);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function boundedResult(value: number): number {
+  if (!Number.isFinite(value)) {
+    throw calculationError('结果超出可计算范围');
+  }
+  // 对未舍入的结果严格检查；toPrecision(12) 只用于显示（阶段 4 收尾修正）。
+  if (Math.abs(value) > LIMITS.maxNumberMagnitude) {
+    throw calculationError('结果超出可计算范围');
+  }
+  return value;
+}
+
+/** 白名单解释器：同一实例共享运算预算与派生值缓存。 */
+class EvaluationEngine {
+  private readonly values = new Map<string, number>();
+  private readonly errors = new Map<string, string>();
+  private readonly calculating = new Set<string>();
+  operations = 0;
+
+  constructor(
+    private readonly document: StatefulDocumentLike,
+    private readonly state: InteractiveStateValues,
+  ) {}
+
+  /** 单条表达式求值，失败以结果形式返回，不向调用方抛出。 */
+  evaluate(expression: NumericExpression): ExpressionResult {
+    try {
+      return { ok: true, value: this.node(expression) };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  }
+
+  /** 按需计算派生值；同名派生结果与错误都会缓存。 */
+  resolveDerived(id: string): ExpressionResult {
+    const cached = this.values.get(id);
+    if (cached !== undefined) return { ok: true, value: cached };
+    const cachedError = this.errors.get(id);
+    if (cachedError !== undefined) return { ok: false, error: cachedError };
+    const definition = this.document.derived.find((item) => item.id === id);
+    if (!definition) return { ok: false, error: '派生值不存在' };
+    if (this.calculating.has(id)) return { ok: false, error: '检测到循环依赖' };
+
+    this.calculating.add(id);
+    try {
+      const value = this.node(definition.expression);
+      this.values.set(id, value);
+      return { ok: true, value };
+    } catch (error) {
+      const message = errorMessage(error);
+      this.errors.set(id, message);
+      return { ok: false, error: message };
+    } finally {
+      this.calculating.delete(id);
+    }
+  }
+
+  /** 依次求值全部派生值并返回快照。 */
+  snapshotDerived(): DerivedCalculation {
+    for (const definition of this.document.derived) this.resolveDerived(definition.id);
+    return {
+      values: Object.fromEntries(this.values),
+      errors: Object.fromEntries(this.errors),
+      operations: this.operations,
+    };
+  }
+
+  private node(expression: NumericExpression): number {
+    this.operations += 1;
+    if (this.operations > LIMITS.maxEvaluationOperations) {
+      throw calculationError('计算量超过单次更新上限');
+    }
+
+    switch (expression.op) {
+      case 'const':
+        return boundedResult(expression.value);
+      case 'state': {
+        if (!Object.hasOwn(this.state, expression.id)) {
+          throw calculationError(`数值状态 ${expression.id} 不可用`);
+        }
+        const value = this.state[expression.id];
+        if (typeof value !== 'number') {
+          throw calculationError(`数值状态 ${expression.id} 不可用`);
+        }
+        return boundedResult(value);
+      }
+      case 'derived': {
+        const resolved = this.resolveDerived(expression.id);
+        if (!resolved.ok) throw calculationError(`依赖项 ${expression.id} 无法计算：${resolved.error}`);
+        return resolved.value;
+      }
+      case 'negate':
+        return boundedResult(-this.node(expression.value));
+      case 'abs':
+        return boundedResult(Math.abs(this.node(expression.value)));
+      case 'round':
+        return boundedResult(Math.round(this.node(expression.value)));
+      case 'floor':
+        return boundedResult(Math.floor(this.node(expression.value)));
+      case 'ceil':
+        return boundedResult(Math.ceil(this.node(expression.value)));
+      case 'add':
+        return boundedResult(this.node(expression.left) + this.node(expression.right));
+      case 'subtract':
+        return boundedResult(this.node(expression.left) - this.node(expression.right));
+      case 'multiply':
+        return boundedResult(this.node(expression.left) * this.node(expression.right));
+      case 'divide': {
+        const numerator = this.node(expression.left);
+        const denominator = this.node(expression.right);
+        if (denominator === 0) throw calculationError('除数不能为 0');
+        return boundedResult(numerator / denominator);
+      }
+      case 'min':
+        return boundedResult(Math.min(this.node(expression.left), this.node(expression.right)));
+      case 'max':
+        return boundedResult(Math.max(this.node(expression.left), this.node(expression.right)));
+      default: {
+        const exhaustive: never = expression;
+        throw calculationError(`不支持的运算：${String(exhaustive)}`);
+      }
+    }
+  }
+}
+
+/** v2/v3 本地状态的初始快照；每张卡片各自持有一个对象。 */
+export function createInitialState(document: StatefulDocument): InteractiveStateValues {
+  return Object.fromEntries(document.state.map((variable) => [variable.id, variable.initial]));
+}
+
+/** v2 派生值计算；保留原有 API 供渲染器与测试使用。 */
+export function calculateDerived(
+  document: StatefulDocument,
+  state: InteractiveStateValues,
+): DerivedCalculation {
+  return new EvaluationEngine(document, state).snapshotDerived();
+}
+
+function isNumericExpression(cell: unknown): cell is NumericExpression {
+  return typeof cell === 'object' && cell !== null && 'op' in cell;
+}
+
+/**
+ * v3 组合文档求值：派生值、图表/表格内联表达式、条件说明谓词在一次
+ * `useMemo` 内全部算完。失败被限制在单个表达式或条件上，不阻断整张卡片。
+ */
+export function evaluateComposite(
+  document: GenuiV3Document,
+  state: InteractiveStateValues,
+): CompositeEvaluation {
+  const engine = new EvaluationEngine(document, state);
+  const derived = engine.snapshotDerived();
+
+  const expressions = new Map<NumericExpression, ExpressionResult>();
+  const conditions = new Map<Condition, ConditionResult>();
+
+  const valueOf = (expression: NumericExpression): ExpressionResult => {
+    const cached = expressions.get(expression);
+    if (cached) return cached;
+    const result = engine.evaluate(expression);
+    expressions.set(expression, result);
+    return result;
+  };
+
+  const compare = (op: Condition['op'], left: number, right: number): boolean => {
+    switch (op) {
+      case 'num-eq':
+        return left === right;
+      case 'num-neq':
+        return left !== right;
+      case 'num-gt':
+        return left > right;
+      case 'num-gte':
+        return left >= right;
+      case 'num-lt':
+        return left < right;
+      case 'num-lte':
+        return left <= right;
+      default:
+        throw calculationError(`不支持的条件运算：${op}`);
+    }
+  };
+
+  const evaluateCondition = (condition: Condition, depth: number): ConditionResult => {
+    try {
+      if (depth > LIMITS.maxConditionDepth) {
+        throw calculationError('条件嵌套超过上限');
+      }
+      if (condition.op === 'state-eq' || condition.op === 'state-neq') {
+        if (!Object.hasOwn(state, condition.id)) {
+          throw calculationError(`条件引用的状态 ${condition.id} 不存在`);
+        }
+        const value = state[condition.id];
+        if (typeof value !== 'string') {
+          throw calculationError(`条件引用的状态 ${condition.id} 不是选择状态`);
+        }
+        const equal = value === condition.value;
+        return { ok: true, value: condition.op === 'state-eq' ? equal : !equal };
+      }
+      if (condition.op === 'and' || condition.op === 'or') {
+        for (const child of condition.conditions) {
+          const result = evaluateCondition(child, depth + 1);
+          if (!result.ok) return result;
+          if (condition.op === 'and' && !result.value) return { ok: true, value: false };
+          if (condition.op === 'or' && result.value) return { ok: true, value: true };
+        }
+        return { ok: true, value: condition.op === 'and' };
+      }
+      if (condition.op === 'not') {
+        const result = evaluateCondition(condition.condition, depth + 1);
+        return result.ok ? { ok: true, value: !result.value } : result;
+      }
+
+      if (!('left' in condition) || !('right' in condition)) {
+        throw calculationError(`不支持的条件运算：${String(condition.op)}`);
+      }
+      const left = valueOf(condition.left);
+      if (!left.ok) return { ok: false, error: left.error };
+      const right = valueOf(condition.right);
+      if (!right.ok) return { ok: false, error: right.error };
+      return { ok: true, value: compare(condition.op, left.value, right.value) };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  };
+
+  const conditionOf = (condition: Condition): ConditionResult => {
+    const cached = conditions.get(condition);
+    if (cached) return cached;
+    const result = evaluateCondition(condition, 1);
+    conditions.set(condition, result);
+    return result;
+  };
+
+  const walk = (elements: GenuiV3Document['elements']): void => {
+    for (const element of elements) {
+      switch (element.kind) {
+        case 'text':
+        case 'note':
+          if (element.visibleIf) conditionOf(element.visibleIf);
+          break;
+        case 'chart':
+          if (element.chartType === 'line') {
+            for (const series of element.series) {
+              for (const point of series.points) valueOf(point.y);
+            }
+          } else {
+            for (const item of element.items) valueOf(item.value);
+          }
+          break;
+        case 'table':
+          if (element.visibleIf) conditionOf(element.visibleIf);
+          for (const row of element.rows) {
+            if (row.visibleIf) conditionOf(row.visibleIf);
+            for (const cell of Object.values(row.cells)) {
+              if (isNumericExpression(cell)) valueOf(cell);
+            }
+          }
+          break;
+        case 'section':
+          walk(element.children);
+          break;
+        case 'columns':
+          for (const column of element.columns) walk(column);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+
+  walk(document.elements);
+
+  derived.operations = engine.operations;
+  return { derived, expressions, conditions, operations: engine.operations };
+}
+
+/** 渲染阶段读取已求值的内联表达式；缺失视为未求值而不是现场计算。 */
+export function lookupExpression(
+  evaluation: CompositeEvaluation,
+  expression: NumericExpression,
+): ExpressionResult {
+  return evaluation.expressions.get(expression) ?? { ok: false, error: '表达式未求值' };
+}
+
+/** 渲染阶段读取已求值的条件。 */
+export function lookupCondition(
+  evaluation: CompositeEvaluation,
+  condition: Condition,
+): ConditionResult {
+  return evaluation.conditions.get(condition) ?? { ok: false, error: '条件未求值' };
+}

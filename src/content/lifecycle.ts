@@ -1,12 +1,12 @@
 /**
- * 内容脚本生命周期标记（阶段 1 最小骨架）。
+ * 内容脚本幂等标记（初始化阶段）。
  *
  * 职责：
  * - 保证脚本在同一只隔离世界（isolated world）内只初始化一次；
- * - 在 documentElement 写入非视觉标记，供挂载状态检查与端到端测试断言；
+ * - 在 documentElement 写入非视觉标记，供注入状态检查与端到端测试断言；
  * - 记录 chrome.runtime.id，用于确认扩展上下文有效。
  *
- * 阶段 1 不挂载任何 UI、不修改页面内容（data 属性不可见，不影响页面样式与交互）。
+ * 页面观察、增强开关和卡片资源的清理由 controller.ts 管理。
  */
 
 export const GENUI_ATTR = 'data-genui-ext-loaded';

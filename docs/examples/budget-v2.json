@@ -1,0 +1,58 @@
+{
+  "type": "genui",
+  "version": 2,
+  "title": "月度预算规划",
+  "state": [
+    {
+      "id": "budget",
+      "label": "月度总预算",
+      "kind": "number",
+      "initial": 8000,
+      "min": 0,
+      "max": 20000,
+      "step": 500,
+      "unit": "元"
+    },
+    {
+      "id": "spent",
+      "label": "已分配支出",
+      "kind": "number",
+      "initial": 5200,
+      "min": 0,
+      "max": 20000,
+      "step": 100,
+      "unit": "元"
+    },
+    {
+      "id": "priority",
+      "label": "优先类别",
+      "kind": "select",
+      "initial": "housing",
+      "options": [
+        { "label": "住房", "value": "housing" },
+        { "label": "餐饮", "value": "food" },
+        { "label": "交通", "value": "transport" }
+      ]
+    }
+  ],
+  "derived": [
+    {
+      "id": "remaining",
+      "label": "剩余预算",
+      "unit": "元",
+      "expression": {
+        "op": "subtract",
+        "left": { "op": "state", "id": "budget" },
+        "right": { "op": "state", "id": "spent" }
+      }
+    }
+  ],
+  "elements": [
+    { "kind": "text", "value": "调整总额和已分配支出，查看余额变化。" },
+    { "kind": "slider", "bind": "budget" },
+    { "kind": "number-input", "bind": "spent" },
+    { "kind": "select", "bind": "priority" },
+    { "kind": "value", "label": "优先类别", "source": { "kind": "state", "id": "priority" } },
+    { "kind": "value", "label": "可用余额", "source": { "kind": "derived", "id": "remaining" } }
+  ]
+}
