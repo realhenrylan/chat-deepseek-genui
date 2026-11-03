@@ -59,12 +59,12 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 
 ### 使用发布包
 
-1. 下载 [deepseek-genui-v0.1.1.zip](release/deepseek-genui-v0.1.1.zip)，解压为目录。
+1. 从 [GitHub Releases v0.1.1](https://github.com/realhenrylan/chat-deepseek-genui/releases/tag/v0.1.1) 下载附件 [deepseek-genui-v0.1.1.zip](https://github.com/realhenrylan/chat-deepseek-genui/releases/download/v0.1.1/deepseek-genui-v0.1.1.zip)，解压为目录。
 2. **Edge**：打开 `edge://extensions`，开启「开发人员模式」，点击「加载解压缩的扩展」，选择解压目录。
 3. **Chrome**：打开 `chrome://extensions`，开启「开发者模式」，点击「加载已解压的扩展程序」，选择解压目录。
 4. 打开或刷新 `https://chat.deepseek.com/`。
 
-更新时重新加载扩展，并刷新已打开的 DeepSeek 标签页。发布包包含交互节点 Logo 与扩展图标；文件清单和 SHA256 见 [验证报告](docs/phase8-verification.md)。
+更新时重新加载扩展，并刷新已打开的 DeepSeek 标签页。发布页同时提供 SHA256 校验文件；发布包包含交互节点 Logo 与扩展图标，逐文件清单见 [验证报告](docs/phase8-verification.md)。
 
 ### 从源码构建
 
