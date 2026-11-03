@@ -35,19 +35,23 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 
 ### 功能截图
 
-以下界面使用仓库内的示例数据，经项目实际渲染组件在本地生成；不含真实账号、会话或个人信息。
+以下为扩展在 DeepSeek 页面上的真实使用截图；数据由 AI 生成并标注为示例，不含账号、会话或其他个人信息。
 
-![月度预算规划：参数输入、余额计算、预算图表和明细表](docs/screenshots/budget-planning.png)
+![选购对比：用预算和重量滑块筛选笔记本，表格比较价格、重量、屏幕与电池](docs/screenshots/shopping-comparison.png)
 
-*月度预算：调整收入与支出，查看实时余额、图表和预算明细。*
+*选购对比：按预算与重量筛选候选机型，用表格比较关键参数。*
 
-![选购比较：预算条件、排序表格和候选价格图表](docs/screenshots/shopping-comparison.png)
+![二次函数学习：a、b、c 系数滑块，判别式、顶点和联动抛物线图](docs/screenshots/parabola-interactive.png)
 
-*选购对比：按预算筛选候选项，比较单价与综合分，并查看示例数据说明。*
+*数学学习：拖动系数滑块，查看判别式、顶点与函数图像同步变化。*
 
-![二次函数学习：系数滑块、判别式和联动抛物线图](docs/screenshots/parabola-interactive.png)
+![成本计算：每月健身次数滑块与月卡、季卡、年卡单次成本对比表](docs/screenshots/fitness-cost.png)
 
-*数学学习：调整系数，查看判别式说明与函数图像同步变化。*
+*成本计算：调整每月次数，比较月卡、季卡、年卡的单次成本。*
+
+![规格对比：RTX Spark 与 DGX Spark 的定位、算力、内存与参考价对比表](docs/screenshots/rtx-dgx-comparison.png)
+
+*规格对比：用表格比较两款产品的定位、算力、内存和参考价。*
 
 ### 适合哪些问题
 
