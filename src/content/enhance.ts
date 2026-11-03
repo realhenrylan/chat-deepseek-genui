@@ -2,6 +2,18 @@ import { LOG_PREFIX } from './lifecycle';
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { parseGenui } from '../protocol/validate';
 import type { GenuiFailureCode } from '../protocol/types';
+import {
+  diagnoseIncompatible,
+  diagnoseParseFailure,
+  type GenuiDiagnostic,
+} from '../protocol/diagnose';
+import {
+  GenuiStatusPanel,
+  STATUS_ATTR,
+  STATUS_HOST_ATTR,
+  type BlockStatus,
+} from './failure-ui';
+import type { RepairDeliveryResult } from './repair';
 import { mountCard, type MountedCard } from '../render/mount';
 import type { ElementRegistry } from '../render/registry';
 
@@ -37,6 +49,11 @@ export interface EnhanceOptions {
    * 等可验证后的重新扫描再判定；生产接线 content/viewport-gate。
    */
   isBlockUnverifiable?: (block: HTMLElement) => boolean;
+  /**
+   * 「生成修复请求」投递：生产接线 content/repair.deliverRepairRequest
+   * （写入可见草稿或复制到剪贴板，绝不自动发送）。
+   */
+  onRepairRequest?: (prompt: string) => RepairDeliveryResult | Promise<RepairDeliveryResult>;
 }
 
 export interface EnhanceResult {
@@ -51,6 +68,12 @@ export interface EnhanceResult {
 interface FailedRecord {
   signature: string;
   reason: EnhanceFailureReason;
+}
+
+interface StatusRecord {
+  signature: string;
+  status: BlockStatus | null;
+  panel: GenuiStatusPanel;
 }
 
 interface MountedRecord {
@@ -76,6 +99,12 @@ function removeState(block: Element): void {
   block.removeAttribute(REASON_ATTR);
 }
 
+function blockStatusFor(diagnostic: GenuiDiagnostic): BlockStatus {
+  if (diagnostic.status === 'incomplete') return 'incomplete';
+  if (diagnostic.status === 'page-incompatible') return 'incompatible';
+  return 'invalid';
+}
+
 /** React 根必须在 host 被移除前卸载；原始块即使已断开也恢复，供页面复用节点。 */
 function disposeMounted(record: MountedRecord, clearState: boolean): void {
   record.mountedCard.unmount();
@@ -87,12 +116,96 @@ function disposeMounted(record: MountedRecord, clearState: boolean): void {
 export class EnhancementManager {
   private readonly mounted = new Map<HTMLElement, MountedRecord>();
   private readonly failed = new Map<HTMLElement, FailedRecord>();
+  private readonly statuses = new Map<HTMLElement, StatusRecord>();
   private enabled = true;
 
   constructor(
     private readonly doc: Document,
     private readonly options: EnhanceOptions = {},
   ) {}
+
+  private ensureStatus(
+    candidate: GenuiBlockCandidate,
+    signature: string,
+  ): StatusRecord {
+    const existing = this.statuses.get(candidate.block);
+    if (existing && existing.signature === signature) return existing;
+    if (existing) this.destroyStatus(candidate.block);
+    const panel = new GenuiStatusPanel(this.doc, candidate.block, {
+      onRequestRepair: this.options.onRepairRequest,
+    });
+    const record: StatusRecord = { signature, status: null, panel };
+    this.statuses.set(candidate.block, record);
+    return record;
+  }
+
+  private destroyStatus(block: HTMLElement): void {
+    const record = this.statuses.get(block);
+    if (!record) {
+      block.removeAttribute(STATUS_ATTR);
+      return;
+    }
+    record.panel.destroy();
+    this.statuses.delete(block);
+    block.removeAttribute(STATUS_ATTR);
+  }
+
+  private showStatus(
+    candidate: GenuiBlockCandidate,
+    signature: string,
+    status: BlockStatus,
+    diagnostic?: GenuiDiagnostic,
+    raw = '',
+  ): void {
+    const record = this.ensureStatus(candidate, signature);
+    candidate.block.setAttribute(STATUS_ATTR, status);
+    // 相同的暂态不重复渲染，避免状态 host 自身触发不必要的页面变更。
+    if (record.status === status && !diagnostic) return;
+    record.status = status;
+    if (status === 'pending' || status === 'validating' || status === 'deferred') {
+      record.panel.showPending(status);
+    } else if (diagnostic) {
+      record.panel.showDiagnostic(diagnostic, raw);
+    }
+  }
+
+  /** 生成中：显示等待完整内容，不解析、不判定失败。 */
+  markPending(candidates: GenuiBlockCandidate[]): void {
+    if (!this.enabled) return;
+    for (const candidate of candidates) {
+      if (this.mounted.has(candidate.block) || this.failed.has(candidate.block)) continue;
+      this.showStatus(candidate, candidateSignature(candidate), 'pending');
+    }
+  }
+
+  /** 内容稳定、即将校验：把已有的等待面板切换为验证中。 */
+  markValidating(candidates: GenuiBlockCandidate[]): void {
+    if (!this.enabled) return;
+    for (const candidate of candidates) {
+      if (this.mounted.has(candidate.block) || this.failed.has(candidate.block)) continue;
+      if (!this.statuses.has(candidate.block)) continue;
+      this.showStatus(candidate, candidateSignature(candidate), 'validating');
+    }
+  }
+
+  private sweepStatuses(candidates: GenuiBlockCandidate[]): void {
+    const byBlock = new Map(candidates.map((candidate) => [candidate.block, candidate]));
+    for (const [block, record] of this.statuses) {
+      const candidate = byBlock.get(block);
+      if (!block.isConnected || !candidate || this.mounted.has(block)) {
+        this.destroyStatus(block);
+        continue;
+      }
+      const signature = candidateSignature(candidate);
+      if (signature === record.signature) continue;
+      // 生成中的内容每个扫描都在变化；保留暂态面板只更新签名，避免面板闪烁。
+      if (record.status === 'pending' || record.status === 'validating' || record.status === 'deferred') {
+        record.signature = signature;
+      } else {
+        this.destroyStatus(block);
+      }
+    }
+  }
 
   /**
    * 对当前 DOM 做一次协调。allowMount=false 只清理已失效/已变化的挂载，
@@ -120,6 +233,8 @@ export class EnhancementManager {
         this.failed.delete(block);
       }
     }
+
+    this.sweepStatuses(candidates);
 
     if (!this.enabled || !allowMount) return result;
 
@@ -185,7 +300,12 @@ export class EnhancementManager {
     this.mounted.clear();
     this.failed.clear();
 
+    for (const block of [...this.statuses.keys()]) this.destroyStatus(block);
     for (const block of this.doc.querySelectorAll(`[${STATE_ATTR}]`)) removeState(block);
+    for (const block of this.doc.querySelectorAll(`[${STATUS_ATTR}]`)) {
+      block.removeAttribute(STATUS_ATTR);
+    }
+    for (const host of this.doc.querySelectorAll(`[${STATUS_HOST_ATTR}]`)) host.remove();
     for (const host of this.doc.querySelectorAll(`[data-genui-host]`)) host.remove();
   }
 
@@ -199,9 +319,14 @@ export class EnhancementManager {
     const host = this.doc.createElement('div');
     host.className = HOST_CLASS;
     host.setAttribute('data-genui-host', '');
+    const raw = candidate.pre?.textContent ?? '';
 
     /** 统一失败出口：视口门控命中时不判失败，等可验证后的重新扫描。 */
-    const reject = (reason: EnhanceFailureReason, detail?: string): 'failed' | 'deferred' => {
+    const reject = (
+      reason: EnhanceFailureReason,
+      detail?: string,
+      diagnostic?: GenuiDiagnostic,
+    ): 'failed' | 'deferred' => {
       block.style.display = originalDisplay;
       host.remove();
       const suffix = detail ? `: ${detail}` : '';
@@ -209,27 +334,31 @@ export class EnhancementManager {
         // 站点对视口外代码块延迟渲染（docs/phase7-acceptance.md 限制 2）：
         // 此刻的 missing-pre / invalid-json 只是文本尚未补齐，不能当真实失败。
         removeState(block);
+        this.showStatus(candidate, signature, 'deferred');
         console.debug(`${LOG_PREFIX} block deferred (offscreen)${suffix}`);
         return 'deferred';
       }
       if (this.enabled) {
         markFailed(block, reason);
         this.failed.set(block, { signature, reason });
+        if (diagnostic) {
+          this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
+        }
         console.debug(`${LOG_PREFIX} block skipped (${reason})${suffix}`);
       } else {
         removeState(block);
+        this.destroyStatus(block);
       }
       return 'failed';
     };
 
     if (!candidate.pre) {
-      return reject('missing-pre', '结构异常，无 pre 内容');
+      return reject('missing-pre', '结构异常，无 pre 内容', diagnoseIncompatible('missing-pre'));
     }
 
-    const raw = candidate.pre.textContent ?? '';
     const parsed = parseGenui(raw);
     if (!parsed.ok) {
-      return reject(parsed.code, parsed.detail);
+      return reject(parsed.code, parsed.detail, diagnoseParseFailure(parsed, raw));
     }
 
     block.before(host);
@@ -251,7 +380,7 @@ export class EnhancementManager {
           console.error(`${LOG_PREFIX} card render failed, original content restored`, error);
           if (!record) {
             fatalDuringInitialRender = true;
-            reject('render-error');
+            reject('render-error', undefined, diagnoseIncompatible('render-error'));
             return;
           }
           if (this.mounted.get(block) !== record) return;
@@ -260,14 +389,17 @@ export class EnhancementManager {
           if (this.enabled) {
             this.failed.set(block, { signature, reason: 'render-error' });
             markFailed(block, 'render-error');
+            const diagnostic = diagnoseIncompatible('render-error');
+            this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
           } else {
             removeState(block);
+            this.destroyStatus(block);
           }
         },
       });
     } catch (error) {
       console.error(`${LOG_PREFIX} card mount failed`, error);
-      return reject('mount-failed');
+      return reject('mount-failed', undefined, diagnoseIncompatible('mount-failed'));
     }
 
     if (fatalDuringInitialRender) {
@@ -276,6 +408,7 @@ export class EnhancementManager {
     }
 
     record = { block, host, raw, signature, originalDisplay, mountedCard };
+    this.destroyStatus(block);
     block.style.display = 'none';
     block.setAttribute(STATE_ATTR, 'mounted');
     this.mounted.set(block, record);

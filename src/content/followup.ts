@@ -1,5 +1,5 @@
 /**
- * 阶段 6：把「继续讨论」摘要带入聊天输入框（生产接线）。
+ * 阶段 6：把「继续讨论」摘要或修复请求带入聊天输入框（生产接线）。
  *
  * 取证（docs/compatibility-investigation.md §3.5 / §5）：
  * - 输入框本体是 `textarea[name="search"]`，placeholder「给 DeepSeek 发送消息」；
@@ -35,20 +35,28 @@ export function findChatInput(doc: Document): HTMLTextAreaElement | null {
   );
 }
 
-export function fillContinueIntoInput(doc: Document, summary: string): FillResult {
+/**
+ * 追加一段文本到聊天草稿：保留现有草稿逐字节不变，相同内容不重复追加。
+ * 找不到确定的输入框时返回 no-input，由调用方决定复制等退路。
+ */
+export function appendDraftIntoInput(doc: Document, text: string): FillResult {
   const textarea = findChatInput(doc);
   if (!textarea) return 'no-input';
 
   const existing = textarea.value;
   if (existing.trim() === '') {
-    setNativeValue(textarea, summary);
+    setNativeValue(textarea, text);
     return 'filled';
   }
-  // 已含同一摘要时不再追加（重复点击去重），也不改变原草稿。
-  if (existing.includes(summary)) return 'appended';
+  // 已含同一内容时不再追加（重复点击去重），也不改变原草稿。
+  if (existing.includes(text)) return 'appended';
   // 原草稿逐字节保留：不裁剪末尾空白；草稿以换行结尾时直接在其后另起一行，
   // 否则补一个空行分隔，避免改变原有换行或 Markdown 结构。
   const separator = /\n$/.test(existing) ? '' : '\n\n';
-  setNativeValue(textarea, existing + separator + summary);
+  setNativeValue(textarea, existing + separator + text);
   return 'appended';
+}
+
+export function fillContinueIntoInput(doc: Document, summary: string): FillResult {
+  return appendDraftIntoInput(doc, summary);
 }

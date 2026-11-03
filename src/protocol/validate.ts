@@ -1,5 +1,6 @@
 import type { ErrorObject } from 'ajv';
 import genuiValidate from './genui-validator.generated';
+import { buildSchemaIssues } from './diagnose';
 import { isStepAligned } from './step';
 import {
   LIMITS,
@@ -556,7 +557,15 @@ export function parseGenui(raw: string): ParseGenuiResult {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    return { ok: false, code: 'invalid-json', detail: errorMessage(error) };
+    const detail = errorMessage(error);
+    const match = /position\s+(\d+)/i.exec(detail);
+    const position = match ? Math.min(Number(match[1]), raw.length) : undefined;
+    return {
+      ok: false,
+      code: 'invalid-json',
+      detail,
+      ...(position === undefined ? {} : { position }),
+    };
   }
 
   if (
@@ -574,10 +583,12 @@ export function parseGenui(raw: string): ParseGenuiResult {
   }
 
   if (!validate(parsed)) {
+    const errors = validate.errors ?? [];
     return {
       ok: false,
       code: 'schema-violation',
-      detail: formatErrors(validate.errors ?? []),
+      detail: formatErrors(errors),
+      issues: buildSchemaIssues(errors, parsed),
     };
   }
 

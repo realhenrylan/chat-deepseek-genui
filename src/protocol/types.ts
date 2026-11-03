@@ -277,4 +277,24 @@ export type GenuiFailureCode =
 
 export type ParseGenuiResult =
   | { ok: true; document: GenuiDocument }
-  | { ok: false; code: GenuiFailureCode; detail: string };
+  | {
+      ok: false;
+      code: GenuiFailureCode;
+      detail: string;
+      /** 结构校验中筛掉 oneOf 分支噪音后的具体问题（可选）。 */
+      issues?: GenuiSchemaIssue[];
+      /** JSON.parse 失败时的字符位置（可选）。 */
+      position?: number;
+    };
+
+/** 一条面向修复的结构问题：路径、关键字与可读预期。 */
+export interface GenuiSchemaIssue {
+  /** 原始 JSON Pointer，例如 `/elements/3/initialSort`。 */
+  pointer: string;
+  /** 用户可读路径，例如 `elements[3].initialSort`。 */
+  path: string;
+  keyword: string;
+  message: string;
+  expected?: string;
+  actual?: string;
+}
