@@ -298,7 +298,7 @@ export class EnhancementManager {
     if (!identity.persistable) {
       return {
         ok: false,
-        message: '保存失败：当前账号、会话或消息身份无法可靠确认，未保存到本机。',
+        message: '保存失败：当前会话或消息身份无法可靠确认，未保存到本机。',
       };
     }
 

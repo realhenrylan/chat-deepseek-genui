@@ -558,24 +558,45 @@ describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () 
     );
   });
 
-  it('会话已知但账号标记缺失时拒绝写入本机', async () => {
+  it('账号标记缺失时仍按会话作用域保存，并在刷新后恢复', async () => {
     const area = new MemoryArea();
-    const doc = budgetDoc();
-    enhanceDocument(doc, { planStore: createPlanStore(area), sessionId: SESSION });
+    const firstDoc = budgetDoc();
+    const first = createEnhancementManager(firstDoc, {
+      planStore: createPlanStore(area),
+      sessionId: SESSION,
+    });
+    await first.loadSavedPlans();
+    first.reconcile(true);
 
-    const host = doc.querySelector<HTMLElement>('.genui-card-host');
+    const host = firstDoc.querySelector<HTMLElement>('.genui-card-host');
     expect(host).not.toBeNull();
     if (!host) return;
-    const save = host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save');
-    expect(save).not.toBeNull();
+    setInputValue(sliderOf(host), '7000');
     await flushUi();
-    save?.click();
+    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save')?.click();
     await flushUi();
 
-    expect(area.items.size).toBe(0);
+    expect(area.items.size).toBe(1);
+    const [savedKey] = [...area.items.keys()];
+    expect(savedKey).toContain('acct-unknown');
     expect(host.shadowRoot?.querySelector('.genui-card-plan-feedback')?.textContent).toContain(
-      '无法可靠确认',
+      '已保存到本机',
     );
+    first.dispose();
+
+    const secondDoc = budgetDoc();
+    const second = createEnhancementManager(secondDoc, {
+      planStore: createPlanStore(area),
+      sessionId: SESSION,
+    });
+    await second.loadSavedPlans();
+    second.reconcile(true);
+
+    const restored = secondDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(restored).not.toBeNull();
+    if (!restored) return;
+    expect(sliderOf(restored).value).toBe('7000');
+    second.dispose();
   });
 
   it('账号作用域不同的保存记录不会被读取', async () => {

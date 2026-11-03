@@ -99,6 +99,11 @@ describe('卡片身份：会话与消息', () => {
     expect(unknown?.sessionId).toBe(UNKNOWN_SESSION_ID);
     expect(unknown?.ambiguous).toBe(false);
     expect(unknown?.persistable).toBe(false);
+
+    // 账号标记存在也不能弥补会话未知。
+    const unknownWithAccount = identitiesFor(doc, { accountId: 'u1' })[0];
+    expect(unknownWithAccount?.sessionId).toBe(UNKNOWN_SESSION_ID);
+    expect(unknownWithAccount?.persistable).toBe(false);
   });
 
   it('消息键优先虚拟列表 key，其次 data-message-id', () => {
@@ -220,7 +225,7 @@ describe('卡片身份：账号作用域', () => {
     expect(identity?.persistable).toBe(true);
   });
 
-  it('账号标记缺失时禁止本机保存，但页面内键仍稳定', () => {
+  it('账号标记缺失时仍按会话作用域保存，页面内键稳定', () => {
     const doc = buildDoc(
       `<div data-virtual-list-item-key="v1"><div class="ds-assistant-message-main-content">${blockMarkup()}</div></div>`,
     );
@@ -228,7 +233,8 @@ describe('卡片身份：账号作用域', () => {
     const identity = identitiesFor(doc, { sessionId: '/a/chat/s/s' })[0];
     expect(identity?.accountId).toBe(UNKNOWN_ACCOUNT_ID);
     expect(identity?.ambiguous).toBe(false);
-    expect(identity?.persistable).toBe(false);
+    expect(identity?.persistable).toBe(true);
+    expect(identity?.key).toContain(`|${UNKNOWN_ACCOUNT_ID}|`);
     expect(identitiesFor(doc, { sessionId: '/a/chat/s/s' })[0]?.key).toBe(identity?.key);
   });
 

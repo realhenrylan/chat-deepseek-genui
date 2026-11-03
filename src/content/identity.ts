@@ -221,10 +221,9 @@ export function computeCardIdentities(
         duplicateIndex: seenCount,
         documentHash,
         ambiguous,
-        persistable:
-          !ambiguous &&
-          sessionId !== UNKNOWN_SESSION_ID &&
-          accountId !== UNKNOWN_ACCOUNT_ID,
+        // 会话路由可验证时即可持久化；账号标记只用于叠加作用域，缺失时
+        // 记为 acct-unknown，不阻断保存（否则现网没有账号标记时功能不可用）。
+        persistable: !ambiguous && sessionId !== UNKNOWN_SESSION_ID,
       };
       identities.set(candidate.block, identity);
     }
