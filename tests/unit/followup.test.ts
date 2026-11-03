@@ -67,11 +67,11 @@ describe('fillContinueIntoInput', () => {
     expect(textarea.value).toContain(SUMMARY_B);
   });
 
-  it('草稿只有空白字符时按空处理，直接填入', () => {
+  it('草稿只有空白字符时仍逐字保留，只追加摘要', () => {
     const textarea = createTextarea('  \n  ');
     const status = fillContinueIntoInput(document, SUMMARY_A);
-    expect(status).toBe('filled');
-    expect(textarea.value).toBe(SUMMARY_A);
+    expect(status).toBe('appended');
+    expect(textarea.value).toBe(`  \n  \n\n${SUMMARY_A}`);
   });
 
   it('优先 name=search，回退 placeholder 含「发送消息」的 textarea', () => {

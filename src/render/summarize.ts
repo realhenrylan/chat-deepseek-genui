@@ -51,6 +51,10 @@ export interface ContinueCandidateCell {
   text: string;
   numeric?: number;
   unit?: string;
+  /** 单元格缺失；存在时不能把该字段当成「相同」。 */
+  missing?: boolean;
+  /** 单元格无法计算；存在时不能把该字段当成「相同」。 */
+  error?: string;
 }
 
 export interface ContinueCandidate {
@@ -71,6 +75,9 @@ export interface ContinueTableSnapshot {
   alternative: ContinueCandidate | null;
   selectionHidden: boolean;
   selectionMissing: boolean;
+  /** 显式对比项被筛选隐藏/已不存在；用于如实说明，而不是悄悄换一个对比对象。 */
+  compareHidden: boolean;
+  compareMissing: boolean;
   errors: string[];
   emptyText?: string;
 }
@@ -102,7 +109,11 @@ export const MAX_CONTINUE_SUMMARY_LENGTH = 1200;
 const MAX_TABLES = 4;
 const MAX_CELLS = 6;
 const MAX_DIFFS = 3;
-const TRUNCATION_NOTE = '\n……（摘要过长，已省略部分内容）';
+/** 单行上限：超长单元格不能挤掉选中项与请求句。 */
+const MAX_TABLE_LINE = 240;
+/** 请求句上限：即使调用方传入超长文本，也不能把摘要顶出上限。 */
+const MAX_REQUEST_LENGTH = 300;
+const OMITTED_NOTE = '……（部分参数与结果已省略）';
 
 function formatCandidate(candidate: ContinueCandidate, selectedLabel: string): string {
   const cells = candidate.cells
@@ -115,12 +126,20 @@ function formatCandidate(candidate: ContinueCandidate, selectedLabel: string): s
 
 function describeDifferences(selected: ContinueCandidate, alternative: ContinueCandidate): string {
   const diffs: string[] = [];
+  const missing: string[] = [];
+  let compared = 0;
   const count = Math.min(selected.cells.length, alternative.cells.length);
   for (let index = 0; index < count && diffs.length < MAX_DIFFS; index += 1) {
     const left = selected.cells[index]!;
     const right = alternative.cells[index]!;
     // 名称列就是候选标签本身，不应算作「主要差异」。
     if (left.text === selected.label && right.text === alternative.label) continue;
+    // 缺失或无法计算的字段无从比较：不能当成「相同」，也不能伪造差异。
+    if (left.missing || right.missing || left.error || right.error) {
+      missing.push(left.column);
+      continue;
+    }
+    compared += 1;
     if (typeof left.numeric === 'number' && typeof right.numeric === 'number') {
       const delta = Math.abs(left.numeric - right.numeric);
       if (delta > 0) {
@@ -133,8 +152,16 @@ function describeDifferences(selected: ContinueCandidate, alternative: ContinueC
       diffs.push(`${left.column}不同（${left.text} / ${right.text}）`);
     }
   }
-  if (diffs.length === 0) return '主要差异：两项的数值与主要字段相同。';
-  return `主要差异：${diffs.join('；')}。`;
+  if (diffs.length > 0) {
+    const suffix =
+      missing.length > 0 ? `；${missing.join('、')} 缺失或无法计算，未参与比较` : '';
+    return `主要差异：${diffs.join('；')}${suffix}。`;
+  }
+  if (missing.length > 0) {
+    return `主要差异：资料不足，无法可靠比较（${missing.join('、')} 缺失或无法计算）。`;
+  }
+  if (compared === 0) return '主要差异：没有可比较的字段。';
+  return '主要差异：两项的数值与主要字段相同。';
 }
 
 function describeTable(table: ContinueTableSnapshot): string[] {
@@ -155,6 +182,10 @@ function describeTable(table: ContinueTableSnapshot): string[] {
   }
   if (table.selected && table.alternative) {
     lines.push(describeDifferences(table.selected, table.alternative));
+  }
+  if (table.selectable && table.selected) {
+    if (table.compareMissing) lines.push('- 指定的对比候选项已不存在。');
+    else if (table.compareHidden) lines.push('- 指定的对比候选项被当前筛选隐藏。');
   }
 
   if (table.selectable) {
@@ -177,48 +208,117 @@ function describeTable(table: ContinueTableSnapshot): string[] {
   return lines;
 }
 
+function clipLine(line: string): string {
+  return line.length > MAX_TABLE_LINE ? `${line.slice(0, MAX_TABLE_LINE - 1)}…` : line;
+}
+
+/** 按预算填充参数/结果行；放不下时追加省略标记，绝不把表格与请求挤出去。 */
+function fitHead(lines: string[], budget: number): string[] {
+  const fullCost = lines.reduce((sum, line) => sum + line.length, Math.max(0, lines.length - 1));
+  const truncated = fullCost > budget;
+  // 预留省略提示的位置，避免「刚好差一点」时既不提示、又悄悄丢掉后面的参数。
+  const limit = truncated ? Math.max(0, budget - (OMITTED_NOTE.length + 1)) : budget;
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const cost = line.length + (kept.length > 0 ? 1 : 0);
+    if (used + cost > limit) break;
+    kept.push(line);
+    used += cost;
+  }
+  if (truncated && kept.length > 0) kept.push(OMITTED_NOTE);
+  return kept;
+}
+
 export function buildContinueSummary(input: ContinueSummaryInput): string {
   const title =
     typeof input.title === 'string' && input.title.trim() !== '' ? input.title.trim() : null;
-  const lines: string[] = [title ? `继续讨论「${title}」：` : '继续讨论当前界面：'];
+  const headLines: string[] = [title ? `继续讨论「${title}」：` : '继续讨论当前界面：'];
 
   for (const variable of input.state ?? []) {
     const value = getOwn(input.stateValues ?? {}, variable.id);
     if (value === undefined) {
-      lines.push(`- ${variable.label}：（未确认）`);
+      headLines.push(`- ${variable.label}：（未确认）`);
       continue;
     }
-    lines.push(`- ${variable.label}：${stateDisplay(variable, value)}`);
+    headLines.push(`- ${variable.label}：${stateDisplay(variable, value)}`);
   }
 
   for (const item of input.derived ?? []) {
     const error = getOwn(input.derivedErrors ?? {}, item.id);
     if (typeof error === 'string' && error !== '') {
-      lines.push(`- ${item.label}：无法计算（${error}）`);
+      headLines.push(`- ${item.label}：无法计算（${error}）`);
       continue;
     }
     const raw = getOwn(input.derivedValues ?? {}, item.id);
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-      lines.push(`- ${item.label}：无法计算（暂无结果）`);
+      headLines.push(`- ${item.label}：无法计算（暂无结果）`);
       continue;
     }
-    lines.push(`- ${item.label}：${formatNumber(raw)}${item.unit ? ` ${item.unit}` : ''}`);
+    headLines.push(`- ${item.label}：${formatNumber(raw)}${item.unit ? ` ${item.unit}` : ''}`);
   }
 
   for (const draft of (input.drafts ?? []).slice(0, 6)) {
     const invalid = draft.invalid ? '格式无效，' : '';
-    lines.push(`- ${draft.label}：输入框中未提交「${draft.raw}」，${invalid}尚未生效。`);
+    headLines.push(`- ${draft.label}：输入框中未提交「${draft.raw}」，${invalid}尚未生效。`);
   }
 
-  for (const table of (input.tables ?? []).slice(0, MAX_TABLES)) {
-    lines.push(...describeTable(table));
+  const tableBlocks = (input.tables ?? [])
+    .slice(0, MAX_TABLES)
+    .map((table) => describeTable(table).map((line) => clipLine(line)));
+
+  const rawRequest = typeof input.request === 'string' ? input.request.trim() : '';
+  const request =
+    rawRequest.length > MAX_REQUEST_LENGTH
+      ? `${rawRequest.slice(0, MAX_REQUEST_LENGTH - 1)}…`
+      : rawRequest;
+  const requestLine = request !== '' ? request : '请基于以上当前条件与结果继续讨论。';
+
+  const full = [...headLines, ...tableBlocks.flat(), requestLine].join('\n');
+  if (full.length <= MAX_CONTINUE_SUMMARY_LENGTH) return full;
+
+  // 超长时先保表格与结尾请求，再用剩余预算放参数/结果。
+  // 这样长参数列表不会把「已选 C」「筛选 A/C」和「请比较两个方案」截掉。
+  const requestCost = requestLine.length + 1;
+  const tableBudget = MAX_CONTINUE_SUMMARY_LENGTH - requestCost;
+  const keptTables: string[] = [];
+  let tableUsed = 0;
+  for (const block of tableBlocks) {
+    const cost = block.join('\n').length + 1;
+    if (tableUsed + cost <= tableBudget) {
+      keptTables.push(...block);
+      tableUsed += cost;
+      continue;
+    }
+    // 空间不足时至少保留表头（含筛选与计数）和已选项。
+    const compact = block.filter((line, index) => index === 0 || line.startsWith('- 已选：'));
+    const compactCost = compact.join('\n').length + 1;
+    if (compact.length > 0 && tableUsed + compactCost <= tableBudget) {
+      keptTables.push(...compact);
+      tableUsed += compactCost;
+      continue;
+    }
+    if (keptTables.length === 0 && compact.length > 0) {
+      // 第一张表也放不下：截短每行，仍然让选中项与筛选条件留在摘要里。
+      const remaining = Math.max(0, tableBudget - tableUsed);
+      const share = Math.max(24, Math.floor(remaining / compact.length) - 1);
+      const clipped = compact.map((line) =>
+        line.length > share ? `${line.slice(0, Math.max(8, share - 1))}…` : line,
+      );
+      keptTables.push(...clipped);
+      tableUsed += clipped.join('\n').length + 1;
+    }
+    break;
   }
 
-  const request = typeof input.request === 'string' ? input.request.trim() : '';
-  lines.push(request !== '' ? request : '请基于以上当前条件与结果继续讨论。');
-
-  const summary = lines.join('\n');
-  if (summary.length <= MAX_CONTINUE_SUMMARY_LENGTH) return summary;
-  const budget = MAX_CONTINUE_SUMMARY_LENGTH - TRUNCATION_NOTE.length;
-  return `${summary.slice(0, Math.max(0, budget)).trimEnd()}${TRUNCATION_NOTE}`;
+  const headBudget = MAX_CONTINUE_SUMMARY_LENGTH - requestCost - tableUsed - 1;
+  const keptHead = fitHead(headLines, headBudget);
+  let summary = [...keptHead, ...keptTables, requestLine].join('\n');
+  if (summary.length > MAX_CONTINUE_SUMMARY_LENGTH) {
+    // 兜底：仍要保留结尾请求，只裁剪正文。
+    const bodyBudget = MAX_CONTINUE_SUMMARY_LENGTH - requestCost;
+    const body = [...keptHead, ...keptTables].join('\n').slice(0, Math.max(0, bodyBudget)).trimEnd();
+    summary = body !== '' ? `${body}\n${requestLine}` : requestLine;
+  }
+  return summary;
 }

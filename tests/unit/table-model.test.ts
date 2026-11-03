@@ -109,6 +109,46 @@ describe('table-model', () => {
       .toEqual({ filter: '', sort: null });
   });
 
+  it('显式对比项在筛选后仍保持身份，隐藏或缺失时明确标记', () => {
+    const model = buildTableModel(table, evaluation, {
+      filter: '',
+      sort: null,
+      selected: 2,
+      compare: 0,
+    });
+    expect(model.compareKey).toBe(0);
+    expect(model.compareHidden).toBe(false);
+    expect(model.compareMissing).toBe(false);
+
+    const hidden = buildTableModel(table, evaluation, {
+      filter: 'C',
+      sort: null,
+      selected: 2,
+      compare: 0,
+    });
+    expect(hidden.compareKey).toBe(0);
+    expect(hidden.compareHidden).toBe(true);
+    expect(hidden.compareMissing).toBe(false);
+
+    const missing = buildTableModel(table, evaluation, {
+      filter: '',
+      sort: null,
+      selected: 2,
+      compare: 99,
+    });
+    expect(missing.compareMissing).toBe(true);
+  });
+
+  it('对比项与选中项重合时视为未指定，避免自己和自己比较', () => {
+    const model = buildTableModel(table, evaluation, {
+      filter: '',
+      sort: null,
+      selected: 2,
+      compare: 2,
+    });
+    expect(model.compareKey).toBeNull();
+  });
+
   it('显示条件失败时保留行并收集错误文案，不静默丢弃', () => {
     const broken = {
       ...table,

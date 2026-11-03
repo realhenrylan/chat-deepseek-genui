@@ -54,16 +54,20 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
   };
 
   const selectRow = (key: number) => {
-    changeView({ selected: key });
+    // 选中项与对比项不能是同一行；用户改选后旧对比项自动让位。
+    changeView({ selected: key, compare: current?.compare === key ? null : current?.compare ?? null });
   };
 
   const clearSelection = () => {
-    changeView({ selected: null });
+    changeView({ selected: null, compare: null });
   };
 
   const selectable = element.selectable === true;
   const selectedRow =
     model.selectedKey === null ? undefined : model.rows.find((row) => row.key === model.selectedKey);
+  const compareRow =
+    model.compareKey === null ? undefined : model.rows.find((row) => row.key === model.compareKey);
+  const compareOptions = model.sortedRows.filter((row) => row.key !== model.selectedKey);
   const columnCount = element.columns.length + (selectable ? 1 : 0);
   const emptyText =
     element.emptyText ?? (model.rows.length === 0 ? '没有可显示的数据' : '没有符合筛选条件的数据');
@@ -72,8 +76,12 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
   if (selectable) {
     if (model.selectedMissing) selectionNotice = '已选候选项已不存在，请重新选择。';
     else if (model.selectedHidden) selectionNotice = '已选候选项不在当前筛选结果中。';
-    else if (selectedRow) selectionNotice = `已选候选项：${rowLabel(selectedRow, element.columns)}`;
-    else if (model.sortedRows.length > 0) selectionNotice = '可点击行首圆点选中候选项。';
+    else if (selectedRow) {
+      selectionNotice = `已选候选项：${rowLabel(selectedRow, element.columns)}`;
+      if (model.compareMissing) selectionNotice += '；对比候选项已不存在。';
+      else if (model.compareHidden) selectionNotice += '；对比候选项不在当前筛选结果中。';
+      else if (compareRow) selectionNotice += `；对比候选项：${rowLabel(compareRow, element.columns)}`;
+    } else if (model.sortedRows.length > 0) selectionNotice = '可点击行首圆点选中候选项。';
   }
 
   return (
@@ -97,6 +105,32 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
             />
           </label>
           {element.sortable ? <span className="genui-table-hint">点击列标题排序</span> : null}
+          {selectable && model.selectedKey !== null && compareOptions.length > 0 ? (
+            <label className="genui-table-compare">
+              <span className="genui-visually-hidden">选择对比候选项</span>
+              <select
+                value={model.compareKey === null ? '' : String(model.compareKey)}
+                aria-label="选择对比候选项"
+                onChange={(event) => {
+                  const raw = event.currentTarget.value;
+                  changeView({ compare: raw === '' ? null : Number(raw) });
+                }}
+              >
+                <option value="">对比项：未指定</option>
+                {compareOptions.map((row) => (
+                  <option key={row.key} value={String(row.key)}>
+                    {`对比：${rowLabel(row, element.columns)}`}
+                  </option>
+                ))}
+                {/* 已指定但被筛选隐藏的对比项仍保留在选项里，避免控件显示成「未指定」。 */}
+                {compareRow && !model.sortedRows.some((row) => row.key === compareRow.key) ? (
+                  <option value={String(compareRow.key)}>
+                    {`对比：${rowLabel(compareRow, element.columns)}（不在筛选结果中）`}
+                  </option>
+                ) : null}
+              </select>
+            </label>
+          ) : null}
           {selectable && model.selectedKey !== null ? (
             <button type="button" className="genui-table-clear-selection" onClick={clearSelection}>
               清除选择
@@ -153,7 +187,13 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
               model.sortedRows.map((row) => (
                 <tr
                   key={row.key}
-                  className={model.selectedKey === row.key ? 'genui-table-selected' : undefined}
+                  className={
+                    model.selectedKey === row.key
+                      ? 'genui-table-selected'
+                      : model.compareKey === row.key
+                        ? 'genui-table-compare-row'
+                        : undefined
+                  }
                 >
                   {selectable ? (
                     <td className="genui-table-select">

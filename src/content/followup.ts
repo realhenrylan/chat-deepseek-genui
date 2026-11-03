@@ -40,7 +40,8 @@ export function fillContinueIntoInput(doc: Document, summary: string): FillResul
   if (!textarea) return 'no-input';
 
   const existing = textarea.value;
-  if (existing.trim() === '') {
+  // 只有真正的空串才直接填入：仅含空格/换行的草稿也是用户输入，必须逐字保留。
+  if (existing.length === 0) {
     setNativeValue(textarea, summary);
     return 'filled';
   }

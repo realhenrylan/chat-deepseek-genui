@@ -5,6 +5,7 @@ import type {
   TableElement,
 } from '../protocol/types';
 import type { CompositeEvaluation } from '../runtime/evaluate';
+import { lookupCondition } from '../runtime/evaluate';
 import { buildTableModel, rowLabel } from './table-model';
 import type { TableRowView, TableViewState } from './table-model';
 import type {
@@ -26,6 +27,8 @@ const MAX_TABLES = 4;
 const MAX_DRAFT_CELLS = 6;
 const MAX_DRAFT_LENGTH = 40;
 const MAX_TABLE_ERRORS = 3;
+/** 单元格文本进入摘要前的上限：避免单个超长单元格挤掉选中项与请求。 */
+const MAX_CELL_TEXT = 40;
 
 export interface ContinueSnapshotOptions {
   document: GenuiDocument;
@@ -79,7 +82,8 @@ function hasTableViewState(view: TableViewState | undefined): boolean {
   return (
     (typeof view.filter === 'string' && view.filter.trim() !== '') ||
     view.sort !== null ||
-    typeof view.selected === 'number'
+    typeof view.selected === 'number' ||
+    typeof view.compare === 'number'
   );
 }
 
@@ -89,31 +93,59 @@ function toCandidate(
 ): ContinueCandidate {
   const cells = element.columns.slice(0, MAX_DRAFT_CELLS).map((column) => {
     const cell = row.views[column.key]!;
+    const text =
+      cell.text.length > MAX_CELL_TEXT ? `${cell.text.slice(0, MAX_CELL_TEXT)}…` : cell.text;
     return {
       column: column.label,
-      text: cell.text,
+      text,
       ...(typeof cell.numeric === 'number' ? { numeric: cell.numeric } : {}),
       ...(cell.unit ? { unit: cell.unit } : {}),
+      // 缺失/无法计算的单元格必须保留标记，摘要才能说「无法比较」而不是「相同」。
+      ...(cell.missing ? { missing: true } : {}),
+      ...(cell.error ? { error: cell.error } : {}),
     };
   });
   return { rowKey: row.key, label: rowLabel(row, element.columns), cells };
+}
+
+/** 与渲染一致的表格显示条件：false 时整张表不出现，快照也不能把它当成当前结果。 */
+function tableVisibility(
+  element: TableElement,
+  evaluation: CompositeEvaluation,
+): { visible: boolean; error?: string } {
+  if (!element.visibleIf) return { visible: true };
+  const result = lookupCondition(evaluation, element.visibleIf);
+  return result.ok
+    ? { visible: result.value }
+    : { visible: true, error: `表格显示条件无法计算：${result.error}` };
 }
 
 function toTableSnapshot(
   slot: TableSlot,
   view: TableViewState | undefined,
   evaluation: CompositeEvaluation,
-): { snapshot: ContinueTableSnapshot; selected: ContinueCandidate | null; alternative: ContinueCandidate | null } {
+  visibilityError?: string,
+): {
+  snapshot: ContinueTableSnapshot;
+  selected: ContinueCandidate | null;
+  alternative: ContinueCandidate | null;
+} {
   const { element } = slot;
   const model = buildTableModel(element, evaluation, view);
   const selectedRow =
     model.selectedKey === null
       ? undefined
       : model.sortedRows.find((row) => row.key === model.selectedKey);
+  // 显式指定的对比项优先；只有恰好两行可见且选中其一，才自动把另一行当作对比项。
+  const explicitCompareRow =
+    model.compareKey === null
+      ? undefined
+      : model.sortedRows.find((row) => row.key === model.compareKey);
   const alternativeRow =
-    selectedRow && model.sortedRows.length === 2
+    explicitCompareRow ??
+    (selectedRow && model.sortedRows.length === 2
       ? model.sortedRows.find((row) => row.key !== selectedRow.key)
-      : undefined;
+      : undefined);
   const selected = selectedRow ? toCandidate(selectedRow, element) : null;
   const alternative = alternativeRow ? toCandidate(alternativeRow, element) : null;
   const sortColumn = model.sort
@@ -123,6 +155,7 @@ function toTableSnapshot(
     0,
     MAX_TABLE_ERRORS,
   );
+  if (visibilityError) errors.unshift(visibilityError);
 
   return {
     snapshot: {
@@ -136,6 +169,8 @@ function toTableSnapshot(
       alternative,
       selectionHidden: model.selectedHidden,
       selectionMissing: model.selectedMissing,
+      compareHidden: model.compareHidden,
+      compareMissing: model.compareMissing,
       errors,
       ...(element.emptyText ? { emptyText: element.emptyText } : {}),
     },
@@ -159,7 +194,12 @@ export function createContinueSnapshot(options: ContinueSnapshotOptions): Contin
     const prepared = slots
       .map((slot) => ({ slot, view: options.tables[slot.path] }))
       .filter(({ slot, view }) => slot.element.selectable === true || hasTableViewState(view))
-      .map(({ slot, view }) => toTableSnapshot(slot, view, evaluation))
+      .flatMap(({ slot, view }) => {
+        // 表格被 visibleIf 隐藏时，即便用户之前选过行，也不能把旧选择带进摘要。
+        const gate = tableVisibility(slot.element, evaluation);
+        if (!gate.visible) return [];
+        return [toTableSnapshot(slot, view, evaluation, gate.error)];
+      })
       // 选中项优先进入摘要，剩余名额再按文档顺序补齐。
       .sort((left, right) => Number(right.selected !== null) - Number(left.selected !== null));
     for (const item of prepared) {

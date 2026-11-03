@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import type { GenuiDocument } from '../../src/protocol/types';
+import type { GenuiDocument, TableElement } from '../../src/protocol/types';
 import { ElementRegistry } from '../../src/render/registry';
 import { mountCard, type MountedCard } from '../../src/render/mount';
 
@@ -663,6 +663,74 @@ describe('阶段 6 · 表格筛选/选中项进入继续讨论摘要', () => {
     await flushUi();
     expect(onContinue).toHaveBeenCalledTimes(1);
     expect(onContinue.mock.calls[0][0]).toContain('筛选「在售」');
+  });
+
+  it('三行以上可见时按用户指定的对比项生成摘要', async () => {
+    const table = TABLE_DOC.elements[0];
+    if (!table || table.kind !== 'table') throw new Error('测试文档缺少表格');
+    const threeRowDoc: GenuiDocument = {
+      ...TABLE_DOC,
+      elements: [
+        {
+          ...table,
+          rows: [...table.rows, { cells: { name: 'B', price: 5600, weight: 1.6, status: '在售' } }],
+        } as TableElement,
+      ],
+    };
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mounted = mountCard(host, { document: threeRowDoc, rawJson: RAW, onContinue });
+    const shadow = host.shadowRoot;
+
+    const radios = shadow?.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    expect(radios?.length).toBe(3);
+    fireEvent.click(radios![1]!);
+    await flushUi();
+
+    const compare = shadow?.querySelector<HTMLSelectElement>('.genui-table-compare select');
+    if (!compare) throw new Error('对比项选择器未渲染');
+    fireEvent.change(compare, { target: { value: '2' } });
+    await flushUi();
+
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    const textarea = shadow?.querySelector<HTMLTextAreaElement>('.genui-followup-text');
+    if (!textarea) throw new Error('继续讨论预览未渲染');
+    expect(textarea.value).toContain('- 已选：C — 价格 5200 元；重量 1.3 kg');
+    expect(textarea.value).toContain('- 对比：B — 价格 5600 元；重量 1.6 kg');
+    expect(textarea.value).toContain('价格相差 400 元；重量相差 0.3 kg');
+  });
+
+  it('切换讨论意图不覆盖用户已修改的预览，只替换结尾请求', async () => {
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mounted = mountCard(host, { document: TABLE_DOC, rawJson: RAW, onContinue });
+    const shadow = host.shadowRoot;
+
+    const radios = shadow?.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    fireEvent.click(radios![1]!);
+    await flushUi();
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+
+    const textarea = shadow?.querySelector<HTMLTextAreaElement>('.genui-followup-text');
+    if (!textarea) throw new Error('继续讨论预览未渲染');
+    fireEvent.change(textarea, { target: { value: '我手写的摘要：请重点比较续航。' } });
+    await flushUi();
+
+    const compareIntent = Array.from(
+      shadow?.querySelectorAll<HTMLButtonElement>('.genui-followup-intent') ?? [],
+    ).find((button) => button.textContent === '比较两个方案');
+    if (!compareIntent) throw new Error('比较意图按钮未渲染');
+    fireEvent.click(compareIntent);
+    await flushUi();
+
+    expect(textarea.value.startsWith('我手写的摘要：请重点比较续航。')).toBe(true);
+    expect(textarea.value).toContain('请比较以上两个候选方案的差异与取舍。');
+    expect(shadow?.querySelector('.genui-followup-hint')?.textContent ?? '').toBeTruthy();
+    expect(shadow?.querySelector('.genui-card-followup-feedback')?.textContent).toContain('已保留你的修改');
   });
 });
 

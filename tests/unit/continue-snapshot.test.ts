@@ -44,7 +44,7 @@ const evaluation = evaluateComposite(DOC, state);
 function snapshot(overrides: {
   drafts?: Record<string, string>;
   fieldErrors?: Record<string, string>;
-  tables?: Record<string, { filter: string; sort: { key: string; dir: 'asc' | 'desc' } | null; selected?: number | null }>;
+  tables?: Record<string, { filter: string; sort: { key: string; dir: 'asc' | 'desc' } | null; selected?: number | null; compare?: number | null }>;
 }) {
   return createContinueSnapshot({
     document: DOC,
@@ -127,5 +127,80 @@ describe('createContinueSnapshot', () => {
     expect(result.input.drafts?.[0]?.raw).toHaveLength(41);
     expect(result.input.drafts?.[0]?.raw.endsWith('…')).toBe(true);
     expect(result.input.drafts?.[0]?.invalid).toBeUndefined();
+  });
+
+  it('表格被显示条件隐藏时不进入摘要，也不能把旧选择当成当前选择', () => {
+    const table = DOC.elements[0] as TableElement;
+    const hiddenDoc: GenuiV3Document = {
+      ...DOC,
+      elements: [
+        {
+          ...table,
+          visibleIf: {
+            op: 'num-gt',
+            left: { op: 'state', id: 'budget' },
+            right: { op: 'const', value: 100000 },
+          },
+        },
+      ],
+    };
+    const hiddenState = createInitialState(hiddenDoc);
+    const result = createContinueSnapshot({
+      document: hiddenDoc,
+      evaluation: evaluateComposite(hiddenDoc, hiddenState),
+      stateValues: hiddenState,
+      derivedValues: {},
+      derivedErrors: {},
+      drafts: {},
+      fieldErrors: {},
+      tables: { 'root-0': { filter: '在售', sort: null, selected: 1 } },
+    });
+    expect(result.input.tables).toEqual([]);
+    expect(result.hasSelection).toBe(false);
+    expect(result.hasAlternative).toBe(false);
+  });
+
+  it('三行以上可见时按用户指定的对比项生成比较，而不是依赖只剩两行', () => {
+    const table = DOC.elements[0] as TableElement;
+    const threeRowDoc: GenuiV3Document = {
+      ...DOC,
+      elements: [
+        {
+          ...table,
+          rows: [
+            ...table.rows,
+            { cells: { name: 'B', price: 5600, weight: 1.6, status: '在售' } },
+          ],
+        },
+      ],
+    };
+    const threeState = createInitialState(threeRowDoc);
+    const result = createContinueSnapshot({
+      document: threeRowDoc,
+      evaluation: evaluateComposite(threeRowDoc, threeState),
+      stateValues: threeState,
+      derivedValues: {},
+      derivedErrors: {},
+      drafts: {},
+      fieldErrors: {},
+      tables: { 'root-0': { filter: '在售', sort: null, selected: 1, compare: 2 } },
+    });
+    const snapshotTable = result.input.tables![0]!;
+    expect(snapshotTable.visibleRows).toBe(3);
+    expect(snapshotTable.selected?.label).toBe('C');
+    expect(snapshotTable.alternative?.label).toBe('B');
+    expect(snapshotTable.compareHidden).toBe(false);
+    expect(snapshotTable.compareMissing).toBe(false);
+    expect(result.hasAlternative).toBe(true);
+  });
+
+  it('指定的对比项被筛选隐藏时如实标记，不拿别的行冒充对比项', () => {
+    const result = snapshot({
+      tables: { 'root-0': { filter: 'A', sort: null, selected: 0, compare: 1 } },
+    });
+    const table = result.input.tables![0]!;
+    expect(table.alternative).toBeNull();
+    expect(table.compareHidden).toBe(true);
+    expect(result.hasAlternative).toBe(false);
   });
 });

@@ -24,6 +24,11 @@ export interface TableViewState {
   sort: TableSortState | null;
   /** 选中的候选项：文档中的原始行序号（0 基），排序/筛选不改变它。 */
   selected?: number | null;
+  /**
+   * 显式指定的对比候选项（原始行序号）。可见行超过两行时，
+   * 用户必须自己选择对比项，不能猜测「另一行」是谁。
+   */
+  compare?: number | null;
 }
 
 export interface CellView {
@@ -32,6 +37,8 @@ export interface CellView {
   /** 仅数值单元格携带单位，供摘要比较差异时使用。 */
   unit?: string;
   error?: string;
+  /** 单元格缺失（null/空）或无法计算；摘要据此区分「相同」与「无从比较」。 */
+  missing?: boolean;
 }
 
 export interface TableRowView {
@@ -65,6 +72,12 @@ export interface TableModel {
   selectedHidden: boolean;
   /** 已选行在当前文档中已不存在（显示条件失败或行被改写）。 */
   selectedMissing: boolean;
+  /** 显式对比项；未指定、与选中项相同时为 null。 */
+  compareKey: number | null;
+  /** 对比项仍能通过显示条件，但被当前筛选隐藏。 */
+  compareHidden: boolean;
+  /** 对比项在当前文档中已不存在。 */
+  compareMissing: boolean;
 }
 
 function isExpression(cell: TableCell): cell is NumericExpression {
@@ -76,10 +89,10 @@ export function evaluateCell(
   column: TableColumn,
   evaluation: CompositeEvaluation,
 ): CellView {
-  if (cell === null || cell === undefined) return { text: '—' };
+  if (cell === null || cell === undefined) return { text: '—', missing: true };
   if (isExpression(cell)) {
     const result = lookupExpression(evaluation, cell);
-    if (!result.ok) return { text: '—', error: result.error };
+    if (!result.ok) return { text: '—', error: result.error, missing: true };
     const unit = column.unit ? ` ${column.unit}` : '';
     return {
       text: `${formatNumber(result.value)}${unit}`,
@@ -209,6 +222,19 @@ export function buildTableModel(
   const selectedVisible = selectedKey !== null && sortedRows.some((row) => row.key === selectedKey);
   const selectedKnown = selectedKey !== null && rows.some((row) => row.key === selectedKey);
 
+  const rawCompare = view?.compare;
+  const compareCandidate =
+    element.selectable === true &&
+    typeof rawCompare === 'number' &&
+    Number.isInteger(rawCompare) &&
+    rawCompare >= 0 &&
+    rawCompare !== selectedKey
+      ? rawCompare
+      : null;
+  const compareKey = compareCandidate;
+  const compareVisible = compareKey !== null && sortedRows.some((row) => row.key === compareKey);
+  const compareKnown = compareKey !== null && rows.some((row) => row.key === compareKey);
+
   return {
     rows,
     filteredRows,
@@ -221,5 +247,8 @@ export function buildTableModel(
     selectedKey,
     selectedHidden: selectedKey !== null && !selectedVisible && selectedKnown,
     selectedMissing: selectedKey !== null && !selectedKnown,
+    compareKey,
+    compareHidden: compareKey !== null && !compareVisible && compareKnown,
+    compareMissing: compareKey !== null && !compareKnown,
   };
 }

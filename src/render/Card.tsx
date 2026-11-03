@@ -53,6 +53,8 @@ const CONTINUE_FEEDBACK: Record<
 interface FollowupPreview {
   input: ContinueSummaryInput;
   text: string;
+  /** 最近一次按意图生成的原文；text 与它不同即表示用户改过摘要。 */
+  generated: string;
   intent: ContinueIntent;
   hasSelection: boolean;
   hasAlternative: boolean;
@@ -154,9 +156,11 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
           ? 'selected'
           : 'explain';
     const request = getContinueIntent(intent).request;
+    const text = buildContinueSummary({ ...snapshot.input, request });
     setPreview({
       input: snapshot.input,
-      text: buildContinueSummary({ ...snapshot.input, request }),
+      text,
+      generated: text,
       intent,
       hasSelection: snapshot.hasSelection,
       hasAlternative: snapshot.hasAlternative,
@@ -165,19 +169,26 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
   };
 
   const handleIntentChange = (intent: ContinueIntent) => {
-    setPreview((previous) =>
-      previous
-        ? {
-            ...previous,
-            intent,
-            // 意图只改变结尾请求句；数据仍来自点击瞬间的快照。
-            text: buildContinueSummary({
-              ...previous.input,
-              request: getContinueIntent(intent).request,
-            }),
-          }
-        : previous,
-    );
+    // 用户手动改过摘要时不能整段重生成：只替换结尾请求句，其余编辑逐字保留。
+    const edited = preview !== null && preview.text !== preview.generated;
+    const request = getContinueIntent(intent).request;
+    setPreview((previous) => {
+      if (!previous) return previous;
+      const regenerated = buildContinueSummary({ ...previous.input, request });
+      if (previous.text === previous.generated) {
+        return { ...previous, intent, generated: regenerated, text: regenerated };
+      }
+      const known = [
+        ...CONTINUE_INTENTS.map((item) => item.request),
+        '请基于以上当前条件与结果继续讨论。',
+      ];
+      const suffix = known.find((item) => previous.text.endsWith(item));
+      const text = suffix
+        ? `${previous.text.slice(0, -suffix.length)}${request}`
+        : `${previous.text.trimEnd()}\n${request}`;
+      return { ...previous, intent, generated: regenerated, text };
+    });
+    if (edited) setFollowupFeedback('已保留你的修改，只替换结尾请求。');
   };
 
   const handleApplyPreview = () => {
