@@ -1,0 +1,144 @@
+name: Build extension and prepare release draft
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '插件最终版本号（如 0.1.2，不加 v）；仅创建草稿，正式发布需手动点击 Publish release'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.15.0'
+          cache: npm
+
+      - name: Apply the version chosen by the user
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/set-release-version.mjs "$env:RELEASE_VERSION"
+
+      - name: Validate package version
+        id: version
+        run: |
+          $version = ./scripts/package-release.ps1 -ValidateOnly
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check, test and build
+        run: npm run check
+
+      - name: Test extension in Edge and Chrome
+        run: npm run test:e2e
+
+      - name: Package extension and checksum
+        run: ./scripts/package-release.ps1
+
+      - name: Prepare release notes from CHANGELOG
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/release-notes.ts "$env:RELEASE_VERSION" > .tmp/release/release-notes.md
+
+      - name: Upload download package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deepseek-genui-v${{ steps.version.outputs.version }}
+          path: |
+            .tmp/release/*.zip
+            .tmp/release/*.sha256
+            .tmp/release/*.md
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Preserve checked source version files
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-source-v${{ steps.version.outputs.version }}
+          path: |
+            package.json
+            package-lock.json
+            public/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  release-draft:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the exact source that was built
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download checked source version files
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-source-v${{ needs.build.outputs.version }}
+          path: versioned-source
+
+      - name: Download checked package
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: deepseek-genui-v${{ needs.build.outputs.version }}
+          path: release-assets
+
+      - name: Verify package, tag matching source and create an unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: v${{ needs.build.outputs.version }}
+        run: |
+          (cd release-assets && sha256sum --check --strict ./*.sha256)
+          cp versioned-source/package.json package.json
+          cp versioned-source/package-lock.json package-lock.json
+          cp versioned-source/public/manifest.json public/manifest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- package.json package-lock.json public/manifest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: prepare extension $RELEASE_TAG"
+          fi
+          git tag -a "$RELEASE_TAG" -m "DeepSeek GenUI $RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
+          draft_url="$(gh release create "$RELEASE_TAG" ./release-assets/*.zip ./release-assets/*.sha256 \
+            --verify-tag \
+            --draft \
+            --title "DeepSeek GenUI $RELEASE_TAG" \
+            --notes-file ./release-assets/release-notes.md \
+            --generate-notes)"
+          printf '已创建未发布的 Release 草稿：[检查草稿并决定是否正式发布](%s)。\n' "$draft_url" >> "$GITHUB_STEP_SUMMARY"
