@@ -12,6 +12,10 @@
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white" alt="Powered by dsh"></a>
 </p>
 
+<p align="center">
+  <img src="assets/store/promotional-tiles/promotional-tile-1400x560.png" alt="DeepSeek GenUI 推广图：让 AI 回答成为交互界面，画面展示可拖动的预算滑块、本地计算的余额与联动的图表" width="100%">
+</p>
+
 DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏览器扩展。在原有文字回答中加入滑块、输入框、图表和表格，让你直接调整条件、查看结果，再把当前方案带回对话。
 
 本项目为独立开发的第三方扩展，与 DeepSeek 官方无关。当前版本 **0.1.1**，支持在桌面 Edge、Chrome 中手动加载；尚未上架扩展商店。
@@ -113,6 +117,14 @@ npm run build
 - 依赖 DeepSeek 当前页面结构，站点改版可能影响识别、草稿追加或渲染。
 - 已有真实网页场景验收与 Edge/Chrome 自动化验证；模型生成稳定性、其他系统和 Firefox 不在当前验证范围内。
 - 当前提供本地加载包；商店素材、公开隐私链接及提交状态见 [商店准备记录](docs/store-submission.md)。
+
+## 商店推广图
+
+两种尺寸的推广图，沿用定稿 Logo 与主色 `#4D6BFE`；画面为示意界面与示例数据，不是站点截图。1400 × 560 大图展示在页面顶部，440 × 280 小图如下。
+
+![小尺寸推广图：让 AI 回答动起来，展示月收入、支出预算与可支配余额](assets/store/promotional-tiles/promotional-tile-440x280.png)
+
+*440 × 280 小尺寸推广图；对应的同名 SVG 为文字转轮廓的矢量源文件。上传栏位、文件清单与重新导出方法见 [商店推广图资源](assets/store/promotional-tiles/README.md)。*
 
 ## 开发与验证
 
