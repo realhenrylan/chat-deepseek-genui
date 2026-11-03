@@ -792,13 +792,21 @@ function inspectPreferenceModel(
         `偏好筛选 ${filter.dimension} 至少需要 min 或 max`,
       );
     }
-    if (filter.min !== undefined) {
+    if (filter.min !== undefined && typeof filter.min !== 'number') {
       const failure = inspectExpression(context, filter.min, 1, false, earlier);
       if (failure) return failure;
     }
-    if (filter.max !== undefined) {
+    if (filter.max !== undefined && typeof filter.max !== 'number') {
       const failure = inspectExpression(context, filter.max, 1, false, earlier);
       if (failure) return failure;
+    }
+    for (const bound of [filter.min, filter.max]) {
+      if (typeof bound === 'number' && !Number.isFinite(bound)) {
+        return semanticFailure(
+          'semantic-violation',
+          `偏好筛选 ${filter.dimension} 的阈值不是有限数字`,
+        );
+      }
     }
   }
   return null;

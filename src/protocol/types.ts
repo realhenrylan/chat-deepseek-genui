@@ -345,8 +345,10 @@ export interface PreferenceCandidate {
 
 export interface PreferenceFilter {
   dimension: string;
-  min?: NumericExpression;
-  max?: NumericExpression;
+  /** 下限；常量可直接写数字，也可写表达式。 */
+  min?: NumericExpression | number;
+  /** 上限；常量可直接写数字，也可写表达式。 */
+  max?: NumericExpression | number;
 }
 
 /** 偏好比较模型：候选、维度权重、筛选、归一化得分分解与排名。 */
@@ -396,12 +398,16 @@ export const DEFAULT_MODEL_PRECISION = 2;
 
 /** 表格按模型快照展示；view 省略时使用该模型的默认视图。 */
 export interface ModelTableSource {
+  /** 可选标记，便于与 state/derived 的 source 形状保持一致。 */
+  kind?: 'model';
   model: string;
   view?: string;
 }
 
 /** 柱/饼图按模型快照展示。 */
 export interface ModelChartSource {
+  /** 可选标记，便于与 state/derived 的 source 形状保持一致。 */
+  kind?: 'model';
   model: string;
 }
 

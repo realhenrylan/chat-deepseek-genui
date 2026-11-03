@@ -263,6 +263,7 @@
 
 - 协议与校验：`PROTOCOL_VERSION=5`，新增 `maxModels`、`maxBudgetExpenses`、`maxCostPlans`、`maxPreferenceCandidates`、`maxPreferenceDimensions`、`maxPreferenceFilters`、`maxExpressionNodesV5`、`maxModelAmount`、`maxPreferenceWeight`、`maxModelWork`；v5 schema 保留 v1–v4 原样，新增模型、模型来源与 explain；语义校验限制模型顺序、标量键、视图匹配、维度/筛选唯一性与权重。
 - 运行时：新增 `ModelResult` 与 `CompositeEvaluation.models`；预算按整数最小单位求和并给占比/超支诊断；成本按 `ceil(horizon/coverage)` 购买、以 `usesPerPeriod × horizon` 计算总次数与单次成本；偏好先筛选、再对现存值 min-max 归一、按权重加权，缺失不计 0/不进分母，同分同名次。`lookupModel`/`lookupModelScalar`/`modelTable` 只读快照，模型失败只影响自身。
-- 渲染：模型来源的 value/bar/pie/table 与 explain 接入组合渲染；模型表格复用排序/筛选/空状态；失败显示局部错误。提示词升级 v2.4，示例新增 `budget-v5.json`、`preference-v5.json`、`cost-v5.json`。
-- 自动化：新增 `protocol-v5.test.ts`、`runtime-v5.test.ts`、`render-v5.test.tsx`；完整单测 32 个文件 329 passed、3 skipped，`npx tsc --noEmit` 与 lint 通过。全量 `npm run check`、构建与 e2e 待本轮收尾执行。
-- 验证边界：示例与合成文档只证明协议、运行时、渲染与规则可用，不证明模型提供的价格等事实正确；真实模型首轮可用率/输出长度/计算正确性对比需单独执行并如实记录。
+- 渲染：模型来源的 value/bar/pie/table 与 explain 接入组合渲染；模型表格复用排序/筛选/空状态；失败显示局部错误。提示词升级 v2.5，示例新增 `budget-v5.json`、`preference-v5.json`、`cost-v5.json`。
+- 自动化：新增 `protocol-v5.test.ts`（22 例）、`runtime-v5.test.ts`（21 例）、`render-v5.test.tsx`（5 例），并补充筛选阈值数字常量、可选 `kind:"model"` 来源等回归用例。`npm run check` 通过（32 个文件 338 passed、3 skipped；typecheck、lint、构建与生产包校验均通过），默认 Edge/Chrome e2e 通过（22 passed、6 skipped）。
+- 真实模型对比：见 [`phase9-model-comparison.md`](phase9-model-comparison.md)。9 份真实模型输出显示 v5 的 JSON 长度约为 v4 的 38%，derived 为 0、运算 0–7 次（v4 为 5–18 个 derived、46–174 次运算）；v5 的缺失值与并列规则由运行时统一，v4 两份样本对缺失续航给出不同处理。首轮失败集中在固定标量键、筛选阈值写法与 source 形状，已分别用固定键清单、数字常量和可选 `kind:"model"` 修正。
+- 验证边界：示例与合成文档只证明协议、运行时、渲染与规则可用，不证明模型提供的价格等事实正确；对比样本量小、非生产 API，结论只用于方向判断。

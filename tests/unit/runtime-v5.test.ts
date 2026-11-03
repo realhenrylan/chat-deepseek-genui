@@ -334,6 +334,19 @@ describe('v5 偏好模型', () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes('缺少筛选维度'))).toBe(true);
   });
 
+  it('筛选阈值直接写数字常量时按同一规则过滤', () => {
+    const { evaluation } = evaluate([
+      preference({ filters: [{ dimension: 'quality', min: 7 }] }),
+    ]);
+    const result = lookupModel(evaluation, 'preference');
+    if (!result) throw new Error('期望模型结果');
+
+    expect(result.scalars).toMatchObject({ candidateCount: 3, eligibleCount: 1, rankedCount: 1 });
+    expect(modelTable(result)?.rows).toEqual([
+      { rank: 1, candidate: '候选 A', score: 100, missing: 0 },
+    ]);
+  });
+
   it('没有候选资料时给出明确空状态', () => {
     const { evaluation } = evaluate([preference({ candidates: [] })]);
     const result = lookupModel(evaluation, 'preference');

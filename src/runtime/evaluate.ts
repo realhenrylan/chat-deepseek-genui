@@ -330,6 +330,20 @@ function readModelNumber(
   return result.value;
 }
 
+/** 筛选阈值既可是常量，也可是表达式；两种写法走同一数值边界检查。 */
+function readFilterBound(
+  engine: EvaluationEngine,
+  value: NumericExpression | number,
+  label: string,
+): number {
+  const result = typeof value === 'number' ? value : readModelNumber(engine, value, label);
+  if (!Number.isFinite(result)) throw calculationError(`${label}不是有限数字`);
+  if (Math.abs(result) > LIMITS.maxNumberMagnitude) {
+    throw calculationError(`${label}超出可计算范围`);
+  }
+  return result;
+}
+
 function clampModelAmount(
   value: number,
   label: string,
@@ -661,11 +675,11 @@ function computePreferenceModel(
     const min =
       filter.min === undefined
         ? null
-        : readModelNumber(engine, filter.min, `筛选维度「${filter.dimension}」下限`);
+        : readFilterBound(engine, filter.min, `筛选维度「${filter.dimension}」下限`);
     const max =
       filter.max === undefined
         ? null
-        : readModelNumber(engine, filter.max, `筛选维度「${filter.dimension}」上限`);
+        : readFilterBound(engine, filter.max, `筛选维度「${filter.dimension}」上限`);
     if (min !== null && max !== null && min > max) {
       diagnostics.push({
         level: 'warn',

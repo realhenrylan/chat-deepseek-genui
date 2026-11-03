@@ -73,8 +73,8 @@ v3–v5 的 `elements` 除上述叶元素外还允许：
 | `note` | `text`、可选 `tone: "info" \| "warn" \| "error"`、可选 `visibleIf` | 条件说明块；`error` 使用 alert 语义 |
 | `section` | 可选 `title`、`children` | 带标题的分组，可嵌套其他 v3/v4 元素 |
 | `columns` | `columns`，2–3 个元素数组 | 多列布局；窄窗口自动变为单列 |
-| `chart` | `chartType`、`title`、`legend`、`items` 或 `series`；v5 柱/饼可用 `source: { "model" }` | 柱状、饼状或折线图 |
-| `table` | `columns`、`rows`、`sortable`、`initialSort`、`emptyText`、可选 `visibleIf`；v5 可用 `source: { "model", "view"? }` | 本地排序、筛选、条件行与横向滚动 |
+| `chart` | `chartType`、`title`、`legend`、`items` 或 `series`；v5 柱/饼可用 `source: { "model" }`（可带可选 `"kind": "model"`） | 柱状、饼状或折线图 |
+| `table` | `columns`、`rows`、`sortable`、`initialSort`、`emptyText`、可选 `visibleIf`；v5 可用 `source: { "model", "view"? }`（可带可选 `"kind": "model"`） | 本地排序、筛选、条件行与横向滚动 |
 | `explain` | v5：`model`、可选 `title`、`visibleIf` | 本地生成模型依据、诊断与公式 |
 
 `section` 的 `children` 为 1–20 个元素；`columns` 为 2–3 列，每列 1–20 个元素。布局嵌套语义深度不超过 4，整张 Card 的 v3–v5 元素总数不超过 80。
@@ -156,7 +156,7 @@ v4 折线系列可用函数曲线写法代替离散点；同一 `series` 数组�
 
 `sortable: true` 时列头可点击排序，并显示 `aria-sort`；`initialSort` 指定初始排序列和 `asc`/`desc`。当 `sortable` 为真或行数超过 3 时显示筛选框与行计数。表格容器可横向滚动并获得键盘焦点；空结果使用 `emptyText`，默认文案为“没有可显示的数据”。条件行无法求值时仍显示该行，并在表格上方汇总提示。
 
-v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图必须与模型类型匹配：预算 `summary`（默认）或 `items`，成本 `plans`，偏好 `ranking`（默认）或 `breakdown`。模型表格与显式列/行互斥，仍复用本地排序、筛选、空状态与横向滚动。
+v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图必须与模型类型匹配：预算 `summary`（默认）或 `items`，成本 `plans`，偏好 `ranking`（默认）或 `breakdown`。模型表格与显式列/行互斥；`source` 可带可选 `"kind": "model"` 标记，仍复用本地排序、筛选、空状态与横向滚动。
 
 ## v5 语义模型
 
@@ -214,14 +214,14 @@ v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图
 }
 ```
 
-维度 1–8 个，`weight` 0–1000 且至少一个大于 0，`direction` 为 `higher` 或 `lower`；候选 0–30 个，`values` 只允许已声明维度，值可为数字或 `null`；筛选 0–8 个，每个维度最多一个，至少提供 `min` 或 `max`。`null` 与缺失键都表示资料缺失，不按 0 处理。
+维度 1–8 个，`weight` 0–1000 且至少一个大于 0，`direction` 为 `higher` 或 `lower`；候选 0–30 个，`values` 只允许已声明维度，值可为数字或 `null`；筛选 0–8 个，每个维度最多一个，至少提供 `min` 或 `max`。筛选阈值可写数字常量或表达式（如 `{"dimension":"price","max":8000}`）。`null` 与缺失键都表示资料缺失，不按 0 处理。
 
-计算顺序：先用筛选表达式排除候选（缺失值不通过筛选），再对通过候选的每个维度用现存值做 min-max 归一化；`max = min` 时该维度归一为 1；`lower` 方向取反。得分 `Σ(归一值 × weight) / Σ(存在的 weight > 0) × 100`，缺失维度不计 0、不进分母；没有可计权维度时得分为 `null`。得分按 `precision` 四舍五入（默认 1 位小数）。排序按得分降序、缺失计权维度数升序、声明顺序；同分同名次（competition ranking），未计分候选排后且名次为空。输出标量：`candidateCount`、`eligibleCount`、`rankedCount`、`topScore`、`weightTotal`、`dimensionCount`。表格视图：`ranking`（名次、候选、得分、缺失维度）与 `breakdown`（候选、得分、各维度归一值，列数上限 10）；`chartItems` 只含有得分的候选。空候选、全部被筛掉、全部缺少可计权维度都会返回明确计数与诊断，而不是编造 0 分。
+计算顺序：先用筛选阈值（数字常量或表达式）排除候选（缺失值不通过筛选），再对通过候选的每个维度用现存值做 min-max 归一化；`max = min` 时该维度归一为 1；`lower` 方向取反。得分 `Σ(归一值 × weight) / Σ(存在的 weight > 0) × 100`，缺失维度不计 0、不进分母；没有可计权维度时得分为 `null`。得分按 `precision` 四舍五入（默认 1 位小数）。排序按得分降序、缺失计权维度数升序、声明顺序；同分同名次（competition ranking），未计分候选排后且名次为空。输出标量：`candidateCount`、`eligibleCount`、`rankedCount`、`topScore`、`weightTotal`、`dimensionCount`。表格视图：`ranking`（名次、候选、得分、缺失维度）与 `breakdown`（候选、得分、各维度归一值，列数上限 10）；`chartItems` 只含有得分的候选。空候选、全部被筛掉、全部缺少可计权维度都会返回明确计数与诊断，而不是编造 0 分。
 
 ### 模型来源与解释
 
 - `value` 可用 `{ "kind": "model", "model": "monthly", "key": "balance" }` 显示标量；标量为 `null` 时显示“不可用”，模型失败时显示具体错误。
-- `table` 与柱/饼 `chart` 可用 `source` 读取模型表格/图表项；它们与显式 `columns`/`rows`、`items` 互斥。
+- `table` 与柱/饼 `chart` 可用 `source` 读取模型表格/图表项；`source` 可带可选 `"kind": "model"` 标记，它们与显式 `columns`/`rows`、`items` 互斥。
 - `explain` 读取同一 `ModelResult`，展示公式、依据、诊断与失败原因；不重新计算。
 - 一次求值产生同一份模型快照，参数、数值、图表和表格都读取该快照。单个模型失败只影响自身及其展示，其他模型和元素继续工作。
 

@@ -670,8 +670,8 @@ const preferenceModelSchema = {
         required: ['dimension'],
         properties: {
           dimension: idSchema,
-          min: expressionV5Ref,
-          max: expressionV5Ref,
+          min: { anyOf: [boundedNumberSchema, expressionV5Ref] },
+          max: { anyOf: [boundedNumberSchema, expressionV5Ref] },
         },
       },
     },
@@ -760,7 +760,7 @@ const modelChartSchema = {
       type: 'object',
       additionalProperties: false,
       required: ['model'],
-      properties: { model: idSchema },
+      properties: { kind: { const: 'model' }, model: idSchema },
     },
   },
 };
@@ -909,6 +909,7 @@ const modelTableSchema = {
       additionalProperties: false,
       required: ['model'],
       properties: {
+        kind: { const: 'model' },
         model: idSchema,
         view: modelViewSchema,
       },

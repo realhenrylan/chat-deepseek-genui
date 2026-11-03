@@ -124,6 +124,21 @@ describe('genui v5 语义模型协议', () => {
     expect(result.ok, result.ok ? '' : `${result.code} ${result.detail}`).toBe(true);
   });
 
+  it('模型来源可以带可选的 kind:model 标记', () => {
+    const result = parseGenui(
+      JSON.stringify(
+        doc(
+          [budget()],
+          [
+            { kind: 'table', source: { kind: 'model', model: 'budget', view: 'summary' } },
+            { kind: 'chart', chartType: 'bar', source: { kind: 'model', model: 'budget' } },
+          ],
+        ),
+      ),
+    );
+    expect(result.ok, result.ok ? '' : `${result.code} ${result.detail}`).toBe(true);
+  });
+
   it('模型输入可以引用更早声明的模型标量', () => {
     const result = parseGenui(
       JSON.stringify(
@@ -308,6 +323,19 @@ describe('genui v5 语义模型协议', () => {
       ),
       'semantic-violation',
     );
+  });
+
+  it('偏好筛选阈值可以直接写数字常量', () => {
+    const parsed = parseGenui(
+      JSON.stringify(
+        doc([
+          preference({
+            filters: [{ dimension: 'price', min: 50, max: 120 }],
+          }),
+        ]),
+      ),
+    );
+    expect(parsed.ok).toBe(true);
   });
 
   it('候选值不能包含未声明的维度', () => {
