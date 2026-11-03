@@ -30,10 +30,9 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
   const current: TableViewState | undefined = controlled ? view : localView;
   const filterText = current?.filter ?? '';
 
-  const model = useMemo(
-    () => buildTableModel(element, evaluation, current),
-    [element, evaluation, current?.filter, current?.sort?.key, current?.sort?.dir, current?.selected, current],
-  );
+  // 视图状态在每次变化时都会被替换（受控时由父级 Card 生成新对象），因此以对象身份为依赖即可；
+  // 单独列出字段反而会掩盖「父级原地修改」这种本组件不支持的行为。
+  const model = useMemo(() => buildTableModel(element, evaluation, current), [element, evaluation, current]);
 
   /** 以当前生效视图（含 initialSort 回退）为基准生成完整视图状态。 */
   const changeView = (patch: Partial<TableViewState>) => {
