@@ -105,7 +105,7 @@ npm run build
 
 工作流 [Build extension and prepare release draft](.github/workflows/build-release.yml) 在推送到 `main` 时，自动检查、测试、构建，并在 Actions 页面提供 ZIP 和 SHA256 校验文件（保留 30 天）。准备发布时，在 Actions 点 **Run workflow** 并填写最终插件版本号，工作流会按你填写的版本打包，只创建附带这两个文件的 **Release 草稿**。
 
-**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v2.2` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
+**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v2.3` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
 
 Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、更改、修复、移除等类别展示，并附 GitHub 自动生成的变更记录；发布前可在草稿页继续编辑。
 
@@ -139,7 +139,7 @@ npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
 
-协议支持 v1 / v2 / v3。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4（v4 新增折线图的函数曲线系列，坐标轴画在数据零点）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

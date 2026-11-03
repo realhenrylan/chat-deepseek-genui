@@ -4,6 +4,7 @@
 
 ### Added
 
+- 折线图新增函数曲线系列（协议 v4）：`series` 可写 `{"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?}}`，表达式只允许局部 `x` 变量与 state/derived 引用，公式只声明一次；状态变化时本地按有上限采样数（默认 41，5–50，每系列独立 5000 次运算预算）重采样重绘。`features:["zero"]` 在视口内不过零点时对称加倍扩展采样范围（最多 4 轮）以覆盖零点/顶点；domain 求值失败（如 `a=0` 的对称轴除零）时静默回退默认区间 `-10…10`，曲线退化为直线不报除零。坐标轴在数据零点可见时画在 `x=0`/`y=0`，否则保持绘图区边缘（v3/v4 折线图通用）；离散点折线语义与旧行为不变。提示词升级 v2.3，示例新增 `docs/examples/parabola-v4.json`，协议/运行时/渲染/示例新增回归用例，校验器由 Schema 重新生成。
 - 增加自动打包与 Release 草稿工作流：推送到 `main` 可下载 ZIP/SHA256；用户手动运行并填写最终插件版本号后，检查、构建及 Edge/Chrome 默认测试通过才创建附带安装包的 Release 草稿，正式发布由用户点击 Publish release 决定。新增版本同步脚本、PowerShell 打包脚本和发布指南，校验安装包与标签版本一致性并保留历史 Release；草稿自动带入 CHANGELOG 的中文分类更新说明，附 GitHub 变更记录。
 
 ### Fixed

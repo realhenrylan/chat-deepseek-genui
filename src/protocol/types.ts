@@ -11,8 +11,8 @@
  * 失败码按「守卫顺序」排列：长度 → 深度 → JSON 解析 → 结构校验 → 版本。
  */
 
-/** 最新协议版本；仍兼容静态 v1 与交互 v2 文档。 */
-export const PROTOCOL_VERSION = 3;
+/** 最新协议版本；仍向后兼容静态 v1、交互 v2 与组合 v3 文档。 */
+export const PROTOCOL_VERSION = 4;
 
 /** 规模限制（与 schema 保持一致，validate 的长度守卫复用同一份常量）。 */
 export const LIMITS = {
@@ -62,6 +62,16 @@ export const LIMITS = {
   maxConditionDepth: 5,
   /** v3 文档内所有数值表达式（派生 + 图表/表格/条件内联）共享的节点预算。 */
   maxExpressionNodesV3: 300,
+  /** v4 函数曲线：单系列采样点数与全文档采样点总数上限。 */
+  maxFunctionSamples: 50,
+  maxFunctionSamplesTotal: 200,
+  /** v4 函数曲线：单次更新内单系列采样的专用运算预算（不占用共享求值池）。 */
+  maxFunctionSampleOperations: 5_000,
+  /** v4 零点覆盖：对称倍增重采样的最大轮数。 */
+  maxFunctionExpandRounds: 4,
+  /** v4 函数曲线默认采样数（奇数，含域端点）；默认定义域为 [-defaultFunctionDomainHalfWidth, +…] */
+  defaultFunctionSamples: 41,
+  defaultFunctionDomainHalfWidth: 10,
 } as const;
 
 /** v1 与 v2 均支持的纯文本元素；v3 允许按条件显示。 */
@@ -156,23 +166,74 @@ export interface ChartSeries {
   points: ChartSeriesPoint[];
 }
 
-export type ChartElement =
+/**
+ * v4 函数曲线表达式：在数值表达式白名单上增加局部变量 `x`。
+ * 与 NumericExpression 的区别是操作数自身允许是含 `x` 的子树，
+ * 因此 `multiply(x, x)` 这类一次声明即可建模；`x` 只在函数曲线的
+ * y=f(x) 表达式内可见，derived/state/图表点/条件里出现会被拒绝
+ * （schema 与语义层双重把关）。
+ */
+export type FunctionExpression =
+  | { op: 'x' }
+  | { op: 'const'; value: number }
+  | { op: 'state'; id: string }
+  | { op: 'derived'; id: string }
+  | { op: 'negate' | 'abs' | 'round' | 'floor' | 'ceil'; value: FunctionExpression }
   | {
-      kind: 'chart';
-      chartType: 'bar' | 'pie';
-      title?: string;
-      legend?: boolean;
-      items: ChartItem[];
-    }
-  | {
-      kind: 'chart';
-      chartType: 'line';
-      title?: string;
-      xLabel?: string;
-      yLabel?: string;
-      legend?: boolean;
-      series: ChartSeries[];
+      op: 'add' | 'subtract' | 'multiply' | 'divide' | 'min' | 'max';
+      left: FunctionExpression;
+      right: FunctionExpression;
     };
+
+/** v4 函数曲线定义域边界（求值失败时静默回退默认域，不显示错误）。 */
+export interface ChartFunctionDomain {
+  start: NumericExpression;
+  end: NumericExpression;
+}
+
+/** v4 函数曲线定义：一次声明 y=f(x)，采样与视口覆盖由运行时按状态完成。 */
+export interface ChartFunctionDefinition {
+  expression: FunctionExpression;
+  /** 采样范围；缺省为 [-defaultFunctionDomainHalfWidth, +defaultFunctionDomainHalfWidth]。 */
+  domain?: ChartFunctionDomain;
+  /** 采样点数（含域端点），默认 41；范围 5..maxFunctionSamples。 */
+  samples?: number;
+  /** 关键特征覆盖；目前只支持 'zero'（在视口内就近放大以覆盖零点）。 */
+  features?: Array<'zero'>;
+}
+
+/** v4 函数曲线系列：与离散折线系列可在同一 series 数组内混用。 */
+export interface ChartFunctionSeries {
+  label: string;
+  color?: string;
+  function: ChartFunctionDefinition;
+}
+
+export interface ChartBarPieElement {
+  kind: 'chart';
+  chartType: 'bar' | 'pie';
+  title?: string;
+  legend?: boolean;
+  items: ChartItem[];
+}
+
+export interface ChartLineElement<S = ChartSeries> {
+  kind: 'chart';
+  chartType: 'line';
+  title?: string;
+  xLabel?: string;
+  yLabel?: string;
+  legend?: boolean;
+  series: S[];
+}
+
+/** v3 机械白名单内的折线图：series 只能是离散点系列。 */
+export type ChartElement = ChartBarPieElement | ChartLineElement<ChartSeries>;
+
+/** v4 折线图：离散点系列与函数曲线系列（y=f(x)）可混用。 */
+export type ChartElementV4 =
+  | ChartBarPieElement
+  | ChartLineElement<ChartSeries | ChartFunctionSeries>;
 
 /** 表格单元格：静态字符串/数值/缺失，或内联数值表达式（引用 state/derived/const 运算）。 */
 export type TableCell = string | number | null | NumericExpression;
@@ -195,20 +256,22 @@ export interface TableElement {
   columns: TableColumn[];
   rows: TableRow[];
   sortable?: boolean;
+  /** 允许用户选中一行作为候选项；选中项会进入「继续讨论」摘要。 */
+  selectable?: boolean;
   initialSort?: { key: string; dir: 'asc' | 'desc' };
   emptyText?: string;
   visibleIf?: Condition;
 }
 
-export interface SectionElement {
+export interface SectionElement<C = GenuiV3Element> {
   kind: 'section';
   title?: string;
-  children: GenuiV3Element[];
+  children: C[];
 }
 
-export interface ColumnsElement {
+export interface ColumnsElement<C = GenuiV3Element> {
   kind: 'columns';
-  columns: GenuiV3Element[][];
+  columns: C[][];
 }
 
 export type InteractiveElement =
@@ -229,8 +292,17 @@ export type GenuiV3Element =
   | NoteElement
   | ChartElement
   | TableElement
-  | SectionElement
-  | ColumnsElement;
+  | SectionElement<GenuiV3Element>
+  | ColumnsElement<GenuiV3Element>;
+
+/** v4 组合元素：与 v3 相同的元素集合，折线图允许函数曲线系列。 */
+export type GenuiV4Element =
+  | InteractiveElement
+  | NoteElement
+  | ChartElementV4
+  | TableElement
+  | SectionElement<GenuiV4Element>
+  | ColumnsElement<GenuiV4Element>;
 
 /** v2 文档只含声明式数据；派生计算被限制在 NumericExpression 白名单内。 */
 export interface GenuiV2Document {
@@ -252,8 +324,22 @@ export interface GenuiV3Document {
   elements: GenuiV3Element[];
 }
 
+/** v4 组合文档：v3 全部能力 + 函数曲线系列（y=f(x) 受限表达式驱动）。 */
+export interface GenuiV4Document {
+  type: 'genui';
+  version: 4;
+  title?: string;
+  state: StateVariable[];
+  derived: DerivedValue[];
+  elements: GenuiV4Element[];
+}
+
 /** 经 parseGenui 校验后可安全交给渲染器的版本化文档。 */
-export type GenuiDocument = GenuiV1Document | GenuiV2Document | GenuiV3Document;
+export type GenuiDocument =
+  | GenuiV1Document
+  | GenuiV2Document
+  | GenuiV3Document
+  | GenuiV4Document;
 
 export type InteractiveStateValues = Record<string, number | string>;
 

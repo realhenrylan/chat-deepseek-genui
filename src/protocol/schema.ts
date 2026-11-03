@@ -45,8 +45,10 @@ const v1Schema = {
 };
 
 const expressionRef = { $ref: '#/definitions/expression' };
+const functionExpressionRef = { $ref: '#/definitions/functionExpression' };
 const conditionRef = { $ref: '#/definitions/condition' };
 const elementRef = { $ref: '#/definitions/element' };
+const elementV4Ref = { $ref: '#/definitions/elementV4' };
 
 const stateVariableSchema = {
   oneOf: [
@@ -168,6 +170,29 @@ const expressionDefinitions = {
       right: expressionRef,
     },
   },
+  /**
+   * v4: function-curve expressions allow the curve-local variable `x`. A
+   * separate recursive definition keeps `x` out of every other expression
+   * position (derived/points/conditions/domain bounds are still checked
+   * against the plain `expression` definition).
+   */
+  functionExpression: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['op'],
+    properties: {
+      op: {
+        enum: [
+          'x', 'const', 'state', 'derived', 'negate', 'abs', 'round', 'floor', 'ceil',
+          'add', 'subtract', 'multiply', 'divide', 'min', 'max',
+        ],
+      },
+      id: idSchema,
+      value: { anyOf: [boundedNumberSchema, functionExpressionRef] },
+      left: functionExpressionRef,
+      right: functionExpressionRef,
+    },
+  },
 };
 
 const conditionDefinition = {
@@ -267,6 +292,59 @@ const chartBarPieSchema = {
   },
 };
 
+const discreteChartSeriesSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['label', 'points'],
+  properties: {
+    label: labelSchema,
+    color: colorSchema,
+    smooth: { type: 'boolean' },
+    points: {
+      type: 'array',
+      minItems: 2,
+      maxItems: LIMITS.maxChartPointsPerSeries,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['x', 'y'],
+        properties: {
+          x: boundedNumberSchema,
+          y: expressionRef,
+        },
+      },
+    },
+  },
+};
+
+/** v4 函数曲线定义：y=f(x) 表达式 + 可选域/采样数/特征覆盖。 */
+const chartFunctionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expression'],
+  properties: {
+    expression: functionExpressionRef,
+    domain: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['start', 'end'],
+      properties: { start: expressionRef, end: expressionRef },
+    },
+    samples: {
+      type: 'integer',
+      minimum: 5,
+      maximum: LIMITS.maxFunctionSamples,
+    },
+    features: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 1,
+      uniqueItems: true,
+      items: { enum: ['zero'] },
+    },
+  },
+};
+
 const chartLineSchema = {
   type: 'object',
   additionalProperties: false,
@@ -282,29 +360,41 @@ const chartLineSchema = {
       type: 'array',
       minItems: 1,
       maxItems: LIMITS.maxChartSeries,
+      items: discreteChartSeriesSchema,
+    },
+  },
+};
+
+/** v4 折线图：离散系列与函数曲线系列可在同一 series 数组内混用。 */
+const chartLineSchemaV4 = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'chartType', 'series'],
+  properties: {
+    kind: { const: 'chart' },
+    chartType: { const: 'line' },
+    title: labelSchema,
+    xLabel: labelSchema,
+    yLabel: labelSchema,
+    legend: { type: 'boolean' },
+    series: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxChartSeries,
       items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['label', 'points'],
-        properties: {
-          label: labelSchema,
-          color: colorSchema,
-          smooth: { type: 'boolean' },
-          points: {
-            type: 'array',
-            minItems: 2,
-            maxItems: LIMITS.maxChartPointsPerSeries,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['x', 'y'],
-              properties: {
-                x: boundedNumberSchema,
-                y: expressionRef,
-              },
+        oneOf: [
+          discreteChartSeriesSchema,
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['label', 'function'],
+            properties: {
+              label: labelSchema,
+              color: colorSchema,
+              function: chartFunctionSchema,
             },
           },
-        },
+        ],
       },
     },
   },
@@ -364,6 +454,7 @@ const tableSchema = {
       },
     },
     sortable: { type: 'boolean' },
+    selectable: { type: 'boolean' },
     initialSort: {
       type: 'object',
       additionalProperties: false,
@@ -378,7 +469,7 @@ const tableSchema = {
   },
 };
 
-const sectionSchema = {
+const makeSectionSchema = (selfRef: { $ref: string }) => ({
   type: 'object',
   additionalProperties: false,
   required: ['kind', 'children'],
@@ -389,12 +480,12 @@ const sectionSchema = {
       type: 'array',
       minItems: 1,
       maxItems: 20,
-      items: elementRef,
+      items: selfRef,
     },
   },
-};
+});
 
-const columnsSchema = {
+const makeColumnsSchema = (selfRef: { $ref: string }) => ({
   type: 'object',
   additionalProperties: false,
   required: ['kind', 'columns'],
@@ -408,13 +499,14 @@ const columnsSchema = {
         type: 'array',
         minItems: 1,
         maxItems: 20,
-        items: elementRef,
+        items: selfRef,
       },
     },
   },
-};
+});
 
-const elementDefinition = {
+/** 组合元素定义按目标折线 schema 与自引用参数化（v3/v4 共用同一份叶元素白名单）。 */
+const makeElementDefinition = (chartLine: object, selfRef: { $ref: string }) => ({
   oneOf: [
     v3TextSchema,
     {
@@ -463,12 +555,15 @@ const elementDefinition = {
     },
     noteSchema,
     chartBarPieSchema,
-    chartLineSchema,
+    chartLine,
     tableSchema,
-    sectionSchema,
-    columnsSchema,
+    makeSectionSchema(selfRef),
+    makeColumnsSchema(selfRef),
   ],
-};
+});
+
+const elementDefinition = makeElementDefinition(chartLineSchema, elementRef);
+const elementDefinitionV4 = makeElementDefinition(chartLineSchemaV4, elementV4Ref);
 
 const v2Schema = {
   type: 'object',
@@ -544,6 +639,43 @@ const v3Schema = {
   },
 };
 
+const v4Schema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'version', 'state', 'derived', 'elements'],
+  properties: {
+    type: { const: 'genui' },
+    version: { const: 4 },
+    title: labelSchema,
+    state: {
+      type: 'array',
+      maxItems: LIMITS.maxStateVariables,
+      items: stateVariableSchema,
+    },
+    derived: {
+      type: 'array',
+      maxItems: LIMITS.maxDerivedValues,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'label', 'expression'],
+        properties: {
+          id: idSchema,
+          label: labelSchema,
+          unit: unitSchema,
+          expression: expressionRef,
+        },
+      },
+    },
+    elements: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxElementsV3,
+      items: elementV4Ref,
+    },
+  },
+};
+
 /**
  * Versioned genui JSON Schema.
  *
@@ -551,14 +683,18 @@ const v3Schema = {
  * controls, output references, and a recursive but finite arithmetic whitelist.
  * v3 adds composition elements (note/chart/table/section/columns) plus
  * conditional display, all bound to the same state/derived values.
+ * v4 adds function-curve chart series (y=f(x) with curve-local `x`,
+ * state-driven domain and bounded sampling) next to the discrete series.
  * Semantic checks that JSON Schema cannot express (references and dependency
  * cycles) run after generated-schema validation in validate.ts.
  */
 export const genuiSchema = {
-  oneOf: [v1Schema, v2Schema, v3Schema],
+  oneOf: [v1Schema, v2Schema, v3Schema, v4Schema],
   definitions: {
     expression: expressionDefinitions.expression,
+    functionExpression: expressionDefinitions.functionExpression,
     condition: conditionDefinition,
     element: elementDefinition,
+    elementV4: elementDefinitionV4,
   },
 };

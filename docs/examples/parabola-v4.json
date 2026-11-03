@@ -1,0 +1,241 @@
+{
+  "type": "genui",
+  "version": 4,
+  "title": "抛物线图像（函数曲线）",
+  "state": [
+    {
+      "id": "a",
+      "label": "二次项系数 a",
+      "kind": "number",
+      "initial": -1,
+      "min": -2,
+      "max": 2,
+      "step": 0.1
+    },
+    {
+      "id": "b",
+      "label": "一次项系数 b",
+      "kind": "number",
+      "initial": 0,
+      "min": -4,
+      "max": 4,
+      "step": 0.5
+    },
+    {
+      "id": "c",
+      "label": "常数项 c",
+      "kind": "number",
+      "initial": 1,
+      "min": -5,
+      "max": 5,
+      "step": 0.5
+    }
+  ],
+  "derived": [
+    {
+      "id": "discriminant",
+      "label": "判别式 b² - 4ac",
+      "expression": {
+        "op": "subtract",
+        "left": {
+          "op": "multiply",
+          "left": {
+            "op": "state",
+            "id": "b"
+          },
+          "right": {
+            "op": "state",
+            "id": "b"
+          }
+        },
+        "right": {
+          "op": "multiply",
+          "left": {
+            "op": "const",
+            "value": 4
+          },
+          "right": {
+            "op": "multiply",
+            "left": {
+              "op": "state",
+              "id": "a"
+            },
+            "right": {
+              "op": "state",
+              "id": "c"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "elements": [
+    {
+      "kind": "section",
+      "title": "参数与判别式",
+      "children": [
+        {
+          "kind": "columns",
+          "columns": [
+            [
+              {
+                "kind": "slider",
+                "bind": "a"
+              },
+              {
+                "kind": "slider",
+                "bind": "b"
+              },
+              {
+                "kind": "slider",
+                "bind": "c"
+              }
+            ],
+            [
+              {
+                "kind": "value",
+                "label": "判别式",
+                "source": {
+                  "kind": "derived",
+                  "id": "discriminant"
+                }
+              },
+              {
+                "kind": "note",
+                "tone": "warn",
+                "text": "a = 0 时 y = bx + c 退化为直线；对称轴求值会失败，曲线自动改用默认区间 -10…10 绘制。",
+                "visibleIf": {
+                  "op": "num-eq",
+                  "left": {
+                    "op": "state",
+                    "id": "a"
+                  },
+                  "right": {
+                    "op": "const",
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "section",
+      "title": "图像",
+      "children": [
+        {
+          "kind": "chart",
+          "chartType": "line",
+          "title": "y = a·x² + b·x + c",
+          "xLabel": "x",
+          "yLabel": "y",
+          "series": [
+            {
+              "label": "y = a·x² + b·x + c",
+              "function": {
+                "expression": {
+                  "op": "add",
+                  "left": {
+                    "op": "multiply",
+                    "left": {
+                      "op": "state",
+                      "id": "a"
+                    },
+                    "right": {
+                      "op": "multiply",
+                      "left": {
+                        "op": "x"
+                      },
+                      "right": {
+                        "op": "x"
+                      }
+                    }
+                  },
+                  "right": {
+                    "op": "add",
+                    "left": {
+                      "op": "multiply",
+                      "left": {
+                        "op": "state",
+                        "id": "b"
+                      },
+                      "right": {
+                        "op": "x"
+                      }
+                    },
+                    "right": {
+                      "op": "state",
+                      "id": "c"
+                    }
+                  }
+                },
+                "domain": {
+                  "start": {
+                    "op": "subtract",
+                    "left": {
+                      "op": "divide",
+                      "left": {
+                        "op": "negate",
+                        "value": {
+                          "op": "state",
+                          "id": "b"
+                        }
+                      },
+                      "right": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "const",
+                          "value": 2
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "a"
+                        }
+                      }
+                    },
+                    "right": {
+                      "op": "const",
+                      "value": 10
+                    }
+                  },
+                  "end": {
+                    "op": "add",
+                    "left": {
+                      "op": "divide",
+                      "left": {
+                        "op": "negate",
+                        "value": {
+                          "op": "state",
+                          "id": "b"
+                        }
+                      },
+                      "right": {
+                        "op": "multiply",
+                        "left": {
+                          "op": "const",
+                          "value": 2
+                        },
+                        "right": {
+                          "op": "state",
+                          "id": "a"
+                        }
+                      }
+                    },
+                    "right": {
+                      "op": "const",
+                      "value": 10
+                    }
+                  }
+                },
+                "samples": 41,
+                "features": ["zero"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

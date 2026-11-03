@@ -4,19 +4,24 @@ import { isStepAligned } from './step';
 import {
   LIMITS,
   PROTOCOL_VERSION,
+  type ChartFunctionSeries,
   type Condition,
   type DerivedValue,
+  type FunctionExpression,
   type GenuiDocument,
   type GenuiV2Document,
   type GenuiV3Document,
   type GenuiV3Element,
+  type GenuiV4Document,
+  type GenuiV4Element,
+  type InteractiveElement,
   type NumericExpression,
   type ParseGenuiResult,
   type StateVariable,
 } from './types';
 
 /**
- * genui 协议解析与验证（v1 静态 / v2 交互 / v3 组合）。
+ * genui 协议解析与验证（v1 静态 / v2 交互 / v3-v4 组合；v4 新增函数曲线系列）。
  *
  * 守卫顺序（每一步先于解析成本更高的步骤）：
  * 1. too-large          原始长度上限；
@@ -109,14 +114,16 @@ interface SemanticContext {
   conditionNodes: number;
 }
 
-function createContext(document: GenuiV2Document | GenuiV3Document): SemanticContext {
+function createContext(
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document,
+): SemanticContext {
   return {
     stateById: new Map(document.state.map((variable) => [variable.id, variable])),
     derivedById: new Map(document.derived.map((value) => [value.id, value])),
     dependencies: new Map(),
     expressionNodes: 0,
     expressionBudget:
-      document.version === 3 ? LIMITS.maxExpressionNodesV3 : LIMITS.maxExpressionNodes,
+      document.version >= 3 ? LIMITS.maxExpressionNodesV3 : LIMITS.maxExpressionNodes,
     conditionNodes: 0,
   };
 }
@@ -131,8 +138,9 @@ function hasExactKeys(record: Record<string, unknown>, ...keys: string[]): boole
 /** 检查一条数值表达式的白名单字段、引用与规模，并记录派生依赖。 */
 function inspectExpression(
   context: SemanticContext,
-  expression: NumericExpression,
+  expression: FunctionExpression,
   depth: number,
+  allowX = false,
 ): SemanticFailure | null {
   context.expressionNodes += 1;
   if (context.expressionNodes > context.expressionBudget || depth > LIMITS.maxExpressionDepth) {
@@ -175,6 +183,15 @@ function inspectExpression(
       }
       return null;
     }
+    case 'x': {
+      if (!allowX) {
+        return semanticFailure('semantic-violation', '变量 x 仅允许用于函数曲线的表达式');
+      }
+      if (!hasExactKeys(record, 'op')) {
+        return semanticFailure('semantic-violation', 'x 运算的字段无效');
+      }
+      return null;
+    }
     case 'negate':
     case 'abs':
     case 'round':
@@ -183,7 +200,7 @@ function inspectExpression(
       if (!hasExactKeys(record, 'op', 'value') || typeof record.value !== 'object' || record.value === null) {
         return semanticFailure('semantic-violation', `${expression.op} 运算的字段无效`);
       }
-      return inspectExpression(context, record.value as NumericExpression, depth + 1);
+      return inspectExpression(context, record.value as NumericExpression, depth + 1, allowX);
     }
     case 'add':
     case 'subtract':
@@ -198,9 +215,9 @@ function inspectExpression(
       ) {
         return semanticFailure('semantic-violation', `${expression.op} 运算的字段无效`);
       }
-      const leftFailure = inspectExpression(context, record.left as NumericExpression, depth + 1);
+      const leftFailure = inspectExpression(context, record.left as NumericExpression, depth + 1, allowX);
       if (leftFailure) return leftFailure;
-      return inspectExpression(context, record.right as NumericExpression, depth + 1);
+      return inspectExpression(context, record.right as NumericExpression, depth + 1, allowX);
     }
     default: {
       const exhaustive: never = expression;
@@ -257,10 +274,10 @@ function inspectCondition(
   return inspectExpression(context, condition.right, 1);
 }
 
-/** 状态定义、派生定义、表达式预算与循环依赖（v2/v3 共用）。 */
+/** 状态定义、派生定义、表达式预算与循环依赖（v2/v3/v4 共用）。 */
 function inspectStateAndDerived(
   context: SemanticContext,
-  document: GenuiV2Document | GenuiV3Document,
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document,
 ): SemanticFailure | null {
   if (context.stateById.size !== document.state.length) {
     return semanticFailure('invalid-reference', 'state 中存在重复 id');
@@ -362,10 +379,12 @@ function inspectDependencyCycles(context: SemanticContext): SemanticFailure | nu
   return null;
 }
 
-/** v2 叶元素引用检查（控件绑定、结果来源）。 */
+/** v2 叶元素引用检查（控件绑定、结果来源）；v3/v4 组合布局的叶元素复用。 */
 function inspectLeafElement(
   context: SemanticContext,
-  element: Exclude<GenuiV2Document['elements'][number], { kind: 'text' }>,
+  element:
+    | Exclude<GenuiV2Document['elements'][number], { kind: 'text' }>
+    | InteractiveElement,
 ): SemanticFailure | null {
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = context.stateById.get(element.bind);
@@ -406,14 +425,85 @@ function validateV2Semantics(document: GenuiV2Document): SemanticFailure | null 
   return inspectDependencyCycles(context);
 }
 
-/** 展平后的元素总数、布局嵌套深度与各组合元素内部引用。 */
-function inspectV3Elements(
+/**
+ * v4 函数曲线系列：检查结构白名单与预算，且表达式允许局部变量 x。
+ * domain 属普通数值表达式（不允许 x）；samples/features 形状由 schema 保证，
+ * 语义层复检以维持白名单防御纵深。
+ */
+function inspectFunctionSeries(
   context: SemanticContext,
-  elements: GenuiV3Element[],
+  series: ChartFunctionSeries,
+  allowed: boolean,
+): SemanticFailure | null {
+  if (!allowed) {
+    return semanticFailure(
+      'semantic-violation',
+      `函数曲线系列需要协议版本 ${PROTOCOL_VERSION}`,
+    );
+  }
+  const seriesRecord = series as unknown as Record<string, unknown>;
+  const seriesOk =
+    hasExactKeys(seriesRecord, 'label', 'function') ||
+    hasExactKeys(seriesRecord, 'label', 'color', 'function');
+  if (!seriesOk) {
+    return semanticFailure('semantic-violation', '函数曲线系列的字段无效');
+  }
+
+  const definition = series.function;
+  const definitionRecord = definition as unknown as Record<string, unknown>;
+  if (
+    typeof definitionRecord.expression !== 'object' ||
+    definitionRecord.expression === null
+  ) {
+    return semanticFailure('semantic-violation', '函数曲线缺少表达式');
+  }
+  const defKeys = Object.keys(definitionRecord).sort();
+  const allowedKeys = ['domain', 'expression', 'features', 'samples'];
+  if (defKeys.some((key) => !allowedKeys.includes(key))) {
+    return semanticFailure('semantic-violation', '函数曲线定义的字段无效');
+  }
+  if (
+    definition.samples !== undefined &&
+    (!Number.isInteger(definition.samples) ||
+      definition.samples < 5 ||
+      definition.samples > LIMITS.maxFunctionSamples)
+  ) {
+    return semanticFailure('semantic-violation', '函数曲线采样数超出范围');
+  }
+  if (definition.features !== undefined) {
+    if (
+      !Array.isArray(definition.features) ||
+      definition.features.length !== 1 ||
+      definition.features[0] !== 'zero'
+    ) {
+      return semanticFailure('semantic-violation', '函数曲线暂只支持 zero 特征覆盖');
+    }
+  }
+  if (definition.domain !== undefined) {
+    const domainRecord = definition.domain as unknown as Record<string, unknown>;
+    if (!hasExactKeys(domainRecord, 'start', 'end')) {
+      return semanticFailure('semantic-violation', '函数曲线定义域的字段无效');
+    }
+    const startFailure = inspectExpression(context, definition.domain.start, 1);
+    if (startFailure) return startFailure;
+    const endFailure = inspectExpression(context, definition.domain.end, 1);
+    if (endFailure) return endFailure;
+  }
+  return inspectExpression(context, definition.expression, 1, true);
+}
+
+/** 展平后的元素总数、布局嵌套深度与各组合元素内部引用。 */
+function inspectElements(
+  context: SemanticContext,
+  elements: Array<GenuiV3Element | GenuiV4Element>,
+  version: number,
 ): SemanticFailure | null {
   let elementCount = 0;
 
-  const walk = (list: GenuiV3Element[], depth: number): SemanticFailure | null => {
+  const walk = (
+    list: Array<GenuiV3Element | GenuiV4Element>,
+    depth: number,
+  ): SemanticFailure | null => {
     for (const element of list) {
       if (depth > LIMITS.maxNestingDepth) {
         return semanticFailure('too-complex', '组合布局嵌套超过上限');
@@ -441,7 +531,14 @@ function inspectV3Elements(
         case 'chart': {
           if (element.chartType === 'line') {
             let points = 0;
+            let functionSamples = 0;
             for (const series of element.series) {
+              if ('function' in series) {
+                const failure = inspectFunctionSeries(context, series, version === PROTOCOL_VERSION);
+                if (failure) return failure;
+                functionSamples += series.function.samples ?? LIMITS.defaultFunctionSamples;
+                continue;
+              }
               let previousX = Number.NEGATIVE_INFINITY;
               for (const point of series.points) {
                 if (point.x <= previousX) {
@@ -455,6 +552,9 @@ function inspectV3Elements(
             }
             if (points > LIMITS.maxChartPointsTotal) {
               return semanticFailure('too-complex', '折线图数据点总数超过上限');
+            }
+            if (functionSamples > LIMITS.maxFunctionSamplesTotal) {
+              return semanticFailure('too-complex', '函数曲线采样总数超过上限');
             }
           } else {
             for (const item of element.items) {
@@ -529,7 +629,18 @@ function validateV3Semantics(document: GenuiV3Document): SemanticFailure | null 
   const stateFailure = inspectStateAndDerived(context, document);
   if (stateFailure) return stateFailure;
 
-  const elementFailure = inspectV3Elements(context, document.elements);
+  const elementFailure = inspectElements(context, document.elements, document.version);
+  if (elementFailure) return elementFailure;
+
+  return inspectDependencyCycles(context);
+}
+
+function validateV4Semantics(document: GenuiV4Document): SemanticFailure | null {
+  const context = createContext(document);
+  const stateFailure = inspectStateAndDerived(context, document);
+  if (stateFailure) return stateFailure;
+
+  const elementFailure = inspectElements(context, document.elements, document.version);
   if (elementFailure) return elementFailure;
 
   return inspectDependencyCycles(context);
@@ -587,6 +698,9 @@ export function parseGenui(raw: string): ParseGenuiResult {
     if (failure) return failure;
   } else if (document.version === 3) {
     const failure = validateV3Semantics(document);
+    if (failure) return failure;
+  } else if (document.version === 4) {
+    const failure = validateV4Semantics(document);
     if (failure) return failure;
   }
   return { ok: true, document };

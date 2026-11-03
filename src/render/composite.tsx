@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import type {
   GenuiV3Document,
   GenuiV3Element,
+  GenuiV4Document,
+  GenuiV4Element,
   InteractiveStateValues,
   NoteElement,
   TableElement,
@@ -17,14 +19,14 @@ import type { ElementRegistry } from './registry';
 import { TableElementView } from './table';
 
 /**
- * v3 组合元素递归渲染：文字/说明的条件门控 + 布局容器 + 图表/表格。
+ * v3/v4 组合元素递归渲染：文字/说明的条件门控 + 布局容器 + 图表/表格。
  *
  * 每个元素单独包错误边界，单个组合子树渲染失败不会拖垮整张卡片。
  * 条件计算失败时选择「继续显示内容并提示错误」，避免静默隐藏信息。
  */
 
 export interface CompositeContext {
-  document: GenuiV3Document;
+  document: GenuiV3Document | GenuiV4Document;
   evaluation: CompositeEvaluation;
   registry: ElementRegistry;
   state: InteractiveStateValues;
@@ -58,7 +60,7 @@ function ElementContent({
   context,
   path,
 }: {
-  element: GenuiV3Element;
+  element: GenuiV3Element | GenuiV4Element;
   context: CompositeContext;
   path: string;
 }) {
@@ -141,7 +143,7 @@ export function ElementList({
   context,
   path,
 }: {
-  elements: GenuiV3Element[];
+  elements: Array<GenuiV3Element | GenuiV4Element>;
   context: CompositeContext;
   path: string;
 }) {

@@ -11,14 +11,14 @@ import { parseGenui } from '../../src/protocol/validate';
 
 /**
  * 阶段 7：默认增强提示词是用户可见文本，必须可识别、可去重、不改动原草稿，
- * 并且只描述扩展真实支持的 v3 协议能力。
+ * 并且只描述扩展真实支持的 v4 协议能力（含 v4 函数曲线系列）。
  */
 
 const USER_DRAFT = '帮我算一下每月能存多少钱';
 
 describe('默认增强提示词', () => {
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe(2.2);
+    expect(GENUI_PROMPT_VERSION).toBe(2.3);
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
@@ -41,6 +41,9 @@ describe('默认增强提示词', () => {
       'columns',
       'chart',
       'smooth',
+      'function',
+      '"op":"x"',
+      '"zero"',
       'table',
       'add',
       'subtract',
@@ -84,13 +87,13 @@ describe('默认增强提示词', () => {
     }
   });
 
-  it('提示词中的示例是合法 v3 文档，可被本地协议直接解析', () => {
+  it('提示词中的示例是合法 v4 文档，可被本地协议直接解析', () => {
     const match = /```genui\n([\s\S]*?)\n```/.exec(GENUI_PROMPT_TEXT);
     expect(match).not.toBeNull();
     const example = parseGenui(match?.[1] ?? '');
     expect(example).toMatchObject({ ok: true });
     if (example.ok) {
-      expect(example.document.version).toBe(3);
+      expect(example.document.version).toBe(4);
       expect(example.document.elements.length).toBeGreaterThan(0);
     }
   });

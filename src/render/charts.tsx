@@ -1,13 +1,25 @@
-import type { ChartElement, ChartItem, ChartSeries } from '../protocol/types';
-import { lookupExpression, type CompositeEvaluation } from '../runtime/evaluate';
+import type {
+  ChartElement,
+  ChartElementV4,
+  ChartFunctionSeries,
+  ChartItem,
+  ChartSeries,
+} from '../protocol/types';
+import {
+  lookupExpression,
+  lookupFunctionSeries,
+  type CompositeEvaluation,
+} from '../runtime/evaluate';
 import { formatNumber } from './format';
 
 /**
- * 图表视图（v3）：柱状、折线、饼图。
+ * 图表视图（v3/v4）：柱状、折线、饼图。
  *
- * 只消费运行时预先求值的结果（lookupExpression），渲染阶段不做计算；
- * 图形同时提供「查看数据」表格，保证数值不依赖颜色或视觉位置可读。
- * SVG 仅使用本地形状与颜色，不含远程资源或脚本。
+ * 只消费运行时预先求值的结果（lookupExpression / lookupFunctionSeries），
+ * 渲染阶段不做计算；图形同时提供「查看数据」表格，保证数值不依赖颜色或
+ * 视觉位置可读。v4 折线新增函数曲线系列：曲线由采样点 Hermite 平滑连接，
+ * 不绘制样本点圆标（离散系列保持原样）。坐标轴在零点位于视口内时画在
+ * 数据坐标 x=0 / y=0，视口不含零点时退回绘图区边缘。
  */
 
 const PALETTE = [
@@ -27,6 +39,8 @@ function seriesColor(color: string | undefined, index: number): string {
   return color && HEX_COLOR.test(color) ? color : PALETTE[index % PALETTE.length]!;
 }
 
+export type AnyChartElement = ChartElement | ChartElementV4;
+
 interface EvaluatedItem {
   label: string;
   value?: number;
@@ -34,8 +48,9 @@ interface EvaluatedItem {
   color: string;
 }
 
-type ItemChart = Extract<ChartElement, { items: ChartItem[] }>;
-type LineChartElement = Extract<ChartElement, { chartType: 'line' }>;
+type ItemChart = Extract<AnyChartElement, { items: ChartItem[] }>;
+type LineChartElement = Extract<AnyChartElement, { chartType: 'line' }>;
+type LineSeries = ChartSeries | ChartFunctionSeries;
 
 function evaluateItems(element: ItemChart, evaluation: CompositeEvaluation): EvaluatedItem[] {
   return element.items.map((item, index) => {
@@ -140,13 +155,65 @@ interface CubicSegment {
   end: XYPoint;
 }
 
-function evaluateSeries(series: ChartSeries[], evaluation: CompositeEvaluation): {
-  series: Array<{ label: string; color: string; smooth: boolean; points: XYPoint[]; error?: string }>;
+interface RenderedDiscreteSeries {
+  label: string;
+  color: string;
+  kind: 'discrete';
+  smooth: boolean;
+  points: XYPoint[];
+  error?: string;
+}
+
+interface RenderedFunctionSeries {
+  label: string;
+  color: string;
+  kind: 'function';
+  /** 连续非空采样段；null 样本导致断开。 */
+  runs: XYPoint[][];
+  error?: string;
+}
+
+type RenderedSeries = RenderedDiscreteSeries | RenderedFunctionSeries;
+
+function evaluateSeries(series: LineSeries[], evaluation: CompositeEvaluation): {
+  series: RenderedSeries[];
   warnings: string[];
 } {
   const warnings: string[] = [];
   return {
-    series: series.map((item, index) => {
+    series: series.map((item, index): RenderedSeries => {
+      const color = seriesColor(item.color, index);
+      if ('function' in item) {
+        const result = lookupFunctionSeries(evaluation, item.function);
+        if (!result.ok) {
+          const error = `${item.label}：${result.error}`;
+          warnings.push(error);
+          return { label: item.label, color, kind: 'function', runs: [], error };
+        }
+        // 把采样结果切成非空连续段；null 样本(求值失败)渲染为折线断裂。
+        const runs: XYPoint[][] = [];
+        let current: XYPoint[] | null = null;
+        result.xs.forEach((x, sampleIndex) => {
+          const y = result.ys[sampleIndex];
+          if (typeof y !== 'number') {
+            current = null;
+            return;
+          }
+          const point = { x, y };
+          if (current) {
+            current.push(point);
+          } else {
+            current = [point];
+            runs.push(current);
+          }
+        });
+        if (result.dropped > 0) {
+          warnings.push(
+            `${item.label}：${result.dropped === 1 ? '1 个采样点' : `${result.dropped} 个采样点`}无法计算`,
+          );
+        }
+        return { label: item.label, color, kind: 'function', runs };
+      }
       const points: XYPoint[] = [];
       let error: string | undefined;
       for (const point of item.points) {
@@ -161,7 +228,8 @@ function evaluateSeries(series: ChartSeries[], evaluation: CompositeEvaluation):
       if (error) warnings.push(error);
       return {
         label: item.label,
-        color: seriesColor(item.color, index),
+        color,
+        kind: 'discrete',
         smooth: item.smooth === true,
         points: error ? [] : points.sort((left, right) => left.x - right.x),
         ...(error ? { error } : {}),
@@ -238,18 +306,35 @@ function LineChart({ element, evaluation }: {
   evaluation: CompositeEvaluation;
 }) {
   const evaluated = evaluateSeries(element.series, evaluation);
-  const points = evaluated.series.flatMap((item) => item.points);
-  const smoothSegments = evaluated.series.map((item) => item.smooth ? createSmoothSegments(item.points) : null);
+  const smoothSegments = evaluated.series.map((item) =>
+    item.kind === 'discrete' && item.smooth ? createSmoothSegments(item.points) : null,
+  );
+  // 函数曲线系列按非空连续段分别做 Hermite 平滑（无样本点圆标）。
+  const functionRunSegments = evaluated.series.map((item) =>
+    item.kind === 'function' ? item.runs.map((run) => createSmoothSegments(run)) : null,
+  );
   const width = 360;
   const height = 190;
   const plot = { left: 48, right: 12, top: 14, bottom: 44 };
   const innerWidth = width - plot.left - plot.right;
   const innerHeight = height - plot.top - plot.bottom;
 
+  const points = evaluated.series.flatMap((item) =>
+    item.kind === 'discrete' ? item.points : item.runs.flat(),
+  );
+  const controlYs = evaluated.series.flatMap((item, index) => {
+    if (item.kind === 'function') {
+      return (functionRunSegments[index] ?? [])
+        .flatMap((segments) => segments ?? [])
+        .flatMap((segment) => [segment.control1.y, segment.control2.y]);
+    }
+    return (smoothSegments[index] ?? [])
+      .flatMap((segment: CubicSegment) => [segment.control1.y, segment.control2.y]);
+  });
   const xs = points.map((point) => point.x);
   const ys = [
     ...points.map((point) => point.y),
-    ...smoothSegments.flatMap((segments) => segments?.flatMap((segment) => [segment.control1.y, segment.control2.y]) ?? []),
+    ...controlYs,
   ];
   let xMin = xs.length > 0 ? Math.min(...xs) : 0;
   let xMax = xs.length > 0 ? Math.max(...xs) : 1;
@@ -274,10 +359,42 @@ function LineChart({ element, evaluation }: {
     label: formatNumber(yMin + (yMax - yMin) * fraction),
   }));
 
+  // 零点位于视口内时坐标轴画在数据坐标 x=0 / y=0；否则退回绘图区边缘。
+  const xAxisY = yMin <= 0 && yMax >= 0 ? scaleY(0) : plot.top + innerHeight;
+  const yAxisX = xMin <= 0 && xMax >= 0 ? scaleX(0) : plot.left;
+  const drawable = evaluated.series.some((item) =>
+    item.kind === 'discrete'
+      ? item.points.length > 0
+      : item.runs.some((run) => run.length > 0),
+  );
+
+  const renderDiscrete = (item: RenderedDiscreteSeries, index: number) => (item.points.length > 0 ? (
+    <g key={item.label}>
+      {smoothSegments[index] ? (
+        <path
+          className="genui-line-path"
+          d={createSmoothPath(smoothSegments[index]!, scaleX, scaleY)}
+          fill="none"
+          stroke={item.color}
+        />
+      ) : (
+        <polyline
+          className="genui-line-path"
+          points={item.points.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
+          fill="none"
+          stroke={item.color}
+        />
+      )}
+      {smoothSegments[index] ? null : item.points.map((point) => (
+        <circle key={point.x} cx={scaleX(point.x)} cy={scaleY(point.y)} r={2.5} fill={item.color} />
+      ))}
+    </g>
+  ) : null);
+
   return (
     <div className="genui-chart-body">
       <WarningList messages={evaluated.warnings} />
-      {points.length === 0 ? (
+      {!drawable ? (
         <p className="genui-chart-empty">暂无可绘制的数据。</p>
       ) : (
         <svg
@@ -292,35 +409,47 @@ function LineChart({ element, evaluation }: {
               <text className="genui-chart-axis-label" x={plot.left - 6} y={tick.y + 3} textAnchor="end">{tick.label}</text>
             </g>
           ))}
-          <line className="genui-chart-axis" x1={plot.left} x2={plot.left} y1={plot.top} y2={plot.top + innerHeight} />
-          <line className="genui-chart-axis" x1={plot.left} x2={width - plot.right} y1={plot.top + innerHeight} y2={plot.top + innerHeight} />
+          <line className="genui-chart-axis" x1={yAxisX} x2={yAxisX} y1={plot.top} y2={plot.top + innerHeight} />
+          <line className="genui-chart-axis" x1={plot.left} x2={width - plot.right} y1={xAxisY} y2={xAxisY} />
           <text className="genui-chart-axis-label" x={plot.left} y={plot.top + innerHeight + 14}>{formatNumber(xMin)}</text>
           <text className="genui-chart-axis-label" x={width - plot.right} y={plot.top + innerHeight + 14} textAnchor="end">{formatNumber(xMax)}</text>
           {element.xLabel ? (
             <text className="genui-chart-axis-title" x={plot.left + innerWidth / 2} y={height - 8} textAnchor="middle">{element.xLabel}</text>
           ) : null}
-          {evaluated.series.map((item, index) => item.points.length > 0 ? (
-            <g key={item.label}>
-              {smoothSegments[index] ? (
-                <path
-                  className="genui-line-path"
-                  d={createSmoothPath(smoothSegments[index]!, scaleX, scaleY)}
-                  fill="none"
-                  stroke={item.color}
-                />
-              ) : (
-                <polyline
-                  className="genui-line-path"
-                  points={item.points.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
-                  fill="none"
-                  stroke={item.color}
-                />
-              )}
-              {smoothSegments[index] ? null : item.points.map((point) => (
-                <circle key={point.x} cx={scaleX(point.x)} cy={scaleY(point.y)} r={2.5} fill={item.color} />
-              ))}
-            </g>
-          ) : null)}
+          {evaluated.series.map((item, index) => {
+            if (item.kind === 'function') {
+              if (item.runs.length === 0) return null;
+              const segments = functionRunSegments[index] ?? [];
+              return (
+                <g key={item.label}>
+                  {item.runs.map((run, runIndex) => {
+                    const smooth = segments[runIndex];
+                    if (smooth && smooth.length > 0) {
+                      return (
+                        <path
+                          key={runIndex}
+                          className="genui-line-path"
+                          d={createSmoothPath(smooth, scaleX, scaleY)}
+                          fill="none"
+                          stroke={item.color}
+                        />
+                      );
+                    }
+                    return (
+                      <polyline
+                        key={runIndex}
+                        className="genui-line-path"
+                        points={run.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
+                        fill="none"
+                        stroke={item.color}
+                      />
+                    );
+                  })}
+                </g>
+              );
+            }
+            return renderDiscrete(item, index);
+          })}
         </svg>
       )}
       {element.yLabel ? <p className="genui-chart-axis-title">{element.yLabel}</p> : null}
@@ -341,8 +470,10 @@ function LineChart({ element, evaluation }: {
           .map((x) => [
             formatNumber(x),
             ...evaluated.series.map((item) => {
-              const point = item.points.find((candidate) => candidate.x === x);
-              return point ? formatNumber(point.y) : '—';
+              const sample = item.kind === 'discrete'
+                ? item.points.find((candidate) => candidate.x === x)
+                : item.runs.flat().find((candidate) => candidate.x === x);
+              return sample ? formatNumber(sample.y) : '—';
             }),
           ])}
       />
@@ -444,12 +575,12 @@ function PieChart({ element, evaluation }: {
   );
 }
 
-function isItemChart(element: ChartElement): element is ItemChart {
+function isItemChart(element: AnyChartElement): element is ItemChart {
   return element.chartType === 'bar' || element.chartType === 'pie';
 }
 
 export function ChartElementView({ element, evaluation }: {
-  element: ChartElement;
+  element: AnyChartElement;
   evaluation: CompositeEvaluation;
 }) {
   return (

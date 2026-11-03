@@ -26,8 +26,8 @@ import { getBrandMarkUrl } from '../branding';
 
 /**
  * 一个 GenUI 文档的样式隔离卡片。v1 渲染静态内容；v2 的状态、控件与派生
- * 计算留在组件树内；v3 在 v2 基础上增加布局、条件说明、图表与表格，
- * 全部组合元素共享同一份状态与求值快照。
+ * 计算留在组件树内；v3 在 v2 基础上增加布局、条件说明、图表与表格；
+ * v4 在 v3 基础上增加函数曲线系列（采样在求值快照内完成）。
  */
 /** 「继续讨论」填充结果 → 卡片反馈文案（固定子串供测试与一致性依赖）。 */
 const CONTINUE_FEEDBACK: Record<
@@ -72,12 +72,12 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
   const bodyId = useId();
 
   const evaluation = useMemo<CompositeEvaluation | null>(
-    () => (doc.version === 3 ? evaluateComposite(doc, state) : null),
+    () => (doc.version === 3 || doc.version === 4 ? evaluateComposite(doc, state) : null),
     [doc, state],
   );
   const calculation = useMemo<DerivedCalculation>(() => {
     if (doc.version === 2) return calculateDerived(doc, state);
-    if (doc.version === 3) return evaluation?.derived ?? EMPTY_CALCULATION;
+    if (doc.version === 3 || doc.version === 4) return evaluation?.derived ?? EMPTY_CALCULATION;
     return EMPTY_CALCULATION;
   }, [doc, state, evaluation]);
 
@@ -233,7 +233,7 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
-        {doc.version === 3 ? (
+        {doc.version === 3 || doc.version === 4 ? (
           <CompositeElementsView
             context={{
               document: doc,
@@ -248,7 +248,7 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
             }}
           />
         ) : (
-          doc.elements.map(renderLegacyElement)
+          (doc.elements as Array<TextElement | InteractiveElement>).map(renderLegacyElement)
         )}
       </div>
       <footer className="genui-card-footer" hidden={!expanded}>
