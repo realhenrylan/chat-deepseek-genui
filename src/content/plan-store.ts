@@ -56,6 +56,7 @@ export function isSavedCardPlan(value: unknown): value is SavedCardPlan {
   if (value.stateVersion !== CARD_STATE_VERSION) return false;
   if (!hasString(value, 'documentHash')) return false;
   if (!hasString(value, 'stateSignature')) return false;
+  if (!hasString(value, 'accountId')) return false;
   if (!hasString(value, 'sessionId')) return false;
   if (!hasString(value, 'messageKey')) return false;
   if (typeof value.duplicateIndex !== 'number' || !Number.isInteger(value.duplicateIndex)) {
@@ -118,15 +119,29 @@ export function createPlanStore(
         const evicted = ordered.slice(max);
 
         await area.set({ [storageKey(key)]: plan });
-        if (evicted.length > 0) {
-          await area.remove(evicted.map(([id]) => storageKey(id)));
-        }
+
         // 新记录本身也可能因时间戳异常被淘汰；如实反馈，不留下幽灵状态。
         const retained = kept.some(([id]) => id === key);
         if (!retained) {
+          try {
+            await area.remove(storageKey(key));
+          } catch (cleanupError) {
+            console.warn('[dsgenui] 未能清理未保留的保存记录', cleanupError);
+          }
           return { ok: false, message: '保存失败：方案列表已满，当前记录未能保留。' };
         }
-        return { ok: true, savedAt: plan.savedAt, evicted: evicted.length };
+
+        // 容量清理失败不应把已成功写入的新记录谎报为失败；下次保存会再次清理。
+        let removed = 0;
+        if (evicted.length > 0) {
+          try {
+            await area.remove(evicted.map(([id]) => storageKey(id)));
+            removed = evicted.length;
+          } catch (cleanupError) {
+            console.warn('[dsgenui] 清理旧保存方案失败，记录仍已保留', cleanupError);
+          }
+        }
+        return { ok: true, savedAt: plan.savedAt, evicted: removed };
       } catch (error) {
         return { ok: false, message: `保存失败：${describeStorageError(error)}` };
       }

@@ -34,6 +34,8 @@ export interface SavedCardPlan {
   stateVersion: number;
   documentHash: string;
   stateSignature: string;
+  /** 账号作用域哈希（不保存原始账号 id）。 */
+  accountId: string;
   sessionId: string;
   messageKey: string;
   duplicateIndex: number;

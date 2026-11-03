@@ -55,6 +55,8 @@ export interface EnhanceOptions {
   isBlockUnverifiable?: (block: HTMLElement) => boolean;
   /** 当前会话 id；生产由控制器注入，缺省从 document.location 推导。 */
   sessionId?: string;
+  /** 账号标记覆盖（测试注入）；缺省读取页面稳定标记，缺失时禁止本机保存。 */
+  accountId?: string;
   /** 本机「保存方案」存储；null/缺省表示不提供持久化入口。 */
   planStore?: PlanStore | null;
   /** 页面内状态仓库覆盖（测试注入）；缺省新建且有上限。 */
@@ -186,6 +188,7 @@ export class EnhancementManager {
     // 身份只在真正要挂载时计算；会话 id 每轮重读，兼容 SPA 内切换会话。
     const identities = computeCardIdentities(candidates, {
       sessionId: this.options.sessionId ?? readSessionId(this.doc),
+      accountId: this.options.accountId,
       document: this.doc,
     });
 
@@ -255,13 +258,17 @@ export class EnhancementManager {
     for (const host of this.doc.querySelectorAll(`[data-genui-host]`)) host.remove();
   }
 
-  /** 首次挂载状态优先级：页面内仓库 > 兼容的保存方案 > 文档初始值。 */
+  /**
+   * 首次挂载状态优先级：页面内仓库 > 兼容的保存方案 > 文档初始值。
+   * 保存记录只在身份可持久化（账号、会话可验证且无歧义）时读取，
+   * 避免在账号切换或消息身份不清时串用别人的方案。
+   */
   private resolveInitialState(
     identity: CardIdentity,
     doc: GenuiDocument,
   ): { state: CardUiState; savedPlanAt: number | null } {
     const existing = this.stateStore.get(identity.key);
-    const plan = this.savedPlans[identity.key];
+    const plan = identity.persistable ? this.savedPlans[identity.key] : undefined;
     const compatible =
       plan && isCompatibleSavedPlan(plan, doc, identity.documentHash) ? plan : null;
 
@@ -288,10 +295,10 @@ export class EnhancementManager {
     if (!store) {
       return { ok: false, message: '保存失败：当前环境不支持本机存储。' };
     }
-    if (identity.ambiguous) {
+    if (!identity.persistable) {
       return {
         ok: false,
-        message: '保存失败：当前会话或消息身份无法可靠确认，未保存到本机。',
+        message: '保存失败：当前账号、会话或消息身份无法可靠确认，未保存到本机。',
       };
     }
 
@@ -299,6 +306,7 @@ export class EnhancementManager {
       stateVersion: CARD_STATE_VERSION,
       documentHash: identity.documentHash,
       stateSignature: documentStateSignature(doc),
+      accountId: identity.accountId,
       sessionId: identity.sessionId,
       messageKey: identity.messageKey,
       duplicateIndex: identity.duplicateIndex,

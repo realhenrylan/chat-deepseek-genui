@@ -59,6 +59,7 @@ function savedPlan(overrides: Partial<SavedCardPlan> = {}): SavedCardPlan {
     stateVersion: CARD_STATE_VERSION,
     documentHash: 'hash-1',
     stateSignature: documentStateSignature(DOC),
+    accountId: 'acct-user',
     sessionId: '/a/chat/s/session-1',
     messageKey: 'vl:1',
     duplicateIndex: 0,
