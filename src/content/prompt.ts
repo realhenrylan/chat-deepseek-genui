@@ -1,25 +1,22 @@
 /**
- * 阶段 7：默认增强提示词（v2.2）。
+ * GenUI 增强说明的共享定义（issue7）。
  *
- * v2.2 修订：正文与界面共同完成回答，按内容分工，避免完整正文后再附一份重复界面；
- * 动态结果留在界面中，正文保留结论、必要解释与来源。
- *
- * 设计约束（docs/development-task.md 阶段 7、docs/compatibility-investigation.md §6）：
- * - 提示词对用户完全可见：它作为普通文本追加在输入框草稿末尾，发送前可逐字检查，
- *   不写入隐藏输入、不注入页面内部消息、不自动发送；
- * - 只描述真实存在的 v3 协议能力（src/protocol/schema.ts + validate.ts），
- *   不承诺脚本、HTML、CSS、事件或网络能力；
- * - 引导模型「适合时才生成界面」，普通问题正常回答；
- * - 与用户已有草稿逐字节隔离：本模块只负责纯字符串追加，绝不裁剪或覆盖原草稿。
+ * 默认文本（auto）与 5f9c242 基线的 v2.2 文本逐字节一致；
+ * 本文件把共享协议主体与两段首部策略分开，各本轮模式只替换表达方式段。
  */
+
+/** 本轮模式：auto=自动适配（默认）；tool=本轮明确生成工具；plain=普通回答（不追加）。 */
+export type GenuiPromptMode = 'auto' | 'tool' | 'plain';
 
 export const GENUI_PROMPT_VERSION = 2.2;
 
-/** 用于识别、去重和关闭恢复的稳定标记；修改提示词时同步升级版本号。 */
 export const GENUI_PROMPT_START =
   '〔GenUI 增强 v2.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
-export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 
+export const GENUI_PROMPT_TOOL_START =
+  '〔GenUI 本轮生成工具 v2.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+
+export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 const PROMPT_BODY = `你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 \`\`\`genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
 
 内容分工（生成前先确定每项信息的主要呈现位置）：
@@ -77,36 +74,49 @@ visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"v
 }
 \`\`\``;
 
+/** tool 变体首段：能力说明加本轮明确生成意图；其后与 auto 共享同一协议主体。 */
+const TOOL_LEAD = '你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 ```genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。用户已在浮标中明确选择本轮回答工具：优先用 ```genui 代码块把本轮任务表达为可交互界面，正文与界面按下方分工互补。纯事实问答、闲聊或过短的请求仍可直接用普通文字回答；现有协议能力确实无法表达任务时不要硬造界面，改用普通文字回答，并简短说明未能生成界面的原因。';
+
+/** 共享协议主体：从 auto 正文截取「内容分工」起至示例结束围栏，保证逐字节一致。 */
+const PROTOCOL_BODY = PROMPT_BODY.slice(PROMPT_BODY.indexOf('内容分工'));
+
 /** 完整、逐字可见的默认增强文本。UI 面板与追加逻辑必须引用同一常量。 */
 export const GENUI_PROMPT_TEXT = `${GENUI_PROMPT_START}\n${PROMPT_BODY}\n${GENUI_PROMPT_END}`;
+
+/** tool 模式的完整增强文本。UI 面板与追加逻辑必须引用同一常量。 */
+export const GENUI_TOOL_PROMPT_TEXT = `${GENUI_PROMPT_TOOL_START}\n${TOOL_LEAD}\n\n${PROTOCOL_BODY}\n${GENUI_PROMPT_END}`;
+
+/** plain 模式不追加任何文本；浮标面板用这段说明代替逐字内容展示。 */
+export const GENUI_PLAIN_PROMPT_NOTE =
+  '本轮选择「普通回答」：不会向你的草稿追加任何 GenUI 增强文本。';
+
+/** 读取某个本轮模式对应的完整说明文本；plain 不追加，返回 null。 */
+export function getGenuiPromptTextForMode(mode: GenuiPromptMode): string | null {
+  if (mode === 'tool') return GENUI_TOOL_PROMPT_TEXT;
+  if (mode === 'plain') return null;
+  return GENUI_PROMPT_TEXT;
+}
 
 export interface AppendPromptResult {
   /** 追加后的完整草稿；未追加时与输入逐字节相同。 */
   value: string;
-  /** 是否实际追加（空草稿或已包含提示词时为 false）。 */
+  /** 本轮是否追加了说明。 */
   inserted: boolean;
-  /** 用户原始内容的长度，用于把光标停在增强说明之前。 */
+  /** 用户原文长度：返回草稿中前 userLength 个字符属于用户。 */
   userLength: number;
 }
 
-/**
- * 把提示词追加到草稿末尾。
- * - 空草稿不追加，避免用户尚未输入时就被写入内容；
- * - 已包含标记时视为已追加，不重复；
- * - 原有草稿逐字节保留，仅在末尾按需补换行分隔。
- */
-export function appendGenuiPrompt(value: string): AppendPromptResult {
-  if (value.trim() === '' || value.includes(GENUI_PROMPT_START)) {
+/** 把指定本轮模式的完整说明逐字追加到草稿末尾；空草稿或已含任一说明时原样返回。 */
+export function appendGenuiPrompt(value: string, mode: GenuiPromptMode = 'auto'): AppendPromptResult {
+  const text = getGenuiPromptTextForMode(mode);
+  if (text === null || value.trim() === '' || hasGenuiPrompt(value)) {
     return { value, inserted: false, userLength: value.length };
   }
   const separator = value.endsWith('\n\n') ? '' : value.endsWith('\n') ? '\n' : '\n\n';
-  return {
-    value: value + separator + GENUI_PROMPT_TEXT,
-    inserted: true,
-    userLength: value.length,
-  };
+  return { value: value + separator + text, inserted: true, userLength: value.length };
 }
 
+/** 草稿是否已包含自动适配或本轮生成工具的起始标记。 */
 export function hasGenuiPrompt(value: string): boolean {
-  return value.includes(GENUI_PROMPT_START);
+  return value.includes(GENUI_PROMPT_START) || value.includes(GENUI_PROMPT_TOOL_START);
 }

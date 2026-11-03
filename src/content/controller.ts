@@ -5,7 +5,12 @@ import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
-import { GENUI_PROMPT_TEXT, GENUI_PROMPT_VERSION } from './prompt';
+import {
+  GENUI_PLAIN_PROMPT_NOTE,
+  GENUI_PROMPT_TEXT,
+  GENUI_PROMPT_VERSION,
+  GENUI_TOOL_PROMPT_TEXT,
+} from './prompt';
 
 /** 2026-11-02 真实调查记录的 DeepSeek「停止生成」图标路径前缀。 */
 export const STOP_GENERATION_PATH_PREFIX = 'M2 4.88C2 3.68009';
@@ -257,13 +262,20 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
 
     control = createToggleControl(doc, enabled, persistEnabled, {
       promptText: GENUI_PROMPT_TEXT,
+      promptTexts: {
+        auto: GENUI_PROMPT_TEXT,
+        tool: GENUI_TOOL_PROMPT_TEXT,
+        plain: GENUI_PLAIN_PROMPT_NOTE,
+      },
       promptVersion: GENUI_PROMPT_VERSION,
+      onModeSelect: (mode) => augmenter?.setMode(mode),
     });
     augmenter = createDraftAugmenter(doc, {
       enabled,
       debounceMs: options.augmentDelayMs ?? 700,
       window: win,
       onStatus: (status) => control?.setAugmentStatus(status),
+      onModeChange: (mode) => control?.setAugmentMode(mode),
     });
     unsubscribe = store?.subscribe(handleStorageChange) ?? null;
 

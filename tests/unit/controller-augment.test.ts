@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPageLifecycle } from '../../src/content/controller';
 import type { ExtensionSettingsStore } from '../../src/content/settings';
-import { GENUI_PROMPT_TEXT } from '../../src/content/prompt';
+import {
+  GENUI_PLAIN_PROMPT_NOTE,
+  GENUI_PROMPT_TEXT,
+  GENUI_TOOL_PROMPT_TEXT,
+} from '../../src/content/prompt';
 
 /**
  * 阶段 7：默认增强与页面生命周期的集成。
@@ -144,5 +148,79 @@ describe('默认增强与页面生命周期', () => {
     doc.querySelector('[data-genui-control]')?.shadowRoot?.querySelector('button')?.click();
     await advance(30);
     expect(input.value).toBe(`已有关闭设置的草稿\n\n${GENUI_PROMPT_TEXT}`);
+  });
+});
+
+describe('issue7 本轮模式与浮标', () => {
+  const NL = String.fromCharCode(10);
+  let lifecycle: ReturnType<typeof createPageLifecycle> | null = null;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    lifecycle?.dispose();
+    lifecycle = null;
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it('点击「本轮」循环模式，面板逐字说明跟随', async () => {
+    const doc = buildDoc();
+    lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 20,
+      augmentDelayMs: 30,
+    });
+    await lifecycle.start();
+
+    const shadow = doc.querySelector('[data-genui-control]')?.shadowRoot;
+    const modeButton = shadow?.querySelectorAll('button')[2] as HTMLButtonElement | undefined;
+    expect(modeButton?.textContent).toBe('本轮：自动适配');
+    expect(modeButton?.hidden).toBe(false);
+    expect(shadow?.textContent).toContain('不改变持久设置');
+
+    modeButton?.click();
+    expect(modeButton?.textContent).toBe('本轮：明确生成工具');
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_TOOL_PROMPT_TEXT);
+
+    modeButton?.click();
+    expect(modeButton?.textContent).toBe('本轮：普通回答');
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_PLAIN_PROMPT_NOTE);
+
+    modeButton?.click();
+    expect(modeButton?.textContent).toBe('本轮：自动适配');
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_PROMPT_TEXT);
+  });
+
+  it('普通回答：输入不追加并提示状态，清空草稿后回到自动适配', async () => {
+    const doc = buildDoc();
+    lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 20,
+      augmentDelayMs: 30,
+    });
+    await lifecycle.start();
+
+    const shadow = doc.querySelector('[data-genui-control]')?.shadowRoot;
+    const modeButton = shadow?.querySelectorAll('button')[2] as HTMLButtonElement | undefined;
+    modeButton?.click();
+    modeButton?.click();
+
+    type(doc, '普通问题直接说');
+    await advance(100);
+    const input = doc.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(input.value).toBe('普通问题直接说');
+    expect(shadow?.textContent).toContain('状态：普通回答');
+
+    type(doc, '');
+    expect(modeButton?.textContent).toBe('本轮：自动适配');
+
+    type(doc, '再问一次');
+    await advance(100);
+    expect(input.value).toBe(`再问一次${NL}${NL}${GENUI_PROMPT_TEXT}`);
+    expect(input.value).not.toContain(GENUI_TOOL_PROMPT_TEXT);
   });
 });

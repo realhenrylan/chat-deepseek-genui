@@ -244,3 +244,27 @@
 - 检查未执行与原因：①Edge Add-ons 商店提交未执行——无 Partner Center 账号，属用户侧动作，政策复核与素材已备妥；②真实页面 URL 级网络抓包未执行——需独立取证环境，「无未声明网络行为」结论由源码静态不变量、manifest 权限、构建扫描与模拟页零请求断言四条独立证据支撑，口径沿用阶段 6 收紧措辞；③Logo 接入发生在本次全量复核之后：manifest `icons`、受限页面图形资源与 UI 标记已加入源码，尚未全量复核或重出包，因此保留旧 ZIP 和 SHA256 作为历史验收基线。
 - 交付物状态：源码、可加载 `dist/`、发布 ZIP、README/CHANGELOG、隐私说明、安装与卸载说明、分层验证报告齐备；商店提交与审核状态单独报告——发布准备不等于已上架。
 - 发布前复审修正三处文档口径（2026-11-03 第二轮）：①store-submission 的 1.3.1/1.3.2 由「不需要测试账号 / N-A」改为登录与站点在线服务依赖的如实披露，给出无法提供站点账号的原因（账号受站点服务条款约束、非本项目所有）与不登录的替代复核路径（e2e 模拟页、协议文档与示例 JSON），审核者自有账号不再作为豁免依据；②privacy/README 卸载说明改为「已打开页面注入效果需刷新或关闭标签页后消失」，privacy「第三方」区分本地打包库（React/react-dom）、数据共享（无）与站点自身在线服务；③store-submission 状态行改为「商店素材尚未全部就绪」，Logo 规格按官方提交说明改为 300×300 推荐、最低 128×128、截图可选。
+
+## 阶段 9：issue7 提示词体验与本轮模式（基于 5f9c242 的 issue7 分支）
+
+### 目标与范围
+
+- 保持默认「自动适配」增强文本逐字节不变，新增本轮「明确生成工具」与「普通回答」显式控制；模式不持久化、逐字可见、可回退。
+- 建立真实模型对照基线与固定任务集（[issue7-baseline-tasks.md](issue7-baseline-tasks.md)），先测后决，不预置成功率结论。
+
+### 实现
+
+- [x] `src/content/prompt.ts`：新增 `GenuiPromptMode`（auto/tool/plain）、`GENUI_PROMPT_TOOL_START`、`GENUI_TOOL_PROMPT_TEXT`、`GENUI_PLAIN_PROMPT_NOTE` 与 `getGenuiPromptTextForMode`；`appendGenuiPrompt(value, mode)` / `hasGenuiPrompt` 双标记去重。auto 正文从 5f9c242 逐字节提取组装（vitest 对照基线断言通过），tool 变体共享「内容分工」起的协议主体，仅首段表达策略不同。
+- [x] `src/content/augment.ts`：新增 `setMode`/`getMode`/`onModeChange` 与状态 `plain`；已追加且未被编辑时切换模式原地整段替换（plain 只移除说明并保留原文），显式选择清除 dismissed 并重新调度；发送清空、草稿被外部替换、关闭再开启、stop/start、IME 组合开始内的模式切换均回到 auto（IME 在组合结束后补执行）。
+- [x] `src/content/toggle.ts`：浮标新增「本轮：…」循环按钮与面板模式说明/`<pre>` 跟随当前模式；未提供 tool 文本时自动隐藏（回退入口）；不改变持久开关与拖动/ESC 行为。
+- [x] `src/content/controller.ts`：接线三份提示词文本、`onModeSelect`→`augmenter.setMode`、`onModeChange`→`control.setAugmentMode`。
+- [x] 单测：prompt 模式映射/去重/plain 不插/tool 共享协议主体与示例解析；augment 十项模式状态机用例（追加、原地换文与光标、removed、显式清除 dismissed、清空重置、stop/start、开关重置、IME 推迟、onModeChange 计数）；controller-augment 浮标按钮循环与面板跟随、普通回答不追加。
+- [x] 文档与基线：`docs/prompt.md` 增「本轮模式」节与版本历史注记（默认文本未改一字）；新建 `docs/issue7-baseline-tasks.md`（固定任务集、四项指标、auto vs tool 对照设计、回退策略）。
+
+### 验证记录（2026-11-04，issue7 分支）
+
+- `npm run check` 通过：typecheck、lint、26 个测试文件 275 项单测（3 项设计性跳过）、校验器再生成、vite 构建与 dist 校验（`dist/content.js` 448,387 B / gzip 105.64 kB，7 个文件清单通过）。
+- `GENUI_PROMPT_TEXT` 与 5f9c242 基线逐字节相等（vitest 一次性对照断言，临时用例已删除）；tool 与 auto 的「内容分工」起协议主体逐字节共享。
+- e2e 窄集（阶段 1 注入、阶段 4 控件/隔离/面板宽度）：Edge/Chrome 4 通过、2 为 `REAL_SITE=1` 默认跳过。
+- 真实模型对照未执行：按 [issue7-baseline-tasks.md](issue7-baseline-tasks.md) 由用户在真实会话中跑 auto/tool 各 3 遍固定任务集并记录指标后再决定保留或回退。
+

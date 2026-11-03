@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GENUI_PLAIN_PROMPT_NOTE,
   GENUI_PROMPT_END,
   GENUI_PROMPT_START,
   GENUI_PROMPT_TEXT,
+  GENUI_PROMPT_TOOL_START,
   GENUI_PROMPT_VERSION,
+  GENUI_TOOL_PROMPT_TEXT,
   appendGenuiPrompt,
+  getGenuiPromptTextForMode,
   hasGenuiPrompt,
 } from '../../src/content/prompt';
 import { parseGenui } from '../../src/protocol/validate';
@@ -88,6 +92,76 @@ describe('默认增强提示词', () => {
     const match = /```genui\n([\s\S]*?)\n```/.exec(GENUI_PROMPT_TEXT);
     expect(match).not.toBeNull();
     const example = parseGenui(match?.[1] ?? '');
+    expect(example).toMatchObject({ ok: true });
+    if (example.ok) {
+      expect(example.document.version).toBe(3);
+      expect(example.document.elements.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('issue7 本轮模式变体', () => {
+  const NL = String.fromCharCode(10);
+  const OPEN = '```genui' + NL;
+  const CLOSE = NL + '```';
+
+  function parseFirstExample(text: string): ReturnType<typeof parseGenui> {
+    const startIdx = text.indexOf(OPEN);
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    const endIdx = text.indexOf(CLOSE, startIdx + OPEN.length);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    return parseGenui(text.slice(startIdx + OPEN.length, endIdx));
+  }
+
+  it('auto 默认文本、tool 文本与 plain 说明按模式取值', () => {
+    expect(getGenuiPromptTextForMode('auto')).toBe(GENUI_PROMPT_TEXT);
+    expect(getGenuiPromptTextForMode('tool')).toBe(GENUI_TOOL_PROMPT_TEXT);
+    expect(getGenuiPromptTextForMode('plain')).toBeNull();
+    expect(GENUI_PLAIN_PROMPT_NOTE).toContain('普通回答');
+    expect(GENUI_PLAIN_PROMPT_NOTE).toContain('不会向你的草稿追加任何');
+  });
+
+  it('tool 文本独立标记，且与 auto 逐字节共享协议主体', () => {
+    expect(GENUI_TOOL_PROMPT_TEXT.startsWith(GENUI_PROMPT_TOOL_START)).toBe(true);
+    expect(GENUI_TOOL_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
+    expect(hasGenuiPrompt(GENUI_TOOL_PROMPT_TEXT)).toBe(true);
+    const sharedTail = (text: string): string => text.slice(text.indexOf('内容分工'));
+    // 只有第一段表达策略不同；协议主体（内容分工→结束标记）逐字节一致。
+    expect(sharedTail(GENUI_TOOL_PROMPT_TEXT)).toBe(sharedTail(GENUI_PROMPT_TEXT));
+    expect(GENUI_TOOL_PROMPT_TEXT).toContain('本轮回答工具');
+    expect(GENUI_TOOL_PROMPT_TEXT).toContain('不要硬造界面');
+    expect(GENUI_PROMPT_TEXT).not.toContain('本轮回答工具');
+  });
+
+  it('tool 模式按标记追加且可去重；auto/tool 文本互不重复', () => {
+    const toolFirst = appendGenuiPrompt(USER_DRAFT, 'tool');
+    expect(toolFirst.inserted).toBe(true);
+    expect(toolFirst.userLength).toBe(USER_DRAFT.length);
+    expect(toolFirst.value.startsWith(USER_DRAFT)).toBe(true);
+    expect(toolFirst.value).toContain(GENUI_TOOL_PROMPT_TEXT);
+
+    expect(appendGenuiPrompt(toolFirst.value, 'tool').inserted).toBe(false);
+    expect(appendGenuiPrompt(toolFirst.value, 'auto').inserted).toBe(false);
+
+    const autoFirst = appendGenuiPrompt(USER_DRAFT, 'auto');
+    expect(appendGenuiPrompt(autoFirst.value, 'tool').inserted).toBe(false);
+
+    const toolSuffix = toolFirst.value.slice(USER_DRAFT.length);
+    expect(toolSuffix).toContain(GENUI_PROMPT_TOOL_START);
+    expect(toolSuffix).toContain(GENUI_PROMPT_END);
+  });
+
+  it('plain 模式不追加任何文本', () => {
+    for (const draft of ['', USER_DRAFT, USER_DRAFT + NL]) {
+      const result = appendGenuiPrompt(draft, 'plain');
+      expect(result.inserted).toBe(false);
+      expect(result.value).toBe(draft);
+      expect(hasGenuiPrompt(result.value)).toBe(false);
+    }
+  });
+
+  it('tool 文本中的示例同样可被本地协议解析', () => {
+    const example = parseFirstExample(GENUI_TOOL_PROMPT_TEXT);
     expect(example).toMatchObject({ ok: true });
     if (example.ok) {
       expect(example.document.version).toBe(3);

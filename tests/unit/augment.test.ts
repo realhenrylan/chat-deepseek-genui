@@ -3,7 +3,11 @@ import {
   createDraftAugmenter,
   type DraftAugmenter,
 } from '../../src/content/augment';
-import { GENUI_PROMPT_START, GENUI_PROMPT_TEXT } from '../../src/content/prompt';
+import {
+  GENUI_PROMPT_START,
+  GENUI_PROMPT_TEXT,
+  GENUI_TOOL_PROMPT_TEXT,
+} from '../../src/content/prompt';
 
 /**
  * 阶段 7：默认增强只追加可见草稿文本，绝不自动发送。
@@ -245,5 +249,205 @@ describe('默认增强草稿接线', () => {
     draft.setEnabled(true);
     await advance(DEBOUNCE);
     expect(input.value).toBe(`${USER}\n\n${GENUI_PROMPT_TEXT}`);
+  });
+});
+
+describe('issue7 本轮模式', () => {
+  const NL = String.fromCharCode(10);
+  const SEP = NL + NL;
+  const TOOL = GENUI_TOOL_PROMPT_TEXT;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    augmenter?.dispose();
+    augmenter = null;
+    document.body.replaceChildren();
+    vi.useRealTimers();
+  });
+
+  it('默认 auto；显式选择 tool 后停止输入追加 tool 文本', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    expect(draft.getMode()).toBe('auto');
+    draft.setMode('tool');
+    expect(draft.getMode()).toBe('tool');
+    expect(draft.getStatus()).toBe('idle');
+
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`${USER}${SEP}${TOOL}`);
+    expect(input.selectionStart).toBe(USER.length);
+    expect(input.selectionEnd).toBe(USER.length);
+    expect(draft.getStatus()).toBe('appended');
+  });
+
+  it('已追加且未编辑时切 tool：整段替换为 tool 文本，光标停在说明之前', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`${USER}${SEP}${GENUI_PROMPT_TEXT}`);
+
+    draft.setMode('tool');
+    expect(input.value).toBe(`${USER}${SEP}${TOOL}`);
+    expect(draft.getStatus()).toBe('appended');
+    expect(input.selectionStart).toBe(USER.length);
+    expect(input.selectionEnd).toBe(USER.length);
+
+    draft.setEnabled(false);
+    expect(input.value).toBe(USER);
+  });
+
+  it('已追加且未编辑时切 plain：移除说明并报告 plain，期间不再追加', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    draft.setMode('plain');
+    expect(input.value).toBe(USER);
+    expect(draft.getStatus()).toBe('plain');
+    expect(draft.getMode()).toBe('plain');
+
+    userTypes(input, `${USER}，再想想`);
+    await advance(DEBOUNCE * 2);
+    expect(input.value).toBe(`${USER}，再想想`);
+    expect(draft.getStatus()).toBe('plain');
+  });
+
+  it('plain 后切回 auto：恢复自动追加', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    draft.setMode('plain');
+    userTypes(input, USER);
+    await advance(DEBOUNCE * 2);
+    expect(input.value).toBe(USER);
+
+    draft.setMode('auto');
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`${USER}${SEP}${GENUI_PROMPT_TEXT}`);
+    expect(draft.getMode()).toBe('auto');
+    expect(draft.getStatus()).toBe('appended');
+  });
+
+  it('显式选择 tool 会清除手动删除记录并重新追加', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    userTypes(input, USER);
+    expect(draft.getStatus()).toBe('dismissed');
+
+    draft.setMode('tool');
+    expect(draft.getStatus()).toBe('scheduled');
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`${USER}${SEP}${TOOL}`);
+    expect(input.value).not.toContain(GENUI_PROMPT_TEXT);
+    expect(draft.getStatus()).toBe('appended');
+  });
+
+  it('草稿清空后本轮模式回到 auto，下一轮追加 auto 文本', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    draft.setMode('tool');
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    expect(input.value).toContain(TOOL);
+
+    userTypes(input, '');
+    expect(draft.getMode()).toBe('auto');
+    expect(draft.getStatus()).toBe('idle');
+
+    userTypes(input, '第二轮问题');
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`第二轮问题${SEP}${GENUI_PROMPT_TEXT}`);
+    expect(input.value).not.toContain(TOOL);
+  });
+
+  it('stop/start 重置本轮模式为 auto', () => {
+    const draft = createAugmenter();
+    draft.setMode('plain');
+    expect(draft.getMode()).toBe('plain');
+
+    draft.stop();
+    expect(draft.getMode()).toBe('auto');
+    draft.start();
+    expect(draft.getMode()).toBe('auto');
+  });
+
+  it('关闭再开启增强后模式回到 auto', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    draft.setMode('tool');
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    expect(input.value).toContain(TOOL);
+
+    draft.setEnabled(false);
+    userTypes(input, USER);
+    expect(draft.getMode()).toBe('tool');
+
+    draft.setEnabled(true);
+    expect(draft.getMode()).toBe('auto');
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`${USER}${SEP}${GENUI_PROMPT_TEXT}`);
+  });
+
+  it('输入法组合期间切换模式推迟到组合结束后应用', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+
+    userTypes(input, '组合输入');
+    expect(draft.getStatus()).toBe('scheduled');
+
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    draft.setMode('tool');
+    expect(draft.getMode()).toBe('tool');
+
+    await advance(DEBOUNCE * 3);
+    expect(input.value).toBe('组合输入');
+
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    expect(draft.getStatus()).toBe('scheduled');
+    await advance(DEBOUNCE);
+    expect(input.value).toBe(`组合输入${SEP}${TOOL}`);
+  });
+
+  it('onModeChange 只在模式变化时回调', async () => {
+    const onModeChange = vi.fn();
+    augmenter = createDraftAugmenter(document, {
+      enabled: true,
+      debounceMs: DEBOUNCE,
+      window,
+      onModeChange,
+    });
+    augmenter.start();
+    const draft = augmenter;
+
+    draft.setMode('tool');
+    expect(onModeChange).toHaveBeenCalledTimes(1);
+    expect(onModeChange).toHaveBeenLastCalledWith('tool');
+
+    draft.setMode('tool');
+    expect(onModeChange).toHaveBeenCalledTimes(1);
+
+    const input = createInput();
+    userTypes(input, USER);
+    await advance(DEBOUNCE);
+    expect(input.value).toContain(TOOL);
+
+    draft.setMode('plain');
+    expect(onModeChange).toHaveBeenCalledTimes(2);
+    expect(onModeChange).toHaveBeenLastCalledWith('plain');
+
+    userTypes(input, '');
+    expect(onModeChange).toHaveBeenCalledTimes(3);
+    expect(onModeChange).toHaveBeenLastCalledWith('auto');
   });
 });
