@@ -9,6 +9,7 @@ import type {
 } from '../protocol/types';
 import { lookupCondition } from '../runtime/evaluate';
 import type { CompositeEvaluation } from '../runtime/evaluate';
+import type { TableViewState } from '../runtime/card-state';
 import { ElementErrorBoundary } from './boundaries';
 import { ChartElementView } from './charts';
 import { UnknownElementView } from './elements';
@@ -32,6 +33,9 @@ export interface CompositeContext {
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
+  /** 表格筛选/排序按元素路径保存，随卡片状态一起跨重新挂载保留。 */
+  tables: Record<string, TableViewState>;
+  onTableChange: (path: string, view: TableViewState) => void;
   /** 每次卡片重置递增；表格据此重新挂载，清空筛选并恢复初始排序。 */
   resetToken: number;
 }
@@ -97,7 +101,13 @@ function ElementContent({
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
-          <TableElementView key={context.resetToken} element={element} evaluation={context.evaluation} />
+          <TableElementView
+            key={context.resetToken}
+            element={element}
+            evaluation={context.evaluation}
+            view={context.tables[path]}
+            onViewChange={(view) => context.onTableChange(path, view)}
+          />
         </>
       );
     }

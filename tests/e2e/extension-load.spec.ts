@@ -878,7 +878,7 @@ for (const { label, channel } of CHANNELS) {
     }
   });
 
-  test(`阶段 3 · ${label} 流式期间不挂载，消息重写和替换可清理`, async () => {
+  test(`阶段 3 · ${label} 流式期间保留历史卡片，消息重写和替换可清理`, async () => {
     test.skip(REAL_SITE, '模拟页动态生命周期断言仅在拦截模式执行');
     const { context, page, profileDir } = await launchWithExtension(channel);
     const buckets = watchErrors(page);
@@ -909,14 +909,16 @@ for (const { label, channel } of CHANNELS) {
       await page.waitForTimeout(850);
       await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'mounted');
       await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'failed');
-      await expect(page.locator('.genui-card-host')).toHaveCount(0);
+      // 流式回答本身等待稳定，但未变化的历史卡片保持挂载，不再全局卸载。
+      await expect(page.locator('.genui-card-host')).toHaveCount(2);
+      await expect(page.locator('#e2e-stream-message .genui-card-host')).toHaveCount(0);
 
       await page.locator('#e2e-stream-block pre span').evaluate((node, value) => {
         node.textContent = value;
       }, VALID_RAW_2);
       await page.waitForTimeout(850);
       await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'mounted');
-      await expect(page.locator('.genui-card-host')).toHaveCount(0);
+      await expect(page.locator('.genui-card-host')).toHaveCount(2);
 
       await page.locator('#e2e-stop').evaluate((node) => node.remove());
       await expect(page.locator('#e2e-stream-block')).toHaveAttribute('data-genui-state', 'mounted');
@@ -932,7 +934,8 @@ for (const { label, channel } of CHANNELS) {
         const block = document.querySelector('#e2e-block-1 pre span');
         if (block) block.textContent = '{"type":"genui",';
       });
-      await expect(page.locator('.genui-card-host')).toHaveCount(0);
+      // 只卸载被改写的旧卡片，其他历史卡片不受影响。
+      await expect(page.locator('.genui-card-host')).toHaveCount(2);
       await expect(page.locator('#e2e-block-1')).toBeVisible();
       await expect(page.locator('#e2e-block-1')).not.toHaveAttribute('data-genui-state', 'mounted');
       await page.locator('#e2e-block-1 pre span').evaluate((node, value) => {
