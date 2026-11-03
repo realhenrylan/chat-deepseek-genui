@@ -461,6 +461,12 @@ describe('阶段 6 · 继续讨论（用户主动触发）', () => {
     return host;
   }
 
+  function followupTextarea(shadow: ShadowRoot | null): HTMLTextAreaElement {
+    const textarea = shadow?.querySelector<HTMLTextAreaElement>('.genui-followup-text');
+    if (!textarea) throw new Error('继续讨论预览未渲染');
+    return textarea;
+  }
+
   it('v2/v3 卡片提供「继续讨论」按钮；v1 静态卡片不提供', () => {
     const interactive = mount(INTERACTIVE_DOC);
     expect(interactive.shadowRoot?.querySelector('.genui-card-followup')).not.toBeNull();
@@ -469,8 +475,8 @@ describe('阶段 6 · 继续讨论（用户主动触发）', () => {
     expect(staticCard.shadowRoot?.querySelector('.genui-card-followup')).toBeNull();
   });
 
-  it('点击按钮把状态/结果摘要交给回调，并显示已填入反馈', async () => {
-    const onContinue = vi.fn<(summary: string) => 'filled'> (() => 'filled');
+  it('点击只打开可编辑预览，不立即写入输入框', async () => {
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
     const host = mountWithContinue(INTERACTIVE_DOC, onContinue);
     const shadow = host.shadowRoot;
     // 先改变状态，摘要必须反映当前值而不是初始值。
@@ -484,31 +490,86 @@ describe('阶段 6 · 继续讨论（用户主动触发）', () => {
     shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
     await flushUi();
 
-    expect(onContinue).toHaveBeenCalledTimes(1);
-    const summary = onContinue.mock.calls[0][0] as string;
-    expect(summary).toContain('预算调整');
-    expect(summary).toContain('总预算：7000 元');
-    expect(summary).toContain('余额：6000 元');
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(shadow?.querySelector('.genui-followup')).not.toBeNull();
+    const textarea = followupTextarea(shadow);
+    expect(textarea.value).toContain('预算调整');
+    expect(textarea.value).toContain('总预算：7000 元');
+    expect(textarea.value).toContain('余额：6000 元');
+  });
 
+  it('把用户编辑后的摘要原样交给回调，并显示已填入反馈', async () => {
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+    const host = mountWithContinue(INTERACTIVE_DOC, onContinue);
+    const shadow = host.shadowRoot;
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+
+    const textarea = followupTextarea(shadow);
+    fireEvent.change(textarea, { target: { value: '请解释一下总预算 5000 元是否够用。' } });
+    await flushUi();
+    shadow?.querySelector<HTMLButtonElement>('.genui-followup-apply')?.click();
+    await flushUi();
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onContinue.mock.calls[0][0]).toBe('请解释一下总预算 5000 元是否够用。');
+    expect(shadow?.querySelector('.genui-followup')).toBeNull();
     const feedback = shadow?.querySelector('.genui-card-followup-feedback');
     expect(feedback?.textContent).toContain('已填入输入框');
     expect(feedback?.textContent).toContain('发送由你完成');
   });
 
-  it('页面无输入框时反馈「未找到聊天输入框」，不编造成功', async () => {
-    const onContinue = vi.fn<(summary: string) => 'no-input'> (() => 'no-input');
+  it('重复点击不覆盖已编辑的摘要', async () => {
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
     const host = mountWithContinue(INTERACTIVE_DOC, onContinue);
     const shadow = host.shadowRoot;
     shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
     await flushUi();
+    const textarea = followupTextarea(shadow);
+    fireEvent.change(textarea, { target: { value: '编辑后的摘要' } });
+    await flushUi();
+
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    expect(followupTextarea(shadow).value).toBe('编辑后的摘要');
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it('参数变化后关闭预览，避免旧快照配上新数值', async () => {
+    const host = mountWithContinue(INTERACTIVE_DOC, vi.fn<(summary: string) => 'filled'>(() => 'filled'));
+    const shadow = host.shadowRoot;
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    expect(shadow?.querySelector('.genui-followup')).not.toBeNull();
+
+    const slider = shadow?.querySelector<HTMLInputElement>('input[type="range"]');
+    if (!slider) throw new Error('滑动条未渲染');
+    fireEvent.change(slider, { target: { value: '7100' } });
+    await flushUi();
+    expect(shadow?.querySelector('.genui-followup')).toBeNull();
+  });
+
+  it('页面无输入框时保留预览并反馈「未找到聊天输入框」', async () => {
+    const onContinue = vi.fn<(summary: string) => 'no-input'>(() => 'no-input');
+    const host = mountWithContinue(INTERACTIVE_DOC, onContinue);
+    const shadow = host.shadowRoot;
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    shadow?.querySelector<HTMLButtonElement>('.genui-followup-apply')?.click();
+    await flushUi();
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(shadow?.querySelector('.genui-followup')).not.toBeNull();
     expect(shadow?.querySelector('.genui-card-followup-feedback')?.textContent).toContain('未找到聊天输入框');
   });
 
   it('已有草稿时反馈追加语义（草稿未被覆盖）', async () => {
-    const onContinue = vi.fn<(summary: string) => 'appended'> (() => 'appended');
+    const onContinue = vi.fn<(summary: string) => 'appended'>(() => 'appended');
     const host = mountWithContinue(INTERACTIVE_DOC, onContinue);
     const shadow = host.shadowRoot;
     shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    shadow?.querySelector<HTMLButtonElement>('.genui-followup-apply')?.click();
     await flushUi();
     const feedback = shadow?.querySelector('.genui-card-followup-feedback')?.textContent ?? '';
     expect(feedback).toContain('草稿已保留');
@@ -516,7 +577,7 @@ describe('阶段 6 · 继续讨论（用户主动触发）', () => {
   });
 
   it('派生计算失败时摘要如实标注（继续讨论不带错误数值）', async () => {
-    const onContinue = vi.fn<(summary: string) => 'filled'> (() => 'filled');
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
     const host = mountWithContinue(BIG_RANGE_DOC, onContinue);
     const shadow = host.shadowRoot;
     // 1e12 输入合法但派生 1e12+1 超出计算上限（阶段 4 严格规则）。
@@ -529,10 +590,79 @@ describe('阶段 6 · 继续讨论（用户主动触发）', () => {
 
     shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
     await flushUi();
-    const summary = onContinue.mock.calls[0][0] as string;
-    expect(summary).toContain('加一：无法计算');
+    const textarea = followupTextarea(shadow);
+    expect(textarea.value).toContain('加一：无法计算');
     // 不应把 1000000001 当成结果写进摘要。
-    expect(summary).not.toMatch(/加一：\d/);
+    expect(textarea.value).not.toMatch(/加一：\d/);
+
+    shadow?.querySelector<HTMLButtonElement>('.genui-followup-apply')?.click();
+    await flushUi();
+    expect(onContinue.mock.calls[0][0]).toContain('加一：无法计算');
+  });
+});
+
+describe('阶段 6 · 表格筛选/选中项进入继续讨论摘要', () => {
+  const TABLE_DOC: GenuiDocument = {
+    type: 'genui',
+    version: 3,
+    title: '选购比较',
+    state: [
+      { id: 'budget', label: '预算', kind: 'number', initial: 6000, min: 0, max: 20000, step: 100, unit: '元' },
+    ],
+    derived: [],
+    elements: [
+      {
+        kind: 'table',
+        title: '候选方案',
+        sortable: true,
+        selectable: true,
+        columns: [
+          { key: 'name', label: '方案' },
+          { key: 'price', label: '价格', numeric: true, unit: '元' },
+          { key: 'weight', label: '重量', numeric: true, unit: 'kg' },
+          { key: 'status', label: '状态' },
+        ],
+        rows: [
+          { cells: { name: 'A', price: 4800, weight: 1.4, status: '在售' } },
+          { cells: { name: 'C', price: 5200, weight: 1.3, status: '在售' } },
+        ],
+      },
+    ],
+  };
+
+  it('筛选并选中候选项后，摘要包含筛选、已选与对比', async () => {
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mounted = mountCard(host, { document: TABLE_DOC, rawJson: RAW, onContinue });
+    const shadow = host.shadowRoot;
+
+    const filter = shadow?.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!filter) throw new Error('筛选框未渲染');
+    fireEvent.change(filter, { target: { value: '在售' } });
+    await flushUi();
+
+    const radios = shadow?.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    expect(radios?.length).toBe(2);
+    fireEvent.click(radios![1]!);
+    await flushUi();
+
+    shadow?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    expect(onContinue).not.toHaveBeenCalled();
+    const textarea = shadow?.querySelector<HTMLTextAreaElement>('.genui-followup-text');
+    if (!textarea) throw new Error('继续讨论预览未渲染');
+    expect(textarea.value).toContain('表格「候选方案」');
+    expect(textarea.value).toContain('筛选「在售」');
+    expect(textarea.value).toContain('显示 2 / 2 行');
+    expect(textarea.value).toContain('- 已选：C — 价格 5200 元；重量 1.3 kg');
+    expect(textarea.value).toContain('- 对比：A — 价格 4800 元；重量 1.4 kg');
+    expect(textarea.value).toContain('价格相差 400 元');
+
+    shadow?.querySelector<HTMLButtonElement>('.genui-followup-apply')?.click();
+    await flushUi();
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onContinue.mock.calls[0][0]).toContain('筛选「在售」');
   });
 });
 

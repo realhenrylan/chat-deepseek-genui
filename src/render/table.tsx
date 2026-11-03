@@ -1,157 +1,108 @@
-import { useMemo, useState } from 'react';
-import type {
-  NumericExpression,
-  TableCell,
-  TableColumn,
-  TableElement,
-  TableRow,
-} from '../protocol/types';
-import { lookupCondition, lookupExpression } from '../runtime/evaluate';
+import { useId, useMemo, useState } from 'react';
+import type { TableColumn, TableElement } from '../protocol/types';
 import type { CompositeEvaluation } from '../runtime/evaluate';
-import { formatNumber } from './format';
+import { buildTableModel, rowLabel } from './table-model';
+import type { TableViewState } from './table-model';
 
 /**
- * 表格视图（v3）：列定义、条件行、数值单元格、排序与筛选。
+ * 表格视图（v3）：列定义、条件行、数值单元格、排序、筛选与候选选中。
  *
- * 单元格里的表达式只读取运行时已求值的结果；排序/筛选纯本地状态，
- * 不改变文档状态。宽表被包在可聚焦的横向滚动容器内，键盘用户可平移。
+ * 单元格里的表达式只读取运行时已求值的结果；筛选/排序/选中属于视图状态，
+ * 不改变文档参数。渲染与「继续讨论」摘要都走 table-model，保证用户看到的
+ * 行、计数与摘要描述来自同一份计算结果。宽表被包在可聚焦的横向滚动容器内。
  */
 
-interface CellView {
-  text: string;
-  numeric?: number;
-  error?: string;
-}
-
-type SortDirection = 'asc' | 'desc';
-
-interface SortState {
-  key: string;
-  dir: SortDirection;
-}
-
-function isExpression(cell: TableCell): cell is NumericExpression {
-  return typeof cell === 'object' && cell !== null;
-}
-
-function evaluateCell(cell: TableCell, column: TableColumn, evaluation: CompositeEvaluation): CellView {
-  if (cell === null || cell === undefined) return { text: '—' };
-  if (isExpression(cell)) {
-    const result = lookupExpression(evaluation, cell);
-    if (!result.ok) return { text: '—', error: result.error };
-    const unit = column.unit ? ` ${column.unit}` : '';
-    return { text: `${formatNumber(result.value)}${unit}`, numeric: result.value };
-  }
-  if (typeof cell === 'number') {
-    const unit = column.unit ? ` ${column.unit}` : '';
-    return { text: Number.isFinite(cell) ? `${formatNumber(cell)}${unit}` : '—', numeric: cell };
-  }
-  return { text: cell };
-}
-
-function compareRows(
-  left: { views: Record<string, CellView> },
-  right: { views: Record<string, CellView> },
-  column: TableColumn,
-  direction: SortDirection,
-): number {
-  const a = left.views[column.key];
-  const b = right.views[column.key];
-  const aValue = a?.numeric;
-  const bValue = b?.numeric;
-  const numeric = column.numeric === true || aValue !== undefined || bValue !== undefined;
-  let result: number;
-  if (numeric) {
-    if (aValue === undefined && bValue === undefined) result = 0;
-    else if (aValue === undefined) return 1;
-    else if (bValue === undefined) return -1;
-    else result = aValue - bValue;
-  } else {
-    result = (a?.text ?? '').localeCompare(b?.text ?? '', 'zh-Hans-CN');
-  }
-  return direction === 'asc' ? result : -result;
-}
-
-export function TableElementView({ element, evaluation }: {
+export function TableElementView({ element, evaluation, view, onViewChange }: {
   element: TableElement;
   evaluation: CompositeEvaluation;
+  view?: TableViewState;
+  onViewChange?: (view: TableViewState) => void;
 }) {
-  const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<SortState | null>(element.initialSort ?? null);
-
-  const rendered = useMemo(() => {
-    const conditionErrors: string[] = [];
-    const cellErrors: string[] = [];
-    const rows = element.rows.flatMap((row: TableRow, index: number) => {
-      if (row.visibleIf) {
-        const condition = lookupCondition(evaluation, row.visibleIf);
-        if (!condition.ok) {
-          conditionErrors.push(`第 ${index + 1} 行显示条件无法计算：${condition.error}`);
-        } else if (!condition.value) {
-          return [];
-        }
-      }
-      const views: Record<string, CellView> = {};
-      for (const column of element.columns) {
-        // 只读取行对象自己的属性：列 key 允许 constructor 等名称，直接下标
-        // 访问会命中 Object.prototype，把继承来的函数当成单元格内容。
-        const cell = Object.hasOwn(row.cells, column.key) ? row.cells[column.key]! : null;
-        const view = evaluateCell(cell, column, evaluation);
-        if (view.error && !cellErrors.includes(view.error)) cellErrors.push(view.error);
-        views[column.key] = view;
-      }
-      return [{ key: index, views }];
-    });
-    return { rows, conditionErrors, cellErrors };
-  }, [element, evaluation]);
-
-  const normalizedFilter = filter.trim().toLocaleLowerCase('zh-Hans-CN');
-  const filtered = rendered.rows.filter((row) => {
-    if (!normalizedFilter) return true;
-    return element.columns.some((column) =>
-      (row.views[column.key]?.text ?? '').toLocaleLowerCase('zh-Hans-CN').includes(normalizedFilter),
-    );
+  const [localView, setLocalView] = useState<TableViewState>({
+    filter: '',
+    sort: element.initialSort ?? null,
+    selected: null,
   });
+  const groupName = useId();
+  const controlled = onViewChange !== undefined;
+  // 受控但父级还没写过视图时保持 undefined，让文档的 initialSort 生效；
+  // 只有显式视图才覆盖初始排序（重置会删掉该表的视图状态）。
+  const current: TableViewState | undefined = controlled ? view : localView;
+  const filterText = current?.filter ?? '';
 
-  const sorted = [...filtered];
-  if (sort) {
-    const column = element.columns.find((item) => item.key === sort.key);
-    if (column) {
-      sorted.sort((left, right) => compareRows(left, right, column, sort.dir));
-    }
-  }
+  const model = useMemo(
+    () => buildTableModel(element, evaluation, current),
+    [element, evaluation, current?.filter, current?.sort?.key, current?.sort?.dir, current?.selected, current],
+  );
 
-  const warnings = [...rendered.conditionErrors, ...rendered.cellErrors];
-  const columnCount = element.columns.length;
-  const emptyText = element.emptyText ?? (rendered.rows.length === 0 ? '没有可显示的数据' : '没有符合筛选条件的数据');
+  /** 以当前生效视图（含 initialSort 回退）为基准生成完整视图状态。 */
+  const changeView = (patch: Partial<TableViewState>) => {
+    const next: TableViewState = {
+      filter: current?.filter ?? '',
+      sort: model.sort,
+      selected: current?.selected ?? null,
+      ...patch,
+    };
+    if (onViewChange) onViewChange(next);
+    else setLocalView(next);
+  };
 
   const toggleSort = (column: TableColumn) => {
     if (!element.sortable) return;
-    setSort((previous) => {
-      if (previous?.key !== column.key) return { key: column.key, dir: 'asc' };
-      return { key: column.key, dir: previous.dir === 'asc' ? 'desc' : 'asc' };
-    });
+    const active = model.sort;
+    const dir = active?.key === column.key && active.dir === 'asc' ? 'desc' : 'asc';
+    changeView({ sort: { key: column.key, dir } });
   };
+
+  const selectRow = (key: number) => {
+    changeView({ selected: key });
+  };
+
+  const clearSelection = () => {
+    changeView({ selected: null });
+  };
+
+  const selectable = element.selectable === true;
+  const selectedRow =
+    model.selectedKey === null ? undefined : model.rows.find((row) => row.key === model.selectedKey);
+  const columnCount = element.columns.length + (selectable ? 1 : 0);
+  const emptyText =
+    element.emptyText ?? (model.rows.length === 0 ? '没有可显示的数据' : '没有符合筛选条件的数据');
+
+  let selectionNotice: string | null = null;
+  if (selectable) {
+    if (model.selectedMissing) selectionNotice = '已选候选项已不存在，请重新选择。';
+    else if (model.selectedHidden) selectionNotice = '已选候选项不在当前筛选结果中。';
+    else if (selectedRow) selectionNotice = `已选候选项：${rowLabel(selectedRow, element.columns)}`;
+    else if (model.sortedRows.length > 0) selectionNotice = '可点击行首圆点选中候选项。';
+  }
 
   return (
     <div className="genui-table-block">
-      {warnings.length > 0 ? (
+      {model.warnings.length > 0 ? (
         <p className="genui-table-warning" role="status">
-          {warnings.length === 1 ? warnings[0] : `${warnings.length} 项无法计算：${warnings.join('；')}`}
+          {model.warnings.length === 1
+            ? model.warnings[0]
+            : `${model.warnings.length} 项无法计算：${model.warnings.join('；')}`}
         </p>
       ) : null}
-      {element.sortable || element.rows.length > 3 ? (
+      {element.sortable || selectable || element.rows.length > 3 ? (
         <div className="genui-table-toolbar">
           <label className="genui-table-filter">
             <span className="genui-visually-hidden">筛选表格</span>
             <input
               type="search"
-              value={filter}
+              value={filterText}
               placeholder="筛选…"
-              onChange={(event) => setFilter(event.currentTarget.value)}
+              onChange={(event) => changeView({ filter: event.currentTarget.value })}
             />
           </label>
           {element.sortable ? <span className="genui-table-hint">点击列标题排序</span> : null}
+          {selectable && model.selectedKey !== null ? (
+            <button type="button" className="genui-table-clear-selection" onClick={clearSelection}>
+              清除选择
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div
@@ -164,19 +115,26 @@ export function TableElementView({ element, evaluation }: {
           {element.title ? <caption className="genui-table-caption">{element.title}</caption> : null}
           <thead>
             <tr>
+              {selectable ? (
+                <th scope="col" className="genui-table-select">
+                  <span className="genui-visually-hidden">选择候选项</span>
+                </th>
+              ) : null}
               {element.columns.map((column) => {
-                const active = sort?.key === column.key;
+                const active = model.sort?.key === column.key;
                 return (
                   <th
                     key={column.key}
                     scope="col"
-                    aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    aria-sort={
+                      active ? (model.sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'
+                    }
                   >
                     {element.sortable ? (
                       <button type="button" className="genui-table-sort" onClick={() => toggleSort(column)}>
                         {column.label}
                         <span aria-hidden="true" className="genui-table-sort-icon">
-                          {active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+                          {active ? (model.sort!.dir === 'asc' ? '▲' : '▼') : '↕'}
                         </span>
                       </button>
                     ) : (
@@ -188,13 +146,28 @@ export function TableElementView({ element, evaluation }: {
             </tr>
           </thead>
           <tbody>
-            {sorted.length === 0 ? (
+            {model.sortedRows.length === 0 ? (
               <tr>
                 <td className="genui-table-empty" colSpan={columnCount}>{emptyText}</td>
               </tr>
             ) : (
-              sorted.map((row) => (
-                <tr key={row.key}>
+              model.sortedRows.map((row) => (
+                <tr
+                  key={row.key}
+                  className={model.selectedKey === row.key ? 'genui-table-selected' : undefined}
+                >
+                  {selectable ? (
+                    <td className="genui-table-select">
+                      <input
+                        type="radio"
+                        className="genui-table-select-input"
+                        name={groupName}
+                        checked={model.selectedKey === row.key}
+                        aria-label={`选择候选项：${rowLabel(row, element.columns)}`}
+                        onChange={() => selectRow(row.key)}
+                      />
+                    </td>
+                  ) : null}
                   {element.columns.map((column) => (
                     <td key={column.key} className={column.numeric ? 'genui-table-numeric' : undefined}>
                       {row.views[column.key]?.text ?? '—'}
@@ -206,8 +179,13 @@ export function TableElementView({ element, evaluation }: {
           </tbody>
         </table>
       </div>
+      {selectionNotice ? (
+        <p className="genui-table-selection" role="status">
+          {selectionNotice}
+        </p>
+      ) : null}
       <p className="genui-table-count" role="status">
-        显示 {sorted.length} / {rendered.rows.length} 行
+        显示 {model.sortedRows.length} / {model.rows.length} 行
       </p>
     </div>
   );

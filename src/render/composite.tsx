@@ -15,12 +15,15 @@ import { UnknownElementView } from './elements';
 import { InteractiveElementView } from './interactive';
 import type { ElementRegistry } from './registry';
 import { TableElementView } from './table';
+import type { TableViewState } from './table-model';
 
 /**
  * v3 组合元素递归渲染：文字/说明的条件门控 + 布局容器 + 图表/表格。
  *
  * 每个元素单独包错误边界，单个组合子树渲染失败不会拖垮整张卡片。
  * 条件计算失败时选择「继续显示内容并提示错误」，避免静默隐藏信息。
+ * 表格的筛选/排序/选中项由卡片持有（而不是表格本地），这样「继续讨论」
+ * 能读到与界面完全一致的视图状态。
  */
 
 export interface CompositeContext {
@@ -32,6 +35,9 @@ export interface CompositeContext {
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
+  /** 每个表格的视图状态，键为元素路径。 */
+  tables: Record<string, TableViewState>;
+  onTableChange: (path: string, view: TableViewState) => void;
   /** 每次卡片重置递增；表格据此重新挂载，清空筛选并恢复初始排序。 */
   resetToken: number;
 }
@@ -97,7 +103,13 @@ function ElementContent({
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
-          <TableElementView key={context.resetToken} element={element} evaluation={context.evaluation} />
+          <TableElementView
+            key={context.resetToken}
+            element={element}
+            evaluation={context.evaluation}
+            view={context.tables[path]}
+            onViewChange={(view) => context.onTableChange(path, view)}
+          />
         </>
       );
     }

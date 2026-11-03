@@ -364,6 +364,7 @@ const tableSchema = {
       },
     },
     sortable: { type: 'boolean' },
+    selectable: { type: 'boolean' },
     initialSort: {
       type: 'object',
       additionalProperties: false,

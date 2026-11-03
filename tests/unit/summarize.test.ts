@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { GenuiDocument } from '../../src/protocol/types';
-import { buildContinueSummary } from '../../src/render/summarize';
+import { buildContinueSummary, MAX_CONTINUE_SUMMARY_LENGTH } from '../../src/render/summarize';
+import type {
+  ContinueCandidate,
+  ContinueTableSnapshot,
+} from '../../src/render/summarize';
 
 /**
  * 阶段 6：继续讨论摘要生成。
@@ -150,5 +154,102 @@ describe('buildContinueSummary', () => {
       derivedErrors: { balance: '状态值缺失' },
     });
     expect(summary).toContain('已支出：（未确认）');
+  });
+});
+
+const candidate = (label: string, rowKey: number, price: number, weight: number): ContinueCandidate => ({
+  rowKey,
+  label,
+  cells: [
+    { column: '方案', text: label },
+    { column: '价格', text: `${price} 元`, numeric: price, unit: '元' },
+    { column: '重量', text: `${weight} kg`, numeric: weight, unit: 'kg' },
+  ],
+});
+
+function table(overrides: Partial<ContinueTableSnapshot> = {}): ContinueTableSnapshot {
+  return {
+    title: '候选方案',
+    selectable: true,
+    filter: 'A/C',
+    sort: { label: '价格', dir: 'asc' },
+    totalRows: 4,
+    visibleRows: 2,
+    selected: candidate('C', 2, 5200, 1.3),
+    alternative: candidate('A', 0, 4800, 1.4),
+    selectionHidden: false,
+    selectionMissing: false,
+    errors: [],
+    ...overrides,
+  };
+}
+
+describe('issue #5 · 摘要携带筛选/选中项与快照', () => {
+  it('包含表格筛选、排序、显示行数与两个候选的主要差异', () => {
+    const summary = buildContinueSummary({
+      title: DOC.title,
+      state: DOC.state,
+      derived: DOC.derived,
+      stateValues: DOM_STATE,
+      tables: [table()],
+    });
+    expect(summary).toContain('表格「候选方案」：筛选「A/C」；按“价格”升序；显示 2 / 4 行。');
+    expect(summary).toContain('- 已选：C — 价格 5200 元；重量 1.3 kg');
+    expect(summary).toContain('- 对比：A — 价格 4800 元；重量 1.4 kg');
+    expect(summary).toContain('主要差异：价格相差 400 元；重量相差 0.1 kg。');
+  });
+
+  it('未选择、被筛选隐藏与行已不存在都有确定文案', () => {
+    const unselected = buildContinueSummary({
+      tables: [table({ selected: null, alternative: null })],
+    });
+    expect(unselected).toContain('- 未选择候选项（2 个可选）');
+
+    const hidden = buildContinueSummary({
+      tables: [table({ selected: null, alternative: null, selectionHidden: true })],
+    });
+    expect(hidden).toContain('- 已选候选项被当前筛选隐藏。');
+
+    const missing = buildContinueSummary({
+      tables: [table({ selected: null, alternative: null, selectionMissing: true })],
+    });
+    expect(missing).toContain('- 已选候选项已不存在。');
+
+    const empty = buildContinueSummary({
+      tables: [table({ selected: null, alternative: null, visibleRows: 0, totalRows: 0 })],
+    });
+    expect(empty).toContain('- 没有候选项。');
+  });
+
+  it('未提交草稿与计算失败如实标注，不混入已生效结果', () => {
+    const summary = buildContinueSummary({
+      drafts: [{ label: '预算', raw: '6500', invalid: true }],
+      tables: [
+        table({
+          errors: ['第 1 行显示条件无法计算：状态值缺失', '单元格表达式失败'],
+        }),
+      ],
+    });
+    expect(summary).toContain('- 预算：输入框中未提交「6500」，格式无效，尚未生效。');
+    expect(summary).toContain('- 无法计算：第 1 行显示条件无法计算：状态值缺失；单元格表达式失败。');
+  });
+
+  it('讨论意图的请求句替代默认结尾，不追加通用句', () => {
+    const summary = buildContinueSummary({ request: '请比较以上两个候选方案的差异与取舍。' });
+    expect(summary).toContain('请比较以上两个候选方案的差异与取舍。');
+    expect(summary).not.toContain('请基于以上当前条件与结果继续讨论');
+  });
+
+  it('摘要总长有上限，超出时截断并标注省略', () => {
+    const summary = buildContinueSummary({ request: '请继续。'.repeat(400) });
+    expect(summary.length).toBeLessThanOrEqual(MAX_CONTINUE_SUMMARY_LENGTH);
+    expect(summary).toContain('摘要过长，已省略部分内容');
+  });
+
+  it('最多展开 4 张表格，其余不挤占摘要', () => {
+    const tables = [1, 2, 3, 4, 5].map((index) => table({ title: `表 ${index}` }));
+    const summary = buildContinueSummary({ tables });
+    expect(summary).toContain('表 4');
+    expect(summary).not.toContain('表 5');
   });
 });

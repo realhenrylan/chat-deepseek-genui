@@ -195,6 +195,8 @@ export interface TableElement {
   columns: TableColumn[];
   rows: TableRow[];
   sortable?: boolean;
+  /** 允许用户选中一行作为候选项；选中项会进入「继续讨论」摘要。 */
+  selectable?: boolean;
   initialSort?: { key: string; dir: 'asc' | 'desc' };
   emptyText?: string;
   visibleIf?: Condition;
