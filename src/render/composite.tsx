@@ -1,15 +1,19 @@
 import { createElement } from 'react';
 import type {
+  ExplainElement,
   GenuiV3Document,
   GenuiV3Element,
   GenuiV4Document,
   GenuiV4Element,
+  GenuiV5Document,
+  GenuiV5Element,
   InteractiveStateValues,
+  ModelTableElement,
   NoteElement,
   TableElement,
   TextElement,
 } from '../protocol/types';
-import { lookupCondition } from '../runtime/evaluate';
+import { lookupCondition, lookupModel } from '../runtime/evaluate';
 import type { CompositeEvaluation } from '../runtime/evaluate';
 import { ElementErrorBoundary } from './boundaries';
 import { ChartElementView } from './charts';
@@ -19,14 +23,16 @@ import type { ElementRegistry } from './registry';
 import { TableElementView } from './table';
 
 /**
- * v3/v4 组合元素递归渲染：文字/说明的条件门控 + 布局容器 + 图表/表格。
+ * v3/v4/v5 组合元素递归渲染：文字/说明的条件门控 + 布局容器 + 图表/表格。
  *
  * 每个元素单独包错误边界，单个组合子树渲染失败不会拖垮整张卡片。
  * 条件计算失败时选择「继续显示内容并提示错误」，避免静默隐藏信息。
  */
 
+type AnyElement = GenuiV3Element | GenuiV4Element | GenuiV5Element;
+
 export interface CompositeContext {
-  document: GenuiV3Document | GenuiV4Document;
+  document: GenuiV3Document | GenuiV4Document | GenuiV5Document;
   evaluation: CompositeEvaluation;
   registry: ElementRegistry;
   state: InteractiveStateValues;
@@ -47,7 +53,7 @@ function ConditionError({ message }: { message: string }) {
 }
 
 function gatedVisible(
-  element: TextElement | NoteElement | TableElement,
+  element: TextElement | NoteElement | TableElement | ModelTableElement | ExplainElement,
   context: CompositeContext,
 ): { visible: boolean; error?: string } {
   if (!element.visibleIf) return { visible: true };
@@ -55,16 +61,74 @@ function gatedVisible(
   return result.ok ? { visible: result.value } : { visible: true, error: result.error };
 }
 
+function ExplainView({
+  element,
+  context,
+}: {
+  element: ExplainElement;
+  context: CompositeContext;
+}) {
+  const gate = gatedVisible(element, context);
+  if (!gate.visible) return null;
+  const model = lookupModel(context.evaluation, element.model);
+  return (
+    <aside
+      className="genui-explain"
+      aria-label={element.title ? `${element.title}（计算依据）` : '计算依据'}
+    >
+      <h4 className="genui-explain-title">
+        {element.title ?? (model ? `计算依据：${model.label}` : '计算依据')}
+      </h4>
+      {gate.error ? <ConditionError message={gate.error} /> : null}
+      {!model ? (
+        <p className="genui-explain-error" role="status">模型未求值</p>
+      ) : !model.ok ? (
+        <p className="genui-explain-error" role="status">
+          无法计算：{model.error ?? '模型计算失败'}
+        </p>
+      ) : (
+        <>
+          {model.formula ? <p className="genui-explain-formula">{model.formula}</p> : null}
+          {model.basis.length > 0 ? (
+            <dl className="genui-explain-basis">
+              {model.basis.map((item, index) => (
+                <div className="genui-explain-basis-row" key={`${item.label}-${index}`}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          {model.diagnostics.length > 0 ? (
+            <ul className="genui-explain-diagnostics">
+              {model.diagnostics.map((item, index) => (
+                <li
+                  className={`genui-explain-diagnostic genui-explain-diagnostic-${item.level}`}
+                  key={`${item.level}-${index}`}
+                >
+                  {item.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </aside>
+  );
+}
+
 function ElementContent({
   element,
   context,
   path,
 }: {
-  element: GenuiV3Element | GenuiV4Element;
+  element: AnyElement;
   context: CompositeContext;
   path: string;
 }) {
   switch (element.kind) {
+    case 'explain':
+      return <ExplainView element={element} context={context} />;
     case 'text': {
       const gate = gatedVisible(element, context);
       if (!gate.visible) return null;
@@ -129,6 +193,7 @@ function ElementContent({
           element={element}
           state={context.state}
           calculation={context.evaluation.derived}
+          models={context.evaluation.models}
           drafts={context.drafts}
           fieldErrors={context.fieldErrors}
           onValueChange={context.onValueChange}
@@ -143,7 +208,7 @@ export function ElementList({
   context,
   path,
 }: {
-  elements: Array<GenuiV3Element | GenuiV4Element>;
+  elements: AnyElement[];
   context: CompositeContext;
   path: string;
 }) {

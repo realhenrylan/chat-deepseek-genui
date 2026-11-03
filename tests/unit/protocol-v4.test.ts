@@ -19,8 +19,8 @@ import type {
  */
 
 const X = { op: 'x' } as FunctionExpression;
-const C = (value: number): NumericExpression => ({ op: 'const', value });
-const S = (id: string): NumericExpression => ({ op: 'state', id });
+const C = (value: number): FunctionExpression & NumericExpression => ({ op: 'const', value });
+const S = (id: string): FunctionExpression & NumericExpression => ({ op: 'state', id });
 const MUL = (left: FunctionExpression, right: FunctionExpression): FunctionExpression => ({
   op: 'multiply',
   left,

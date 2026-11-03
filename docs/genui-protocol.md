@@ -8,6 +8,7 @@
 - **v2**：在单个 Card 内增加初始状态、控件绑定、派生值和本地重置。示例见 [`examples/budget-v2.json`](examples/budget-v2.json)。
 - **v3**：在 v2 的交互能力上增加组合布局、条件说明、图表和表格；仍不引入脚本或模板字符串。示例见 [`examples/parabola-v3.json`](examples/parabola-v3.json)、[`examples/shopping-comparison-v3.json`](examples/shopping-comparison-v3.json)、[`examples/budget-v3.json`](examples/budget-v3.json)。
 - **v4**：在 v3 基础上新增折线函数曲线系列——曲线用受限表达式 `y = f(x)` 一次声明，定义域可随交互状态变化，本地运行时按有上限的采样数重算；旧能力语义不变。示例见 [`examples/parabola-v4.json`](examples/parabola-v4.json)。
+- **v5**：新增本地语义模型 `models`（预算、成本、偏好），把有明确规则的计算下沉到受测运行时；元素可用模型来源读取同一计算快照，并用 `explain` 解释依据。示例见 [`examples/budget-v5.json`](examples/budget-v5.json)、[`examples/preference-v5.json`](examples/preference-v5.json)、[`examples/cost-v5.json`](examples/cost-v5.json)。
 - 缺少 `version`、未知字段、未知版本或无效引用会保留原始代码块并回退，不猜测模型意图。
 
 ## 根对象
@@ -17,13 +18,14 @@
 | 字段 | 用途 |
 | --- | --- |
 | `type` | 固定为 `genui` |
-| `version` | `1`、`2`、`3` 或 `4` |
+| `version` | `1`、`2`、`3`、`4` 或 `5` |
 | `title` | 可选卡片标题 |
-| `state` | v2–v4 初始状态定义；每个控件实例运行时持有独立状态 |
-| `derived` | v2–v4 派生数值及其白名单表达式 |
+| `state` | v2–v5 初始状态定义；每个控件实例运行时持有独立状态 |
+| `derived` | v2–v5 派生数值及其白名单表达式 |
+| `models` | v5 必填，1–4 个本地语义模型；按数组顺序计算 |
 | `elements` | 按顺序呈现的元素 |
 
-## 状态与控件（v2–v4）
+## 状态与控件（v2–v5）
 
 数值状态使用 `kind: "number"`，需提供 `initial`、`min`、`max`、`step`，可选 `unit`。必须满足 `min < max`、初始值在范围内、`step > 0`，且初始值与最大值都和步长对齐。数值最大绝对值为 `1,000,000,000,000`。
 
@@ -31,7 +33,7 @@
 
 `unit` 为可选字段；提供时长度须为 1–20 字符。没有单位时省略该字段，不能写 `"unit": ""`（例如选择状态的当前值显示）。
 
-v2/v3 均允许以下叶元素：
+v2–v5 均允许以下叶元素：
 
 | `kind` | 字段 | 行为 |
 | --- | --- | --- |
@@ -39,7 +41,7 @@ v2/v3 均允许以下叶元素：
 | `number-input` | `bind` | 编辑绑定的数值状态 |
 | `slider` | `bind` | 按范围和步长调整数值状态 |
 | `select` | `bind` | 选择绑定状态中的一个选项 |
-| `value` | `label`、`source: { "kind": "state" | "derived", "id" }`、可选 `unit` | 显示当前状态或派生结果 |
+| `value` | `label`、`source: { "kind": "state" | "derived", "id" }` 或 v5 的 `{ "kind": "model", "model", "key" }`、可选 `unit` | 显示当前状态、派生结果或模型标量 |
 
 控件绑定必须引用存在且类型匹配的状态。不同控件可绑定同一个状态，例如同时提供滑块和数字输入；同一 Card 内共享状态。多个 Card 的状态彼此隔离。
 
@@ -51,7 +53,10 @@ v2/v3 均允许以下叶元素：
 { "op": "const", "value": 12 }
 { "op": "state", "id": "budget" }
 { "op": "derived", "id": "remaining" }
+{ "op": "model", "model": "monthly", "key": "balance" }
 ```
+
+`model` 叶子仅 v5 允许，只能读取已计算模型的标量；模型输入只能引用更早声明的模型，derived 不能引用模型。元素表达式和条件可以读取任意已计算模型。
 
 允许的单目运算：`negate`、`abs`、`round`、`floor`、`ceil`，字段形式为 `{ "op": "abs", "value": <表达式> }`。
 
@@ -59,23 +64,24 @@ v2/v3 均允许以下叶元素：
 
 派生值可以引用数值状态和其他派生值，但不能引用选择状态。所有引用必须存在，依赖图不能有循环。除零或结果溢出只在对应结果位置显示错误，不会崩溃或影响其他结果。
 
-## v3/v4 组合元素
+## v3–v5 组合元素
 
-v3/v4 的 `elements` 除上述叶元素外还允许：
+v3–v5 的 `elements` 除上述叶元素外还允许：
 
 | `kind` | 关键字段 | 行为 |
 | --- | --- | --- |
 | `note` | `text`、可选 `tone: "info" \| "warn" \| "error"`、可选 `visibleIf` | 条件说明块；`error` 使用 alert 语义 |
 | `section` | 可选 `title`、`children` | 带标题的分组，可嵌套其他 v3/v4 元素 |
 | `columns` | `columns`，2–3 个元素数组 | 多列布局；窄窗口自动变为单列 |
-| `chart` | `chartType`、`title`、`legend`、`items` 或 `series` | 柱状、饼状或折线图 |
-| `table` | `columns`、`rows`、`sortable`、`initialSort`、`emptyText`、可选 `visibleIf` | 本地排序、筛选、条件行与横向滚动 |
+| `chart` | `chartType`、`title`、`legend`、`items` 或 `series`；v5 柱/饼可用 `source: { "model" }` | 柱状、饼状或折线图 |
+| `table` | `columns`、`rows`、`sortable`、`initialSort`、`emptyText`、可选 `visibleIf`；v5 可用 `source: { "model", "view"? }` | 本地排序、筛选、条件行与横向滚动 |
+| `explain` | v5：`model`、可选 `title`、`visibleIf` | 本地生成模型依据、诊断与公式 |
 
-`section` 的 `children` 为 1–20 个元素；`columns` 为 2–3 列，每列 1–20 个元素。布局嵌套语义深度不超过 4，整张 Card 的 v3/v4 元素总数不超过 80。
+`section` 的 `children` 为 1–20 个元素；`columns` 为 2–3 列，每列 1–20 个元素。布局嵌套语义深度不超过 4，整张 Card 的 v3–v5 元素总数不超过 80。
 
 ### 条件
 
-`text`、`note`、`table` 和表格行可带 `visibleIf`。条件只读当前状态，不使用字符串或代码：
+`text`、`note`、`table` 和表格行可带 `visibleIf`。条件只读当前 state/derived；v5 还可读已计算模型标量，不使用字符串或代码：
 
 ```json
 { "op": "state-eq", "id": "priority", "value": "price" }
@@ -99,7 +105,7 @@ v3/v4 的 `elements` 除上述叶元素外还允许：
 }
 ```
 
-`items` 为 1–20 项，每项 `value` 是数值表达式。饼图只绘制正值，非正值被忽略并显示提示；所有值都非正时显示空状态。
+`items` 为 1–20 项，每项 `value` 是数值表达式。饼图只绘制正值，非正值被忽略并显示提示；所有值都非正时显示空状态。v5 柱/饼也可用 `source: { "model": "..." }` 读取模型 `chartItems`，此时不写 `items`，且不得与 `items` 同时出现；折线不提供模型来源。
 
 折线图：
 
@@ -150,9 +156,78 @@ v4 折线系列可用函数曲线写法代替离散点；同一 `series` 数组�
 
 `sortable: true` 时列头可点击排序，并显示 `aria-sort`；`initialSort` 指定初始排序列和 `asc`/`desc`。当 `sortable` 为真或行数超过 3 时显示筛选框与行计数。表格容器可横向滚动并获得键盘焦点；空结果使用 `emptyText`，默认文案为“没有可显示的数据”。条件行无法求值时仍显示该行，并在表格上方汇总提示。
 
+v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图必须与模型类型匹配：预算 `summary`（默认）或 `items`，成本 `plans`，偏好 `ranking`（默认）或 `breakdown`。模型表格与显式列/行互斥，仍复用本地排序、筛选、空状态与横向滚动。
+
+## v5 语义模型
+
+`models` 是 v5 必填数组（1–4 个），按声明顺序计算。模型把预算、成本、偏好三类规则固定在本地运行时，模型只提供数据、约束与呈现方式；扩展不执行脚本，也不访问网络。模型输入表达式可读 `state`、`derived`、常量以及更早模型的标量，不能读自身或更晚模型；derived 仍不能读模型。
+
+公共字段：`kind`、`id`（唯一、符合 ID 规则）、可选 `label`、可选 `precision`（0–4，默认 2）。金额按 `precision` 转为整数最小单位后计算（四舍五入、half away from zero），避免浮点累计误差；预算和成本的 `unit` 仅用于显示，`useUnit` 用于单次成本的显示。
+
+### 预算 `budget`
+
+```json
+{
+  "kind": "budget", "id": "monthly", "unit": "元", "precision": 0,
+  "income": { "op": "state", "id": "income" },
+  "expenses": [
+    { "label": "房租", "amount": { "op": "state", "id": "rent" } }
+  ]
+}
+```
+
+`income` 与 `expenses[].amount` 是数值表达式，支出项 0–20 个。输出标量：`income`、`expenses`、`balance`、`overspend`、`usage`、`itemCount`。`balance = income - expenses`；`overspend` 为 `1`/`0`；`usage` 是支出占收入的百分比（保留 1 位小数），收入为 0 时为 `null` 并给出诊断。负数输入按 0 计并给出警告；没有支出项时表为空并给出提示。
+
+表格视图：`summary` 三行（收入、支出、余额，含支出占比）与 `items`（支出项、金额、占支出比例；支出为 0 时占比为 `null`）。`chartItems` 为收入与支出两项。`explain` 展示收入、支出、余额、占比、超支与支出项依据。
+
+### 成本 `cost`
+
+```json
+{
+  "kind": "cost", "id": "membership", "unit": "元", "useUnit": "次", "precision": 2,
+  "horizon": { "op": "state", "id": "months" },
+  "plans": [
+    { "label": "月付", "fee": { "op": "const", "value": 30 }, "coverage": 1, "usesPerPeriod": { "op": "state", "id": "visits" } },
+    { "label": "年付", "fee": { "op": "const", "value": 300 }, "coverage": 12, "usesPerPeriod": { "op": "state", "id": "visits" } }
+  ]
+}
+```
+
+`horizon` 是计划周期数；`plans` 为 1–10 个方案，`fee` 是每份价格，`coverage > 0` 是每份覆盖的周期数，`usesPerPeriod` 是每周期使用次数。购买份数 `ceil(horizon / coverage)`，总成本 `fee × 份数`，总次数 `usesPerPeriod × horizon`，单次成本 `totalCost / totalUses`。周期为 0 时不购买、总成本为 0、总次数为 0、单次成本为 `null`；总次数为 0 时单次成本不可用。负数按 0 计并警告；整份超买会给出提示。方案按单次成本升序（不可用排最后）、总成本、声明顺序排列。输出标量：`horizon`、`planCount`、`lowestTotalCost`、`lowestUnitCost`（不可用时为 `null`）。表格视图 `plans`；`chartItems` 为各方案总成本。
+
+### 偏好 `preference`
+
+```json
+{
+  "kind": "preference", "id": "pick", "precision": 1,
+  "dimensions": [
+    { "id": "price", "label": "价格", "weight": 3, "direction": "lower" },
+    { "id": "battery", "label": "续航", "weight": 2, "direction": "higher" }
+  ],
+  "candidates": [
+    { "label": "手机 A", "values": { "price": 4999, "battery": 80 } },
+    { "label": "手机 B", "values": { "price": null, "battery": 88 } }
+  ],
+  "filters": [
+    { "dimension": "price", "max": { "op": "state", "id": "budget" } }
+  ]
+}
+```
+
+维度 1–8 个，`weight` 0–1000 且至少一个大于 0，`direction` 为 `higher` 或 `lower`；候选 0–30 个，`values` 只允许已声明维度，值可为数字或 `null`；筛选 0–8 个，每个维度最多一个，至少提供 `min` 或 `max`。`null` 与缺失键都表示资料缺失，不按 0 处理。
+
+计算顺序：先用筛选表达式排除候选（缺失值不通过筛选），再对通过候选的每个维度用现存值做 min-max 归一化；`max = min` 时该维度归一为 1；`lower` 方向取反。得分 `Σ(归一值 × weight) / Σ(存在的 weight > 0) × 100`，缺失维度不计 0、不进分母；没有可计权维度时得分为 `null`。得分按 `precision` 四舍五入（默认 1 位小数）。排序按得分降序、缺失计权维度数升序、声明顺序；同分同名次（competition ranking），未计分候选排后且名次为空。输出标量：`candidateCount`、`eligibleCount`、`rankedCount`、`topScore`、`weightTotal`、`dimensionCount`。表格视图：`ranking`（名次、候选、得分、缺失维度）与 `breakdown`（候选、得分、各维度归一值，列数上限 10）；`chartItems` 只含有得分的候选。空候选、全部被筛掉、全部缺少可计权维度都会返回明确计数与诊断，而不是编造 0 分。
+
+### 模型来源与解释
+
+- `value` 可用 `{ "kind": "model", "model": "monthly", "key": "balance" }` 显示标量；标量为 `null` 时显示“不可用”，模型失败时显示具体错误。
+- `table` 与柱/饼 `chart` 可用 `source` 读取模型表格/图表项；它们与显式 `columns`/`rows`、`items` 互斥。
+- `explain` 读取同一 `ModelResult`，展示公式、依据、诊断与失败原因；不重新计算。
+- 一次求值产生同一份模型快照，参数、数值、图表和表格都读取该快照。单个模型失败只影响自身及其展示，其他模型和元素继续工作。
+
 ## 规模限制
 
-| 项 | v1/v2 上限 | v3 上限 |
+| 项 | v1/v2 上限 | v3–v5 上限 |
 | --- | ---: | ---: |
 | 原始 JSON | 64 KiB | 64 KiB |
 | JSON 嵌套深度 | 16 | 16 |
@@ -160,7 +235,8 @@ v4 折线系列可用函数曲线写法代替离散点；同一 `series` 数组�
 | 状态变量 | 20 | 20 |
 | 派生值 | 20 | 20 |
 | 单个选择器选项 | 20 | 20 |
-| 表达式节点总数 | 100（派生） | 300（派生 + 图表/表格内联表达式） |
+| 语义模型（v5） | — | 4；预算支出 20、成本方案 10、偏好候选 30、维度 8、筛选 8 |
+| 表达式节点总数 | 100（派生） | 300（v3/v4 派生 + 图表/表格内联表达式；v5 为 400） |
 | 条件节点总数 | — | 100 |
 | 条件嵌套深度 | — | 5 |
 | 单条表达式深度 | 8 | 8 |
@@ -171,11 +247,14 @@ v4 折线系列可用函数曲线写法代替离散点；同一 `series` 数组�
 
 v4 在 v3 基础上新增：函数曲线每系列采样数 5–50（默认 41）；文档内函数曲线采样总数 200；每系列采样运算预算 5000（独立于共享 500 次池）；零点覆盖扩展最多 4 轮；函数表达式节点计入共享的 300 节点预算。
 
+v5 在 v4 基础上新增：语义模型 1–4 个；模型输入与元素表达式共享 400 节点预算；每个模型另有 5000 次运算预算，失败只影响该模型。模型集合、金额量级与权重上限由 `LIMITS` 与校验器统一执行。
+
 ## 用户操作与失败行为
 
 - 滑块、输入框和选择器只更新当前 Card 的内存状态，不调用模型、不发送聊天、不发起网络请求。
 - 空输入、非有限数、越界数值和不符合步长的数值会显示在对应控件旁；最后一个有效状态继续用于计算。
 - 表格排序、筛选只作用于当前 Card 的展示数据，不改变状态或原始数据。
+- 模型计算失败（引用不可用、除零、溢出、资源超限等）只在对应模型、数值、图表、表格和 explain 中显示错误；其他模型与元素继续工作，失败值不会显示为 0。
 - 每张交互 Card 提供“重置当前界面”，恢复该文档的初始状态并清除本地输入错误。
 - 原始 JSON 查看入口保留。协议、引用或挂载失败时显示原始代码块。
 - 操作不包含代码回调、表达式字符串、任意事件处理器、任意 HTML/CSS、外部请求或持久化状态。

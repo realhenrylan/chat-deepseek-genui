@@ -1,0 +1,78 @@
+{
+  "type": "genui",
+  "version": 5,
+  "title": "月度预算与结余",
+  "state": [
+    { "id": "income", "label": "月收入", "kind": "number", "initial": 12000, "min": 0, "max": 50000, "step": 500, "unit": "元" },
+    { "id": "rent", "label": "房租", "kind": "number", "initial": 4200, "min": 0, "max": 20000, "step": 100, "unit": "元" },
+    { "id": "living", "label": "生活费", "kind": "number", "initial": 2600, "min": 0, "max": 20000, "step": 100, "unit": "元" },
+    { "id": "saving", "label": "储蓄目标", "kind": "number", "initial": 3000, "min": 0, "max": 30000, "step": 500, "unit": "元" }
+  ],
+  "derived": [
+    {
+      "id": "goalGap",
+      "label": "距储蓄目标",
+      "unit": "元",
+      "expression": {
+        "op": "subtract",
+        "left": { "op": "state", "id": "saving" },
+        "right": {
+          "op": "subtract",
+          "left": { "op": "state", "id": "income" },
+          "right": {
+            "op": "add",
+            "left": { "op": "state", "id": "rent" },
+            "right": { "op": "state", "id": "living" }
+          }
+        }
+      }
+    }
+  ],
+  "models": [
+    {
+      "kind": "budget",
+      "id": "monthly",
+      "label": "月度收支",
+      "unit": "元",
+      "precision": 0,
+      "income": { "op": "state", "id": "income" },
+      "expenses": [
+        { "label": "房租", "amount": { "op": "state", "id": "rent" } },
+        { "label": "生活费", "amount": { "op": "state", "id": "living" } },
+        { "label": "储蓄", "amount": { "op": "state", "id": "saving" } }
+      ]
+    }
+  ],
+  "elements": [
+    { "kind": "note", "text": "金额为示例，可拖动滑块调整；储蓄目标计入支出。", "tone": "info" },
+    {
+      "kind": "columns",
+      "columns": [
+        [
+          { "kind": "slider", "bind": "income" },
+          { "kind": "slider", "bind": "rent" },
+          { "kind": "slider", "bind": "living" },
+          { "kind": "slider", "bind": "saving" }
+        ],
+        [
+          { "kind": "value", "label": "月结余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元" },
+          { "kind": "value", "label": "支出占收入", "source": { "kind": "model", "model": "monthly", "key": "usage" }, "unit": "%" },
+          { "kind": "value", "label": "距储蓄目标", "source": { "kind": "derived", "id": "goalGap" }, "unit": "元" }
+        ]
+      ]
+    },
+    {
+      "kind": "note",
+      "text": "支出已超过收入，结余为负；可下调支出或提高收入。",
+      "tone": "warn",
+      "visibleIf": {
+        "op": "num-lt",
+        "left": { "op": "model", "model": "monthly", "key": "balance" },
+        "right": { "op": "const", "value": 0 }
+      }
+    },
+    { "kind": "chart", "chartType": "bar", "title": "收入与支出", "source": { "model": "monthly" } },
+    { "kind": "table", "title": "预算摘要", "source": { "model": "monthly", "view": "summary" } },
+    { "kind": "explain", "model": "monthly", "title": "计算依据" }
+  ]
+}

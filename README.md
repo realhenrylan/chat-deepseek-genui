@@ -139,7 +139,7 @@ npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
 
-协议支持 v1 / v2 / v3 / v4（v4 新增折线图的函数曲线系列，坐标轴画在数据零点）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

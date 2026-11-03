@@ -1,0 +1,67 @@
+{
+  "type": "genui",
+  "version": 5,
+  "title": "健身会员成本比较",
+  "state": [
+    { "id": "months", "label": "计划使用周期", "kind": "number", "initial": 12, "min": 0, "max": 24, "step": 1, "unit": "月" },
+    { "id": "visits", "label": "每月次数", "kind": "number", "initial": 8, "min": 0, "max": 30, "step": 1, "unit": "次" }
+  ],
+  "derived": [],
+  "models": [
+    {
+      "kind": "cost",
+      "id": "membership",
+      "label": "会员方案",
+      "unit": "元",
+      "useUnit": "次",
+      "precision": 2,
+      "horizon": { "op": "state", "id": "months" },
+      "plans": [
+        {
+          "label": "月付",
+          "fee": { "op": "const", "value": 30 },
+          "coverage": 1,
+          "usesPerPeriod": { "op": "state", "id": "visits" }
+        },
+        {
+          "label": "年付",
+          "fee": { "op": "const", "value": 300 },
+          "coverage": 12,
+          "usesPerPeriod": { "op": "state", "id": "visits" }
+        },
+        {
+          "label": "按次",
+          "fee": { "op": "const", "value": 4 },
+          "coverage": 1,
+          "usesPerPeriod": { "op": "const", "value": 1 }
+        }
+      ]
+    }
+  ],
+  "elements": [
+    { "kind": "note", "text": "价格为示例；总成本按覆盖周期向上取整购买，单次成本在总次数为 0 时不可用。", "tone": "info" },
+    {
+      "kind": "columns",
+      "columns": [
+        [ { "kind": "slider", "bind": "months" }, { "kind": "slider", "bind": "visits" } ],
+        [
+          { "kind": "value", "label": "最低单次成本", "source": { "kind": "model", "model": "membership", "key": "lowestUnitCost" }, "unit": "元/次" },
+          { "kind": "value", "label": "最低总成本", "source": { "kind": "model", "model": "membership", "key": "lowestTotalCost" }, "unit": "元" }
+        ]
+      ]
+    },
+    {
+      "kind": "note",
+      "text": "周期为 0 时不会购买，总成本为 0，单次成本不可用。",
+      "tone": "warn",
+      "visibleIf": {
+        "op": "num-eq",
+        "left": { "op": "model", "model": "membership", "key": "horizon" },
+        "right": { "op": "const", "value": 0 }
+      }
+    },
+    { "kind": "table", "title": "方案成本", "source": { "model": "membership", "view": "plans" } },
+    { "kind": "chart", "chartType": "bar", "title": "总成本对比", "source": { "model": "membership" } },
+    { "kind": "explain", "model": "membership", "title": "计算依据" }
+  ]
+}
