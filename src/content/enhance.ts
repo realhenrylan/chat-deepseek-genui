@@ -20,6 +20,8 @@ import { createCardStateStore, type CardStateStore } from '../runtime/card-state
 import { mountCard, type MountedCard } from '../render/mount';
 import type { ElementRegistry } from '../render/registry';
 import type { PlanStore } from './plan-store';
+import type { ScenarioPort } from '../runtime/scenario';
+import { createScenarioPort, type ScenarioStore } from './scenario-store';
 
 /**
  * 识别 → 解析 → 挂载的单块链路，以及供页面生命周期控制器使用的可清理管理器。
@@ -57,6 +59,8 @@ export interface EnhanceOptions {
   sessionId?: string;
   /** 本机「保存方案」存储；null/缺省表示不提供持久化入口。 */
   planStore?: PlanStore | null;
+  /** 方案工作台存储（issue #6）；null/缺省表示不提供方案面板。 */
+  scenarioStore?: ScenarioStore | null;
   /** 页面内状态仓库覆盖（测试注入）；缺省新建且有上限。 */
   stateStore?: CardStateStore;
   /** 测试直接注入已加载的保存方案；与 planStore 结果合并时以此为准。 */
@@ -328,6 +332,46 @@ export class EnhancementManager {
     return result;
   }
 
+  private createScenarioPortFor(
+    store: ScenarioStore,
+    identity: CardIdentity,
+    doc: GenuiDocument,
+  ): ScenarioPort {
+    const port = createScenarioPort({
+      store,
+      document: doc,
+      documentHash: identity.documentHash,
+      source: {
+        sessionId: identity.sessionId,
+        messageKey: identity.messageKey,
+        duplicateIndex: identity.duplicateIndex,
+        title: doc.title ?? '',
+      },
+      now: this.now,
+    });
+    return {
+      documentHash: port.documentHash,
+      list: () => port.list(),
+      save: async (request) => {
+        if (identity.ambiguous) {
+          return {
+            ok: false,
+            message: '保存失败：当前会话或消息身份无法可靠确认，未保存到本机。',
+          };
+        }
+        return port.save(request);
+      },
+      remove: (id, name) => port.remove(id, name),
+      clear: () => port.clear(),
+      importText: async (text) => {
+        if (identity.ambiguous) {
+          return { ok: false, message: '导入失败：当前会话或消息身份无法可靠确认，未写入本机。' };
+        }
+        return port.importText(text);
+      },
+    };
+  }
+
   private mountCandidate(
     candidate: GenuiBlockCandidate,
     signature: string,
@@ -382,6 +426,13 @@ export class EnhancementManager {
     let fatalDuringInitialRender = false;
     let record: MountedRecord | null = null;
 
+    // 方案工作台端口：绑定当前文档与身份；身份不可靠时拒绝写入本机
+    // （与 plan 路径同一口径），但保留删除/清理等移除能力。
+    const scenarioStore = this.options.scenarioStore;
+    const scenarioPort = scenarioStore
+      ? this.createScenarioPortFor(scenarioStore, identity, parsed.document)
+      : undefined;
+
     try {
       mountedCard = mountCard(host, {
         document: parsed.document,
@@ -396,6 +447,7 @@ export class EnhancementManager {
           ? (state) => this.savePlan(identity, parsed.document, state)
           : undefined,
         onClearPlan: this.options.planStore ? () => this.clearPlan(identity) : undefined,
+        scenarioPort,
         onToggleRaw: (showRaw) => {
           // 卡片保持可见，否则「收起原始 JSON」将没有可点的入口。
           block.style.display = showRaw ? originalDisplay : 'none';

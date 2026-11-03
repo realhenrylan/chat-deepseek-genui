@@ -7,6 +7,7 @@
 - 卡片交互状态改为独立于 React 组件生命周期保存：参数、表格筛选与排序在生成新回答、同一文档的节点替换或重新挂载后保持；新回答流式生成期间不再全局卸载未变化的历史卡片，只等待/处理正在变化的回答。身份按「会话路由 + 消息键（`data-virtual-list-item-key` > `data-message-id` > 文本指纹）+ 同文档重复序号 + 原始原文哈希」计算，不按标题或 DOM 顺序匹配；原文被改写时更换身份并清除旧状态，身份不可靠时只做页面内恢复、拒绝写入本机。新增 `src/runtime/card-state.ts`、`src/runtime/card-state-store.ts`、`src/content/identity.ts`。
 - 新增主动「保存方案」与本机恢复：仅点击时把恢复界面所需的参数、筛选与排序写入 `chrome.storage.local`（每卡一条，最多 50 条、单条 32 KiB），刷新后按同一身份恢复；提供「更新保存的方案」「清除保存」及 `role="status"` 成功/容量清理/失败反馈。状态结构版本、文档哈希或 `stateSignature` 不匹配时不套用旧记录，越界、步长或选项变化逐项清洗回落。不引入云同步或默认上传，保存不改变对话上下文。新增 `src/content/plan-store.ts` 与 `docs/state-storage.md`，同步更新 README、`docs/privacy.md`、`docs/product-spec.md`。
 - 增加自动打包与 Release 草稿工作流：推送到 `main` 可下载 ZIP/SHA256；用户手动运行并填写最终插件版本号后，检查、构建及 Edge/Chrome 默认测试通过才创建附带安装包的 Release 草稿，正式发布由用户点击 Publish release 决定。新增版本同步脚本、PowerShell 打包脚本和发布指南，校验安装包与标签版本一致性并保留历史 Release；草稿自动带入 CHANGELOG 的中文分类更新说明，附 GitHub 变更记录。
+- 卡片新增「方案工作台」（issue #6）：可保存具名方案（参数、表格视图、当时的结果，以及协议版本、计算规则版本与资料依据），保存后继续调整互不覆盖；勾选两份方案可并排比较参数与结果差异，单位、字段或规则不兼容时给出明确原因、拒绝误导性比较；每份方案可导出方案 JSON、可读摘要（可交给「继续讨论」继续）并把表格数据导出为 CSV（BOM、RFC 4180 转义与公式前缀注入防护）；导入先校验格式、大小、引用与版本（不执行文件内容中的代码、不覆盖已有方案），并对旧格式、损坏文件、超大文件与不支持版本给出明确反馈；「删除」「清除全部方案」立即移除本机保存内容（上限 50 条按时间淘汰），并区分保存时结果与按当前规则重算结果、规则或数据变化时提示；支持把选中方案或两方案差异交给「继续讨论」。新增 `src/runtime/scenario.ts`、`src/runtime/csv.ts`、`src/content/scenario-store.ts`、`src/render/scenario-panel.tsx`，接线 `Card`/`mount`/`enhance`/`controller`，同步更新 `docs/state-storage.md`、`docs/privacy.md` 与 `card.css`。
 
 ### Fixed
 

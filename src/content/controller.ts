@@ -4,6 +4,7 @@ import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createChromePlanStore } from './plan-store';
+import { createChromeScenarioStore } from './scenario-store';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
 import { GENUI_PROMPT_TEXT, GENUI_PROMPT_VERSION } from './prompt';
@@ -95,9 +96,12 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   // 本机保存方案：仅由用户在卡片内显式保存时写入；测试可注入或传 null 关闭。
   const planStore =
     options.planStore === undefined ? createChromePlanStore() : options.planStore;
+  // 方案工作台（issue #6）：与 planStore 同一注入模式。
+  const scenarioStore =
+    options.scenarioStore === undefined ? createChromeScenarioStore() : options.scenarioStore;
   const managerOptions: EnhanceOptions = gate
-    ? { ...options, planStore, isBlockUnverifiable: gate.isBlockUnverifiable }
-    : { ...options, planStore };
+    ? { ...options, planStore, scenarioStore, isBlockUnverifiable: gate.isBlockUnverifiable }
+    : { ...options, planStore, scenarioStore };
   const manager = createEnhancementManager(doc, managerOptions);
   const store = options.store === undefined ? createExtensionSettingsStore() : options.store;
   const debounceMs = options.debounceMs ?? 100;

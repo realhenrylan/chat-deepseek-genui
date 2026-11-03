@@ -23,6 +23,7 @@ import {
   type TableViewState,
 } from '../runtime/card-state';
 import type { CardStateStore } from '../runtime/card-state-store';
+import type { ScenarioPort } from '../runtime/scenario';
 import { ElementErrorBoundary } from './boundaries';
 import { CompositeElementsView } from './composite';
 import { UnknownElementView } from './elements';
@@ -30,6 +31,7 @@ import { formatNumber } from './format';
 import { InteractiveElementView } from './interactive';
 import type { ElementRegistry } from './registry';
 import { buildContinueSummary } from './summarize';
+import { ScenarioPanel } from './scenario-panel';
 import { getBrandMarkUrl } from '../branding';
 
 /**
@@ -75,6 +77,11 @@ export interface CardProps {
   onSavePlan?: (state: CardUiState) => Promise<PlanSaveResult>;
   /** 清除本机保存的方案。 */
   onClearPlan?: () => Promise<PlanClearResult>;
+  /**
+   * 方案工作台端口（issue #6）：具名方案的保存/比较/导入导出。
+   * 未接线或 v1 静态文档时不渲染面板。
+   */
+  scenarioPort?: ScenarioPort | null;
 }
 
 const EMPTY_CALCULATION: DerivedCalculation = { values: {}, errors: {}, operations: 0 };
@@ -95,6 +102,7 @@ export function Card({
   savedPlanAt,
   onSavePlan,
   onClearPlan,
+  scenarioPort,
 }: CardProps) {
   const brandMarkUrl = getBrandMarkUrl();
   const [showRaw, setShowRaw] = useState(false);
@@ -362,6 +370,16 @@ export function Card({
           />
         ) : (
           doc.elements.map(renderLegacyElement)
+        )}
+        {doc.version === 1 || !scenarioPort ? null : (
+          <ScenarioPanel
+            document={doc}
+            port={scenarioPort}
+            values={state}
+            tables={tables}
+            results={{ values: calculation.values, errors: calculation.errors }}
+            onContinue={onContinue}
+          />
         )}
       </div>
       <footer className="genui-card-footer" hidden={!expanded}>

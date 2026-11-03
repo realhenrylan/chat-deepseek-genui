@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { GenuiDocument } from '../protocol/types';
 import type { CardUiState, PlanClearResult, PlanSaveResult } from '../runtime/card-state';
 import type { CardStateStore } from '../runtime/card-state-store';
+import type { ScenarioPort } from '../runtime/scenario';
 import cardCss from './card.css?inline';
 import { CardErrorBoundary } from './boundaries';
 import { Card } from './Card';
@@ -46,6 +47,8 @@ export interface MountCardOptions {
   /** 用户主动「保存方案」/清除本机方案。 */
   onSavePlan?: (state: CardUiState) => Promise<PlanSaveResult>;
   onClearPlan?: () => Promise<PlanClearResult>;
+  /** 方案工作台端口（issue #6）；缺省时不渲染方案面板。 */
+  scenarioPort?: ScenarioPort | null;
 }
 
 export interface MountedCard {
@@ -85,6 +88,7 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
           savedPlanAt={options.savedPlanAt}
           onSavePlan={options.onSavePlan}
           onClearPlan={options.onClearPlan}
+          scenarioPort={options.scenarioPort}
         />
       </CardErrorBoundary>,
     );
