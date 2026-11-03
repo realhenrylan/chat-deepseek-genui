@@ -346,6 +346,61 @@ async function gotoAndAwaitMarker(page: Page): Promise<void> {
   });
 }
 
+interface ViewportRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+}
+
+interface ToggleBounds {
+  panel: ViewportRect;
+  host: ViewportRect;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+/** 读取 shadow DOM 中说明面板与浮标宿主的视口矩形（只通过公开 DOM 观测）。 */
+async function readToggleBounds(page: Page): Promise<ToggleBounds> {
+  return page.evaluate(() => {
+    const host = document.querySelector('[data-genui-control]');
+    const panel = host?.shadowRoot?.querySelector('.panel');
+    if (!host || !panel) throw new Error('未找到 GenUI 浮标或说明面板');
+    const toRect = (element: Element): ViewportRect => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+      };
+    };
+    return {
+      panel: toRect(panel),
+      host: toRect(host),
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+    };
+  });
+}
+
+/** 说明面板与浮标都应完整留在视口内（容忍 0.5px 子像素取整）。 */
+function expectToggleInsideViewport(bounds: ToggleBounds): void {
+  const targets = [
+    { name: '说明面板', rect: bounds.panel },
+    { name: '浮标', rect: bounds.host },
+  ];
+  for (const { name, rect } of targets) {
+    expect(rect.left, `${name}左缘不应超出视口`).toBeGreaterThanOrEqual(-0.5);
+    expect(rect.top, `${name}上缘不应超出视口`).toBeGreaterThanOrEqual(-0.5);
+    expect(rect.right, `${name}右缘不应超出视口`).toBeLessThanOrEqual(bounds.viewportWidth + 0.5);
+    expect(rect.bottom, `${name}下缘不应超出视口`).toBeLessThanOrEqual(bounds.viewportHeight + 0.5);
+  }
+  expect(bounds.panel.width, '窄视口下说明面板仍应保留可读宽度').toBeGreaterThanOrEqual(200);
+}
+
 for (const { label, channel } of CHANNELS) {
   test(`阶段 1 · ${label} 加载构建目录并注入内容脚本`, async () => {
     const { context, page, profileDir } = await launchWithExtension(channel);
@@ -561,7 +616,7 @@ for (const { label, channel } of CHANNELS) {
       await expect(first.locator('.genui-value-output').nth(1)).toHaveText('60 元');
       // 默认增强已生效：草稿保留在开头，可见说明追加在其后。
       await expect(page.locator('#e2e-input')).toHaveValue(
-        /^保留的本地草稿\n\n〔GenUI 增强 v2/,
+        /^保留的本地草稿\n\n〔GenUI 增强 v2.1/,
       );
       expect(interactionRequests, '控件操作期间不得产生网络请求').toEqual([]);
 
@@ -1053,7 +1108,7 @@ for (const { label, channel } of CHANNELS) {
       // 只有用户输入后、停止输入达到延迟，才把可见说明追加到草稿末尾。
       const original = '帮我做一份月度预算';
       await input.fill(original);
-      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2`), {
+      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2.1`), {
         timeout: 5_000,
       });
       await expect(input).toHaveValue(/〔GenUI 增强说明结束〕$/);
@@ -1075,9 +1130,76 @@ for (const { label, channel } of CHANNELS) {
 
       // 重新开启后，现有草稿在停止输入后再次得到可见说明。
       await toggle.click();
-      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2`), {
+      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2.1`), {
         timeout: 5_000,
       });
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`阶段 7b · ${label} 窄视口下说明面板不超出屏幕`, async () => {
+    test.skip(REAL_SITE, '阶段 7b 自动断言使用模拟页；真实网页验收见验收记录');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    try {
+      // 回归：420px 宽时宿主曾宽 462.86px、说明面板左缘 -54.86px（左侧被裁掉）。
+      await page.setViewportSize({ width: 420, height: 900 });
+      await gotoAndAwaitMarker(page);
+      const control = page.locator('[data-genui-control]');
+      const info = control.locator('button', { hasText: '查看增强说明' });
+      const panel = control.locator('#genui-panel');
+
+      await expect(panel).toBeHidden();
+      await info.click();
+      await expect(panel).toBeVisible();
+
+      expectToggleInsideViewport(await readToggleBounds(page));
+
+      await panel.locator('button').click();
+      await expect(panel).toBeHidden();
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`阶段 7c · ${label} 拖动到屏幕下方后打开说明面板不超出屏幕`, async () => {
+    test.skip(REAL_SITE, '阶段 7c 自动断言使用模拟页；真实网页验收见验收记录');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    try {
+      await gotoAndAwaitMarker(page);
+      const control = page.locator('[data-genui-control]');
+      const toggle = control.locator('button').first();
+      const info = control.locator('button', { hasText: '查看增强说明' });
+      const panel = control.locator('#genui-panel');
+      const viewport = page.viewportSize();
+      if (!viewport) throw new Error('缺少视口尺寸');
+      const box = await toggle.boundingBox();
+      if (!box) throw new Error('缺少浮标位置');
+
+      // 关闭态宿主只有按钮列高，可拖到接近屏幕底部；展开面板后必须自动回夹。
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(viewport.width - 80, viewport.height - 8, { steps: 8 });
+      await page.mouse.up();
+
+      await info.click();
+      await expect(panel).toBeVisible();
+      expectToggleInsideViewport(await readToggleBounds(page));
+
+      await panel.locator('button').click();
+      await expect(panel).toBeHidden();
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
       expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);

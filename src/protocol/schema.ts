@@ -289,6 +289,7 @@ const chartLineSchema = {
         properties: {
           label: labelSchema,
           color: colorSchema,
+          smooth: { type: 'boolean' },
           points: {
             type: 'array',
             minItems: 2,

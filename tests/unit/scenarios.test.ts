@@ -74,7 +74,12 @@ describe('产品场景：示例文档交互', () => {
     await flushUi();
     expect(root.textContent).toContain('a > 0：抛物线开口向上。');
     expect(root.textContent).toContain('判别式小于 0：抛物线与 x 轴没有交点。');
-    expect(root.querySelectorAll('.genui-line-chart circle')).toHaveLength(5);
+    // 平滑系列只渲染穿过 5 个采样点的三次曲线（4 段 C 命令），不再绘制散点圆点。
+    const chart = root.querySelector('.genui-line-chart');
+    expect(chart?.querySelectorAll('circle')).toHaveLength(0);
+    const smoothPath = chart?.querySelector('path.genui-line-path');
+    expect(smoothPath).not.toBeNull();
+    expect(smoothPath?.getAttribute('d')?.match(/C /g)).toHaveLength(4);
   });
 
   it('选购比较：预算不足时两张排名表切换为空状态，资料缺失单独标注', async () => {

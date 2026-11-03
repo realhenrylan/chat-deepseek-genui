@@ -38,7 +38,9 @@ export function createToggleControl(
   host.setAttribute(CONTROL_ATTR, '');
   host.setAttribute('aria-label', 'GenUI 增强设置');
   host.style.cssText =
-    'position:fixed;top:50%;right:12px;z-index:2147483646;transform:translateY(-50%);font:14px/1.4 system-ui,sans-serif;';
+    'position:fixed;top:50%;right:12px;z-index:2147483646;transform:translateY(-50%);' +
+    // 窄视口下限制宿主宽度，配合 .panel 的 min-width:0 让面板收缩，保留两侧 12px 边距。
+    'max-width:calc(100vw - 24px);font:14px/1.4 system-ui,sans-serif;';
 
   const shadow = host.attachShadow({ mode: 'open' });
   const style = doc.createElement('style');
@@ -86,6 +88,8 @@ export function createToggleControl(
       order: -1;
       box-sizing: border-box;
       width: min(380px, calc(100vw - 88px));
+      /* 窄视口：允许 flex 收缩，宿主宽度上限为 100vw-24px，避免整块被挤出左边界。 */
+      min-width: 0;
       max-height: 70vh;
       overflow: auto;
       padding: 14px;
@@ -261,8 +265,14 @@ export function createToggleControl(
     if (!options.promptText) return;
     panel.hidden = !open;
     infoButton.setAttribute('aria-expanded', String(open));
-    if (open) closeButton.focus();
-    else infoButton.focus();
+    if (open) {
+      // 面板显示后宿主会变宽、变高；拖动过的浮标按新尺寸重新夹取，
+      // 避免说明面板连同按钮被挤出视口。
+      if (position) setPosition(position.left, position.top);
+      closeButton.focus();
+    } else {
+      infoButton.focus();
+    }
   }
 
   function handleInfoClick(event: MouseEvent): void {

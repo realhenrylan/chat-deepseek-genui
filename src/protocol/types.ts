@@ -151,6 +151,8 @@ export interface ChartSeriesPoint {
 export interface ChartSeries {
   label: string;
   color?: string;
+  /** 对连续函数曲线使用三次插值；普通趋势数据仍按折线绘制。 */
+  smooth?: boolean;
   points: ChartSeriesPoint[];
 }
 

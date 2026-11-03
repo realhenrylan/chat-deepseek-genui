@@ -215,6 +215,7 @@
           "series": [
             {
               "label": "y",
+              "smooth": true,
               "points": [
                 {
                   "x": -2,

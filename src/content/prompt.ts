@@ -1,8 +1,8 @@
 /**
- * 阶段 7：默认增强提示词（v2）。
+ * 阶段 7：默认增强提示词（v2.1）。
  *
- * v2 修订：明确 table.initialSort 的真实结构为 {key, dir}，修正 v1 中
- * 未给出字段形状、真实模型误写 direction 导致 schema 校验失败的问题。
+ * v2.1 修订：说明连续函数图像可对每个折线系列启用 smooth 插值，修复二次函数
+ * 采样点被直线连接后顶点呈折角的问题；普通折线与实际数据仍保持线性连接。
  *
  * 设计约束（docs/development-task.md 阶段 7、docs/compatibility-investigation.md §6）：
  * - 提示词对用户完全可见：它作为普通文本追加在输入框草稿末尾，发送前可逐字检查，
@@ -13,11 +13,11 @@
  * - 与用户已有草稿逐字节隔离：本模块只负责纯字符串追加，绝不裁剪或覆盖原草稿。
  */
 
-export const GENUI_PROMPT_VERSION = 2;
+export const GENUI_PROMPT_VERSION = 2.1;
 
 /** 用于识别、去重和关闭恢复的稳定标记；修改提示词时同步升级版本号。 */
 export const GENUI_PROMPT_START =
-  '〔GenUI 增强 v2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 增强 v2.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 
 const PROMPT_BODY = `你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 \`\`\`genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请先正常、完整地回答；仅当可调参数、对比、规划或可视化能明显帮助理解时，才在回答末尾附一个 genui 块。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
@@ -38,7 +38,7 @@ elements 项（按顺序显示）：
 - text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?}
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
-- chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[{"label","color"?:"#RRGGBB","points":[{"x":数字,"y":表达式}]}]}
+- chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[{"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}]}。绘制连续函数（尤其二次函数）时，在对应 series 写 "smooth":true，并提供至少 3 个递增 x 采样点覆盖区间；平滑曲线通过采样点，数据表仍列出原始采样值。实测或离散数据不要启用 smooth。
 - table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。
 visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列 2–50 点、总点数不超过 100，同系列 x 严格递增；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8；每次重算不超过 500 次运算。

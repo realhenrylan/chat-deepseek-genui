@@ -133,8 +133,15 @@ interface XYPoint {
   y: number;
 }
 
+interface CubicSegment {
+  start: XYPoint;
+  control1: XYPoint;
+  control2: XYPoint;
+  end: XYPoint;
+}
+
 function evaluateSeries(series: ChartSeries[], evaluation: CompositeEvaluation): {
-  series: Array<{ label: string; color: string; points: XYPoint[]; error?: string }>;
+  series: Array<{ label: string; color: string; smooth: boolean; points: XYPoint[]; error?: string }>;
   warnings: string[];
 } {
   const warnings: string[] = [];
@@ -155,6 +162,7 @@ function evaluateSeries(series: ChartSeries[], evaluation: CompositeEvaluation):
       return {
         label: item.label,
         color: seriesColor(item.color, index),
+        smooth: item.smooth === true,
         points: error ? [] : points.sort((left, right) => left.x - right.x),
         ...(error ? { error } : {}),
       };
@@ -163,12 +171,75 @@ function evaluateSeries(series: ChartSeries[], evaluation: CompositeEvaluation):
   };
 }
 
+/**
+ * 用 cubic Hermite 插值连接连续函数的采样点。
+ * 内点导数按相邻区间加权估算；端点用三点公式。二次函数的导数因此可被精确恢复，
+ * SVG 三次曲线会精确通过每个采样点，也能保持顶点处的平滑度。
+ */
+function createSmoothSegments(points: XYPoint[]): CubicSegment[] | null {
+  if (points.length < 2) return [];
+
+  const widths = points.slice(1).map((point, index) => point.x - points[index]!.x);
+  const slopes = points.slice(1).map((point, index) => (point.y - points[index]!.y) / widths[index]!);
+  const tangents = new Array<number>(points.length);
+
+  if (points.length === 2) {
+    tangents[0] = slopes[0]!;
+    tangents[1] = slopes[0]!;
+  } else {
+    const firstWidth = widths[0]!;
+    const nextWidth = widths[1]!;
+    tangents[0] = slopes[0]! - firstWidth * (slopes[1]! - slopes[0]!) / (firstWidth + nextWidth);
+
+    const lastWidth = widths[widths.length - 1]!;
+    const previousWidth = widths[widths.length - 2]!;
+    tangents[points.length - 1] = slopes[slopes.length - 1]!
+      + lastWidth * (slopes[slopes.length - 1]! - slopes[slopes.length - 2]!)
+        / (lastWidth + previousWidth);
+
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const previous = widths[index - 1]!;
+      const next = widths[index]!;
+      tangents[index] = (slopes[index - 1]! * next + slopes[index]! * previous) / (previous + next);
+    }
+  }
+
+  const segments = points.slice(1).map((end, index): CubicSegment => {
+    const start = points[index]!;
+    const width = widths[index]!;
+    return {
+      start,
+      control1: { x: start.x + width / 3, y: start.y + width * tangents[index]! / 3 },
+      control2: { x: end.x - width / 3, y: end.y - width * tangents[index + 1]! / 3 },
+      end,
+    };
+  });
+
+  return segments.every((segment) =>
+    [segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y].every(Number.isFinite),
+  ) ? segments : null;
+}
+
+function createSmoothPath(
+  segments: CubicSegment[],
+  scaleX: (value: number) => number,
+  scaleY: (value: number) => number,
+): string {
+  const first = segments[0]?.start;
+  if (!first) return '';
+  const start = `M ${scaleX(first.x)} ${scaleY(first.y)}`;
+  return `${start} ${segments.map((segment) =>
+    `C ${scaleX(segment.control1.x)} ${scaleY(segment.control1.y)} ${scaleX(segment.control2.x)} ${scaleY(segment.control2.y)} ${scaleX(segment.end.x)} ${scaleY(segment.end.y)}`,
+  ).join(' ')}`;
+}
+
 function LineChart({ element, evaluation }: {
   element: LineChartElement;
   evaluation: CompositeEvaluation;
 }) {
   const evaluated = evaluateSeries(element.series, evaluation);
   const points = evaluated.series.flatMap((item) => item.points);
+  const smoothSegments = evaluated.series.map((item) => item.smooth ? createSmoothSegments(item.points) : null);
   const width = 360;
   const height = 190;
   const plot = { left: 48, right: 12, top: 14, bottom: 44 };
@@ -176,7 +247,10 @@ function LineChart({ element, evaluation }: {
   const innerHeight = height - plot.top - plot.bottom;
 
   const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
+  const ys = [
+    ...points.map((point) => point.y),
+    ...smoothSegments.flatMap((segments) => segments?.flatMap((segment) => [segment.control1.y, segment.control2.y]) ?? []),
+  ];
   let xMin = xs.length > 0 ? Math.min(...xs) : 0;
   let xMax = xs.length > 0 ? Math.max(...xs) : 1;
   let yMin = ys.length > 0 ? Math.min(...ys) : 0;
@@ -225,15 +299,24 @@ function LineChart({ element, evaluation }: {
           {element.xLabel ? (
             <text className="genui-chart-axis-title" x={plot.left + innerWidth / 2} y={height - 8} textAnchor="middle">{element.xLabel}</text>
           ) : null}
-          {evaluated.series.map((item) => item.points.length > 0 ? (
+          {evaluated.series.map((item, index) => item.points.length > 0 ? (
             <g key={item.label}>
-              <polyline
-                className="genui-line-path"
-                points={item.points.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
-                fill="none"
-                stroke={item.color}
-              />
-              {item.points.map((point) => (
+              {smoothSegments[index] ? (
+                <path
+                  className="genui-line-path"
+                  d={createSmoothPath(smoothSegments[index]!, scaleX, scaleY)}
+                  fill="none"
+                  stroke={item.color}
+                />
+              ) : (
+                <polyline
+                  className="genui-line-path"
+                  points={item.points.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
+                  fill="none"
+                  stroke={item.color}
+                />
+              )}
+              {smoothSegments[index] ? null : item.points.map((point) => (
                 <circle key={point.x} cx={scaleX(point.x)} cy={scaleY(point.y)} r={2.5} fill={item.color} />
               ))}
             </g>

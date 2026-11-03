@@ -134,7 +134,7 @@ describe('默认增强草稿接线', () => {
 
     userTypes(input, USER);
     await advance(DEBOUNCE);
-    const edited = input.value.replace('GenUI 增强 v2', 'GenUI 增强（我改过）');
+    const edited = input.value.replace('GenUI 增强 v2.1', 'GenUI 增强（我改过）');
     userTypes(input, edited);
 
     draft.setEnabled(false);

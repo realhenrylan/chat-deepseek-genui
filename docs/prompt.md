@@ -1,6 +1,6 @@
-# GenUI 默认增强提示词（v2）
+# GenUI 默认增强提示词（v2.1）
 
-更新日期：2026-11-03。本文件记录阶段 7 正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；已发布后修改提示词必须同步升级版本号和本文件，阶段 7 收尾中尚未发布的 v2 修正归入同一版本并在版本历史注明。
+更新日期：2026-11-03。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
 
 ## 注入方式与可见性
 
@@ -12,10 +12,10 @@
 
 ## 正式文本
 
-以下为 v2 提示词的逐字内容（约 3.4 KB，随消息作为普通文本发送）：
+以下为 v2.1 提示词的逐字内容（随消息作为普通文本发送）：
 
 ````text
-〔GenUI 增强 v2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
+〔GenUI 增强 v2.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
 你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 ```genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请先正常、完整地回答；仅当可调参数、对比、规划或可视化能明显帮助理解时，才在回答末尾附一个 genui 块。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
 
 输出要求：
@@ -34,7 +34,7 @@ elements 项（按顺序显示）：
 - text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?}
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
-- chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[{"label","color"?:"#RRGGBB","points":[{"x":数字,"y":表达式}]}]}
+- chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[{"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}]}。绘制连续函数（尤其二次函数）时，在对应 series 写 "smooth":true，并提供至少 3 个递增 x 采样点覆盖区间；平滑曲线通过采样点，数据表仍列出原始采样值。实测或离散数据不要启用 smooth。
 - table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。
 visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列 2–50 点、总点数不超过 100，同系列 x 严格递增；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8；每次重算不超过 500 次运算。
@@ -80,3 +80,4 @@ visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"v
 - **v1（2026-11-03）**：首个默认增强版本。真实笔记本选购场景中，模型把表格 `initialSort` 写成 `{"key":"price","direction":"asc"}`，而协议只接受 `{"key","dir"}`，卡片因 `schema-violation` 未挂载。
 - **v2（2026-11-03）**：在 table 行明确 `initialSort` 结构为 `{key, dir}`，并写明「排序方向字段名必须是 dir，不能写 direction」。协议本身不放宽，失败被归因为提示词缺少字段形状。v2 重跑同一场景通过，详见 `docs/phase7-acceptance.md`。
 - **v2 收尾修正（2026-11-03）**：把根对象说明改为只有 `state`、`derived` 可为空，`elements` 至少 1 个元素，与 v3 Schema 的 `minItems: 1` 对齐。真实网页验收输出均包含元素，未因该文字修正重跑模型。
+- **v2.1（2026-11-03）**：折线图 series 增加可选 `smooth` 标记；明确连续函数（尤其二次函数）应提供至少 3 个递增 x 采样点并启用平滑插值，实测或离散数据保持线性连接。协议字段不变，仅为提示词修订。
