@@ -22,6 +22,7 @@ import { formatNumber } from './format';
 import { InteractiveElementView } from './interactive';
 import type { ElementRegistry } from './registry';
 import { buildContinueSummary } from './summarize';
+import { getBrandMarkUrl } from '../branding';
 
 /**
  * 一个 GenUI 文档的样式隔离卡片。v1 渲染静态内容；v2 的状态、控件与派生
@@ -57,6 +58,7 @@ export interface CardProps {
 const EMPTY_CALCULATION: DerivedCalculation = { values: {}, errors: {}, operations: 0 };
 
 export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue }: CardProps) {
+  const brandMarkUrl = getBrandMarkUrl();
   const [showRaw, setShowRaw] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [followupFeedback, setFollowupFeedback] = useState<string | null>(null);
@@ -215,6 +217,9 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
   return (
     <section className="genui-card" data-genui-card="" data-genui-version={doc.version}>
       <header className="genui-card-header">
+        {brandMarkUrl ? (
+          <img className="genui-card-logo" src={brandMarkUrl} alt="" aria-hidden="true" />
+        ) : null}
         <span className="genui-card-badge">GenUI</span>
         {doc.title ? <h3 className="genui-card-title">{doc.title}</h3> : null}
         <button

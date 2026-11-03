@@ -1,7 +1,7 @@
 {
   "name": "chat-deepseek-genui",
-  "version": "0.1.0",
-  "description": "DeepSeek GenUI 浏览器扩展：本地交互与受限计算（阶段 4）",
+  "version": "0.1.1",
+  "description": "为 DeepSeek 网页回答提供交互卡片、本地计算、图表与表格的浏览器扩展。",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

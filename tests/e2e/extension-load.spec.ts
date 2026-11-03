@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { GENUI_PROMPT_TEXT } from '../../src/content/prompt';
 
 /**
  * e2e：在真实 Edge / Chrome 中加载 dist 构建目录。
@@ -441,12 +442,12 @@ for (const { label, channel } of CHANNELS) {
       await expect(page.locator('.genui-card-host')).toHaveCount(2);
 
       const control = page.locator('[data-genui-control]');
-      const controlButton = control.locator('button');
+      const controlButton = control.locator('button').first();
       await expect(control).toContainText('GenUI 已开启');
 
       // 输入、滚动与普通 Markdown 的事件仍由页面正常处理。
       await page.locator('#e2e-input').fill('保留的输入草稿');
-      // 输入草稿保持原样；输入框事件仍由页面正常处理。
+      // 默认增强会在停止输入后追加可见说明；此处只验证用户原文仍在开头。
       await expect(page.locator('#e2e-input')).toHaveValue(/^保留的输入草稿/);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
@@ -481,7 +482,7 @@ for (const { label, channel } of CHANNELS) {
       await expect(page.locator('.genui-card-host')).toHaveCount(0);
 
       // 重新开启后，已完成的回复重新经过稳定检测并挂载。
-      await page.locator('[data-genui-control]').locator('button').click();
+      await page.locator('[data-genui-control]').locator('button').first().click();
       await expect(page.locator('.genui-card-host')).toHaveCount(2);
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
@@ -558,6 +559,10 @@ for (const { label, channel } of CHANNELS) {
       await expect(first.locator('input[type="number"]')).toHaveValue('40');
       await expect(first.locator('select')).toHaveValue('food');
       await expect(first.locator('.genui-value-output').nth(1)).toHaveText('60 元');
+      // 默认增强已生效：草稿保留在开头，可见说明追加在其后。
+      await expect(page.locator('#e2e-input')).toHaveValue(
+        /^保留的本地草稿\n\n〔GenUI 增强 v2/,
+      );
       expect(interactionRequests, '控件操作期间不得产生网络请求').toEqual([]);
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
@@ -973,7 +978,7 @@ for (const { label, channel } of CHANNELS) {
 
       const control = page.locator('[data-genui-control]');
       await expect(control).toContainText('GenUI 已开启');
-      await control.locator('button').click();
+      await control.locator('button').first().click();
       await expect(page.locator('.genui-card-host')).toHaveCount(0);
       await expect(page.locator('#e2e-real-block')).toBeVisible();
       await expect(page.locator('#e2e-real-stream-block')).toBeVisible();
@@ -1025,6 +1030,57 @@ for (const { label, channel } of CHANNELS) {
 
       console.log(`[${label}] 真实 origin 交互验证只使用合成 GenUI 数据，不读取会话内容`);
       expectNoExtensionErrors(buckets, label);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`阶段 7 · ${label} 默认增强可见追加、说明面板与关闭恢复`, async () => {
+    test.skip(REAL_SITE, '阶段 7 自动断言使用模拟页；真实网页验收见验收记录');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    try {
+      await gotoAndAwaitMarker(page);
+      const input = page.locator('#e2e-input');
+      const control = page.locator('[data-genui-control]');
+      const toggle = control.locator('button').first();
+      const info = control.locator('button', { hasText: '查看增强说明' });
+
+      await expect(toggle).toHaveText('GenUI 已开启');
+
+      // 只有用户输入后、停止输入达到延迟，才把可见说明追加到草稿末尾。
+      const original = '帮我做一份月度预算';
+      await input.fill(original);
+      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2`), {
+        timeout: 5_000,
+      });
+      await expect(input).toHaveValue(/〔GenUI 增强说明结束〕$/);
+
+      // 说明面板逐字展示真正参与对话的追加文本，并说明不会自动发送。
+      await info.click();
+      const panel = control.locator('#genui-panel');
+      await expect(panel).toBeVisible();
+      expect(await panel.locator('pre').textContent()).toBe(GENUI_PROMPT_TEXT);
+      await expect(panel.locator('.status')).toHaveText(/已追加到当前草稿/);
+      await expect(panel).toContainText('不会自动发送消息');
+      await panel.locator('button').click();
+      await expect(panel).toBeHidden();
+
+      // 关闭增强：移除自动追加的说明，草稿原文保留；不触发发送。
+      await toggle.click();
+      await expect(input).toHaveValue(original);
+      await expect(toggle).toHaveText('GenUI 已关闭');
+
+      // 重新开启后，现有草稿在停止输入后再次得到可见说明。
+      await toggle.click();
+      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2`), {
+        timeout: 5_000,
+      });
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
     } finally {
       await context.close();
       rmSync(profileDir, { recursive: true, force: true });

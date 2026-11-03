@@ -7,4 +7,4 @@
 - 预览：[preview.png](../assets/branding/responsive-node-v1/preview.png)。
 - 导出脚本：[export-selected-logo.py](export-selected-logo.py)。
 
-保留所选图形构造与 Manrope 字标，整理蓝、黑、白和小尺寸版本。此前候选保留用于历史比较；扩展资源接入另行实施。
+保留所选图形构造与 Manrope 字标，整理蓝、黑、白和小尺寸版本。此前候选保留用于历史比较。2026-11-03 已接入扩展清单与页面开关、交互卡片，并在 README 展示横版标志。

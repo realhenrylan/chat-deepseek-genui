@@ -9,6 +9,6 @@
   "wordmark_font": "Manrope 650",
   "source": "design/logo-variants/02-responsive-node",
   "asset_directory": "assets/branding/responsive-node-v1",
-  "status": "selected; exported; application integration pending",
+  "status": "selected; exported; integrated into extension manifest and UI",
   "artwork": "Original geometry preserved; small-size optical versions retained"
 }

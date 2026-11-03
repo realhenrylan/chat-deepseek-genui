@@ -27,7 +27,7 @@
 
 preview.png 为蓝色、单黑和反白展示。selection.json 记录选定信息。
 
-本目录完成定稿资源整理；扩展清单与页面资源尚未接入。原始方向稿与应用示意位于 design/logo-variants/02-responsive-node/。
+定稿资源已接入扩展：`icons/` 中的 16/32/48/128px 蓝色图标用于 `public/manifest.json`；`logo-small.svg` 通过受限的 `web_accessible_resources` 显示在页面开关和交互卡片上。README 使用 `logo-horizontal.svg`；商店方形 Logo 可使用下方 `logo-stacked.png`（512×512）。原始方向稿与应用示意位于 `design/logo-variants/02-responsive-node/`。
 
 几何图形按项目 MIT 许可使用，见 LICENSE。Manrope 字体轮廓相关许可见 Manrope-OFL.txt。
 

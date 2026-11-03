@@ -1,8 +1,11 @@
 import { LOG_PREFIX } from './lifecycle';
 import { createEnhancementManager, type EnhanceOptions } from './enhance';
+import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createToggleControl, type ToggleControl } from './toggle';
+import { createDraftAugmenter, type DraftAugmenter } from './augment';
+import { GENUI_PROMPT_TEXT, GENUI_PROMPT_VERSION } from './prompt';
 
 /** 2026-11-02 真实调查记录的 DeepSeek「停止生成」图标路径前缀。 */
 export const STOP_GENERATION_PATH_PREFIX = 'M2 4.88C2 3.68009';
@@ -14,6 +17,14 @@ export interface PageLifecycleOptions extends EnhanceOptions {
   debounceMs?: number;
   /** 生成结束后的稳定等待时间；生产默认 700ms。 */
   settleMs?: number;
+  /** 草稿停止输入后追加默认增强的等待时间；生产默认 700ms。 */
+  augmentDelayMs?: number;
+  /**
+   * 视口门控（src/content/viewport-gate.ts）：生产开启，站点离屏代码块
+   * 延迟渲染造成的瞬时 invalid-json/missing-pre 不再误标为 failed。
+   * 单测与 Playwright 模拟页不开启，保持旧行为以便确定性断言。
+   */
+  enableViewportGate?: boolean;
   window?: Window;
 }
 
@@ -77,7 +88,13 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   if (!targetWindow) throw new Error('页面 window 不存在，无法启动生命周期监听');
   const win: Window & typeof globalThis = targetWindow as Window & typeof globalThis;
 
-  const manager = createEnhancementManager(doc, options);
+  // 视口门控：块首次进入视口前不把瞬时解析失败当真实失败；进入后立即重扫。
+  const gate: ViewportGateAdapter | null =
+    options.enableViewportGate === true ? createViewportGateAdapter(win, () => scheduleScan(0)) : null;
+  const managerOptions: EnhanceOptions = gate
+    ? { ...options, isBlockUnverifiable: gate.isBlockUnverifiable }
+    : options;
+  const manager = createEnhancementManager(doc, managerOptions);
   const store = options.store === undefined ? createExtensionSettingsStore() : options.store;
   const debounceMs = options.debounceMs ?? 100;
   const settleMs = options.settleMs ?? 700;
@@ -89,6 +106,7 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   let pendingUserValue: boolean | undefined;
   let observer: MutationObserver | null = null;
   let control: ToggleControl | null = null;
+  let augmenter: DraftAugmenter | null = null;
   let unsubscribe: (() => void) | null = null;
   let scanTimer: number | null = null;
   let settleTimer: number | null = null;
@@ -113,6 +131,8 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     enabled = next;
     control?.setEnabled(next);
     manager.setEnabled(next);
+    // 关闭时移除仍完整位于草稿末尾的自动追加说明；用户修改过说明文本则保持原样。
+    augmenter?.setEnabled(next);
     if (!changed) return;
     stableSnapshot = null;
     clearSettleTimer();
@@ -235,7 +255,16 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
       subtree: true,
     });
 
-    control = createToggleControl(doc, enabled, persistEnabled);
+    control = createToggleControl(doc, enabled, persistEnabled, {
+      promptText: GENUI_PROMPT_TEXT,
+      promptVersion: GENUI_PROMPT_VERSION,
+    });
+    augmenter = createDraftAugmenter(doc, {
+      enabled,
+      debounceMs: options.augmentDelayMs ?? 700,
+      window: win,
+      onStatus: (status) => control?.setAugmentStatus(status),
+    });
     unsubscribe = store?.subscribe(handleStorageChange) ?? null;
 
     let saved: boolean | undefined;
@@ -250,6 +279,9 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     applyEnabled(pendingStorageValue ?? pendingUserValue ?? saved ?? true);
     pendingStorageValue = undefined;
     pendingUserValue = undefined;
+    // 设置读取完成后再开始监听草稿，避免已保存为关闭的用户被短暂追加。
+    augmenter?.start();
+    control?.setAugmentStatus(augmenter?.getStatus() ?? null);
     scheduleScan(0);
   }
 
@@ -265,8 +297,11 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     observer = null;
     unsubscribe?.();
     unsubscribe = null;
+    augmenter?.dispose();
+    augmenter = null;
     control?.dispose();
     control = null;
+    gate?.dispose();
     manager.dispose();
     stableSnapshot = null;
   }

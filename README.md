@@ -1,87 +1,114 @@
-# DeepSeek GenUI（非官方）
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/responsive-node-v1/logo-horizontal-white.svg">
+    <img src="assets/branding/responsive-node-v1/logo-horizontal.svg" alt="DeepSeek GenUI" width="420">
+  </picture>
+</p>
 
-[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+<p align="center"><strong>让 DeepSeek 的回答变成可以调整、计算和比较的交互界面。</strong></p>
 
-为 [chat.deepseek.com](https://chat.deepseek.com) 提供交互式 GenUI 增强的浏览器扩展。**本项目为独立开发的第三方扩展，与 DeepSeek 官方无关**，依赖 DeepSeek 网页版的页面结构，网页改版可能导致功能失效。
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.1.1-4D6BFE" alt="版本 0.1.1">
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white" alt="Powered by dsh"></a>
+</p>
 
-## 当前状态（2026-11-03）
+DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏览器扩展。在原有文字回答中加入滑块、输入框、图表和表格，让你直接调整条件、查看结果，再把当前方案带回对话。
 
-阶段 1–6 的本地实现与自动化验证已完成；阶段 4 真实会话的预算单案例手工复核已由用户完成。扩展识别 AI 回复中 `genui` 语言标记的代码块；生成期间不处理候选块，停止生成后还会等待回复内容稳定再挂载。回复改写、节点替换和会话切换会清理旧卡片。页面右侧中部提供增强开关，默认开启；关闭后恢复原始内容，设置保存在当前浏览器的本地扩展存储中。卡片按站点亮暗主题（`data-ds-dark-theme` 与 body class）自动跟随，头部可展开/收起原始 JSON 代码块，收起不影响输入值与派生结果。协议 v2 支持卡片内数值输入、滑块、选择器、白名单派生计算与重置，状态按卡片隔离；协议 v3 增加说明、分区、多列布局、柱状/折线/饼图与表格，图表、数值、排名和条件说明共享同一份状态快照，表格支持排序、筛选、横向滚动与条件行，重置恢复初始状态。基于当前状态与派生结果，可通过卡片脚注「继续讨论」按钮把摘要带入聊天输入框（已有草稿时在草稿末尾追加，不覆盖不清空、不重复追加），是否发送始终由用户决定。
+本项目为独立开发的第三方扩展，与 DeepSeek 官方无关。当前版本 **0.1.1**，支持在桌面 Edge、Chrome 中手动加载；尚未上架扩展商店。
 
-阶段 4 复核中，首次 HTML 输出及随后空 `unit` 导致的协议失败经纠正后正常渲染。两项 2026-11-02 复核发现（合法 ID 与对象原型属性重名、较大步数下的步长校验）与四项 2026-11-03 复核发现（追加时逐字节保留草稿、输入框只在取证标记命中时写入、真实 origin 请求断言的归因口径与文档覆盖修正）均已修复；计算上限严格按未舍入结果检查，12 位精度舍入仅用于显示。阶段 5 的三份示例（[抛物线](docs/examples/parabola-v3.json)、[选购比较](docs/examples/shopping-comparison-v3.json)、[预算规划](docs/examples/budget-v3.json)）已在本地自动化中完成交互回归，阶段 6 的主题跟随、展开保留状态与继续讨论已在模拟页 Edge/Chrome 双通道验证（真实 origin 模式下该组用例按用例设计只跑模拟页，见下方已验证内容），但均未由真实模型重新生成，也未进行人工浏览器操作或多场景产品验收。默认提示词增强和多场景模型生成产品验收仍归阶段 7；阶段 7–8 未完成。阶段计划及复核范围见 [docs/development-task.md](docs/development-task.md)，协议见 [docs/genui-protocol.md](docs/genui-protocol.md)，提示词草案见 [docs/prompt-draft.md](docs/prompt-draft.md)，安全与工程约束见 [docs/development-guide.md](docs/development-guide.md)。
+## 功能
 
-## 环境要求
+| 功能 | 你可以做什么 |
+| --- | --- |
+| 调整参数 | 用数值输入框、滑块和下拉选择器修改预算、次数、比例等条件 |
+| 即时计算 | 参数变化后，本地同步更新合计、余额、单次成本等派生结果 |
+| 图表联动 | 用柱状图、折线图和饼图查看变化，展开「查看数据」核对数值 |
+| 表格比较 | 排序、搜索筛选，结合预算等条件缩小候选范围 |
+| 条件说明 | 按当前参数显示提示，例如超支警告、无候选结果或公式退化说明 |
+| 重置与收起 | 一键恢复初始参数、表格排序和筛选；收起界面时保留当前卡片状态 |
+| 继续讨论 | 把当前条件和计算结果汇总到聊天输入框，保留已有草稿，由你决定是否发送 |
+| 主题与开关 | 跟随站点明暗主题，随时关闭增强并恢复原始代码块 |
 
-- Node.js v24.15.0、npm 11.12.1（本仓库实际验证版本；其他版本未验证）
-- 桌面 Edge（验证版本 156.0.4314.50）或 Chrome（验证版本 156.0.8078.79），Windows 11 下验证
+### 适合哪些问题
 
-## 安装与检查命令
+- **预算规划**：调整收入和支出，查看余额、分配比例与超支提醒。
+- **选购比较**：按预算、重量等条件筛选商品，用表格比较候选方案。
+- **数学学习**：拖动二次函数的参数，同步观察曲线、表格和判别式。
+- **成本计算**：修改使用次数或月数，比较会员卡等方案的总价与单次成本。
+
+普通事实问答、写作和闲聊仍以文字回答。界面由模型按问题生成，具体控件取决于回答内容。
+
+## 怎么使用
+
+1. 打开 DeepSeek，确认页面右侧显示「GenUI 已开启」。
+2. 输入问题。停止输入约 **700ms** 后，扩展会在草稿末尾追加一份可见的界面生成说明；可在输入框或「查看增强说明」面板核对、修改。
+3. 自行发送消息。模型回答中的合法 `genui` 代码块会渲染为交互卡片；必要时滚动到代码块位置，等待站点补齐内容。
+4. 调整卡片参数，查看实时结果；点击「继续讨论」可把当前方案带回输入框，确认后再发送。
+
+可以从这些问题开始：
+
+> 做一个每月预算分配工具，让我调整各项支出并看到余额。
+
+> 帮我做一个笔记本选购对比界面：预算 5000 元左右，主要办公和看视频，用表格比较 3 款，并让我按预算和重量筛选。
+
+> 我想学习二次函数抛物线，帮我做一个可以调 a、b、c 的交互式学习界面。
+
+扩展不会自动发送消息。关闭增强时会移除仍完整位于草稿末尾的自动说明，保留用户原文；修改过的说明不会被覆盖，手动删除说明后当前草稿不再自动追加。
+
+## 安装
+
+### 使用发布包
+
+1. 下载 [deepseek-genui-v0.1.1.zip](release/deepseek-genui-v0.1.1.zip)，解压为目录。
+2. **Edge**：打开 `edge://extensions`，开启「开发人员模式」，点击「加载解压缩的扩展」，选择解压目录。
+3. **Chrome**：打开 `chrome://extensions`，开启「开发者模式」，点击「加载已解压的扩展程序」，选择解压目录。
+4. 打开或刷新 `https://chat.deepseek.com/`。
+
+更新时重新加载扩展，并刷新已打开的 DeepSeek 标签页。发布包包含交互节点 Logo 与扩展图标；文件清单和 SHA256 见 [验证报告](docs/phase8-verification.md)。
+
+### 从源码构建
+
+本仓库验证环境为 Windows 11、Node.js 24.15.0、npm 11.12.1，桌面 Edge / Chrome 156.x。
 
 ```bash
-npm ci                # 按 package-lock.json 安装锁定依赖
-npm run typecheck     # tsc --noEmit 类型检查
-npm run lint          # eslint . 代码检查
-npm test              # vitest run 单元测试
-npm run gen-validator # 由 src/protocol/schema.ts 重新生成校验器（build 前 prebuild 自动执行）
-npm run build         # vite build → dist/，postbuild 自动执行生产包静态校验
-npm run check         # 聚合：typecheck + lint + test + build（含生产包校验）
-npm run test:e2e      # Playwright：在 Edge/Chrome 加载 dist 并验证注入、交互与生命周期
+npm ci
+npm run build
 ```
 
-e2e 可选环境变量（PowerShell 语法）：
+在扩展管理页加载生成的 `dist/` 目录即可。
 
-- `$env:REAL_SITE=1` 后运行 `npm run test:e2e`：在真实 `https://chat.deepseek.com` origin 测试扩展注入与生命周期；使用合成回复 DOM，不读取真实聊天内容。
-- `$env:HEADED=1` 后运行 `npm run test:e2e`：强制有头模式。
+0.1.1 已通过完整检查（253 项单测、类型检查、lint、构建与生产包校验）及 Edge/Chrome 默认端到端测试（18 通过、6 个真实 origin 用例按模式跳过）。历史真实网页验收与本轮自动化结果分别记录在 [分层报告](docs/phase8-verification.md)。
 
-默认 e2e 拦截站点导航并提供本地模拟页面，适合离线运行。
+**卸载**：在扩展管理页移除扩展，本地开关设置随之删除；刷新或关闭已打开的 DeepSeek 标签页后，页面上的卡片、浮标和注入标记消失。
 
-## 本地加载扩展
+## 隐私与权限
 
-1. `npm run build` 生成构建产物目录 `dist/`（含 `manifest.json`、`content.js`）。
-2. Edge：打开 `edge://extensions`，开启「开发人员模式」，选择「加载解压缩的扩展」，选中本仓库的 `dist/` 目录。
-3. Chrome：打开 `chrome://extensions`，开启「开发者模式」，「加载已解压的扩展程序」选中 `dist/`。
-4. 访问 `https://chat.deepseek.com/`，页面根元素出现 `data-genui-ext-loaded="<32位扩展id>"` 即注入成功。右侧中部的「GenUI 已开启」按钮可关闭增强；关闭后原始代码块恢复显示。重新构建后需在扩展页点击刷新按钮。
+- 仅在 `https://chat.deepseek.com/*` 运行，只申请 `storage` 权限，用于本机保存增强开关。
+- 卡片计算在本地完成；不保存聊天内容或卡片交互状态，不向扩展开发者上传数据。
+- 默认说明和「继续讨论」摘要会写入可见草稿；你自行发送后，由 DeepSeek 网站处理这条消息。
+- 使用本地打包的 React 渲染，不执行模型生成的 HTML、CSS 或 JavaScript，不加载远程代码。
 
-## 权限说明
+详见 [隐私说明](docs/privacy.md)。
 
-- `manifest.json` 只申请 `storage`，用于在 `chrome.storage.local` 中保存一个 `genuiEnabled` 布尔开关；未设置时默认开启。
-- 不申请 `host_permissions`，无后台 Service Worker；内容脚本仅匹配 `https://chat.deepseek.com/*`。
-- 不保存聊天文本、代码块内容或用户输入，也不把设置传出本机。
-- 生产包只加载本地资源：构建为 IIFE 单文件，`npm run build` 后自动扫描产物，出现 `eval`/`new Function`/`importScripts`/远程脚本与样式 URL/CDN 域名即构建失败。
+## 使用边界
 
-## 已验证内容（阶段 1–6）
+- 模型可能不生成界面或输出不合法格式；扩展会保留原始回答与代码块，不强制转换。
+- 卡片状态只保存在当前页面内存中；刷新、重新挂载或重新打开会话时回到初始值。
+- 依赖 DeepSeek 当前页面结构，站点改版可能影响识别、草稿追加或渲染。
+- 已有真实网页场景验收与 Edge/Chrome 自动化验证；模型生成稳定性、其他系统和 Firefox 不在当前验证范围内。
+- 当前提供本地加载包；商店素材、公开隐私链接及提交状态见 [商店准备记录](docs/store-submission.md)。
 
-| 检查 | 结果 |
-| --- | --- |
-| `npm run check`（类型检查、lint、21 个测试文件 216 项单测、校验器再生成、生产构建与 dist 校验） | 通过（阶段 6 复核后重跑全量） |
-| 默认 e2e：Edge/Chrome 模拟页的注入、Card、生命周期、数值输入/滑块/选择器、状态隔离、重置、v3 图表/表格/条件联动、主题跟随、展开保留状态、继续讨论与无额外请求检查（16 通过、6 个真实 origin 用例跳过） | 通过 |
-| 阶段 5 三场景本地回归：抛物线退化/开口方向、选购预算无候选与资料缺失、预算超支/空输入，状态变化同步图表、表格与说明 | 通过 |
-| 阶段 6 交互回归：收起后滑块值与派生输出保留、展开恢复；继续讨论空输入填入、草稿逐字节保留后追加、重复去重、无确定输入框标记时拒绝写入、v1 无入口；卡片与增强开关同步站点主题标记（Edge/Chrome 双通道模拟页） | 通过 |
-| `REAL_SITE=1` e2e：Edge/Chrome 真实 `chat.deepseek.com` origin 的合成 Card 生命周期、生成等待与 v2 本地交互（8 通过、0 失败，阶段 6 复核后重跑；覆盖范围仅阶段 1–4 口径——v3 组合与阶段 6 的三个用例在真实 origin 模式下设计为跳过，只以模拟页验证） | 通过 |
-| 内容脚本零网络调用静态不变量：src 源码无 `fetch`/XHR/`sendBeacon`/WebSocket/`EventSource` 引用（tests/unit/extension-static.test.ts），与真实 origin 的 URL 红线各自覆盖不同归因维度 | 通过 |
-| 真实网页结构与普通交互人工验证（Edge 156，阶段 2）：Card、原始 JSON 切换、页面原生内容 | 通过 |
-| 阶段 4 真实 DeepSeek 预算单案例：用户纠正空 `unit` 后确认卡片正常，并确认本轮手工复核结束（非重复生成验收） | 用户确认完成 |
-| 生产包静态校验负向测试（人为注入 `eval(`、远程 URL → 构建失败） | 通过 |
-| 权限审查：仅 `storage`，无 host_permissions、无后台，匹配范围严格限定 | 通过 |
+## 开发与验证
 
-真实 origin 自动化采用合成回复 DOM，不代表站点原生流式响应或模型真实生成已验证。阶段 3 自动化覆盖输入、滚动、普通 Markdown 与原始代码块复制事件；阶段 4 自动化交互使用合成协议文档，另有用户手动发送提示词完成的真实预算单案例复核。阶段 5 的组合界面与三场景、阶段 6 的主题/展开/继续讨论均使用本地示例、模拟页或合成文档验证，未在真实会话中由模型重新生成，也未执行人工浏览器操作；该案例经历格式纠正，不能作为模型首次生成成功或重复稳定性的证据，本轮模型及浏览器版本未记录。真实 origin 下的请求断言只能按 URL 识别 `chrome-extension://` 起源（扩展页面上下文）的请求；内容脚本是否发起 https 请求无法由 URL 归因，由 src 源码零网络 API 的静态不变量单测与 manifest/构建期扫描保证，不能宣称 URL 检查单独证明了「扩展无请求」。Edge/Chrome 功能断言无差异；差异记录仅限真实 origin 下站点自身遥测（`gator.volces.com` 心跳）出现时序不同，已知为站点行为并在阶段 2 人工验证中确认与本扩展无关。阶段 7 的默认提示词增强与多场景真实模型生成验收，以及 Edge Add-ons 商店提交和审核仍未完成。
-
-## 目录结构
-
+```bash
+npm run check       # 类型检查、lint、单测、构建与生产包校验
+npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 ```
-public/manifest.json      MV3 清单（仅 storage 权限、无后台）
-src/protocol/             genui v1/v2/v3 类型、Schema、语义校验与生成产物
-src/runtime/              v2/v3 白名单本地计算与组合求值运行时
-src/content/              内容脚本：生命周期观察、生成等待、本地开关与增强挂载
-src/render/               Card 渲染：控件、图表、表格、布局、错误边界、Shadow DOM 挂载与样式
-scripts/gen-validator.ts  由 Schema 重新生成校验器（prebuild 自动执行）
-scripts/check-dist.mjs    生产包静态校验（postbuild 自动执行）
-tests/unit/               vitest 单元测试
-tests/e2e/                Playwright 扩展加载与链路测试
-tests/fixtures/           真实页面结构 fixture（仅含合成内容）
-docs/                     产品规格、开发指南、开发任务、兼容性调查、协议与提示词草案
-```
+
+真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
+
+协议支持 v1 / v2 / v3。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 
-MIT
+MIT。Logo 与字标许可见 [品牌资源](assets/branding/responsive-node-v1/README.md)。

@@ -1,9 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.1.1（2026-11-03，本地分发包）
+
+### Changed
+
+- README 顶部接入已定稿的交互节点 Logo，提供明暗背景版本；扩展管理图标、DeepSeek 页面开关和交互卡片也已使用对应图形；改为以功能、使用场景、操作步骤与安装为主的产品介绍，开发和分层验收记录保留在文档中。
+- 项目版本统一升级为 0.1.1：同步 package.json、根锁文件版本、扩展清单、内容脚本构建标记、当前隐私说明与发布包；历史验收保留实际测试时的版本与结果。
+
+### Validation
+
+- `npm run check` 通过：25 个测试文件、253 项单测，类型检查、lint、构建与生产包校验均通过。产物含 7 个文件，`content.js` 441598 B、`manifest.json` 641 B。
+- 默认 Edge/Chrome e2e：18 passed、6 skipped。未在本轮重跑真实 origin 或真实模型会话。
+- 新发布包 `release/deepseek-genui-v0.1.1.zip`（107040 B）与 `dist/` 逐文件 SHA256 一致；完整校验值见 `release/deepseek-genui-v0.1.1.sha256` 与分层报告。商店尚未提交。
+
+## 0.1.0（2026-11-03，发布准备完成；Edge Add-ons 商店提交未执行）
 
 ### Fixed
 
+- 阶段 7 真实验收后落地两项缓解：①**视口门控**——站点对离屏代码块延迟渲染，文本补齐前只有短前缀，扩展曾按 invalid-json/missing-pre 误标 `data-genui-state="failed"`；新增 `src/content/viewport-gate.ts`（IntersectionObserver 首见相交解锁、threshold 0、dispose 可清理）与 `EnhanceOptions.isBlockUnverifiable` 失败出口：块进入视口前不写失败状态、不记失败签名，控制台输出 `[dsgenui] block deferred (offscreen)`，解锁后按正常规则判定；文本完整有效的离屏块不受门控影响仍提前挂载。仅在生产入口 `index.ts` 经 `PageLifecycleOptions.enableViewportGate` 开启，单测与 Playwright 模拟页保持旧行为；`EnhanceResult` 三字段形状不变。②**版本对账标记**——lifecycle.ts 新增 `data-genui-version` 属性与 `resolveContentVersion()`（vite define 注入 `__DSGENUI_VERSION__`，`vite.config.ts` 定义；无构建环境回退 `0.0.0-dev`），配合既有 `data-genui-ext-loaded` 可在真实页面区分「扩展未重载」与「脚本未注入」；新增 `docs/browser-skill-runbook.md` 收录 browser-skill 验收操作纪律（sync 先行、observation 单次消费、Shadow DOM 读取、滚动读卡时序与 edge:// 重载 request-help 交接）。新增 viewport-gate 单测 11 项、lifecycle 版本标记单测 3 项，全套 25 个测试文件 253 项单测通过，`npm run check`（typecheck、lint、构建 `dist/content.js` 440.92 kB / gzip 102.71 kB 与 dist 校验）通过；更新 phase7-acceptance.md 限制 2 与 README 目录说明。
+- 阶段 7 收尾修复三项 P2：①说明被分多次删除时，首次改动即记录 `dismissed`，即使起始标记尚在，删掉剩余标记后也不会重新追加；②待执行追加绑定调度时的输入框、草稿内容与草稿记录，执行前核对，切换会话（替换 textarea 或复用节点恢复另一份草稿）不会写入新草稿；③提示词与正式文档明确只有 `state`、`derived` 可为空，`elements` 至少 1 个元素，与 v3 Schema 对齐。新增 3 项 P2 回归单测；叠加视口门控与版本标记单测后，全套 25 个测试文件 253 项单测与 18 通过/6 跳过 e2e 均通过。
+- 阶段 7 真实生成验收修复场景 2 的提示词缺口：v1 未说明表格 `initialSort` 的准确形状，真实模型写成 `{"key":"price","direction":"asc"}`，被 Schema 以缺少 `dir` / 多出 `direction` 拒绝，卡片未挂载。v2 明确写作 `{"key":"列key","dir":"asc|desc"}` 并声明不得使用 `direction`，同一场景重跑通过；同步更新提示词测试、e2e v2 标记与验收记录，未放宽协议接受非标准字段。
 - 阶段 6 复核修复四项 P2：①「继续讨论」追加摘要不再裁剪草稿末尾空白——原草稿逐字节保留，草稿以换行结尾时另起一行、否则补空行分隔，不改变换行与 Markdown 结构；②移除「页面最后一个 textarea」回退——输入框只认 `name="search"` 或 placeholder「给 DeepSeek 发送消息」两个确定标记，无标记时如实返回 `no-input` 并不写入，避免把摘要追加进反馈框等无关控件；③真实 origin e2e 请求断言修正归因口径——按请求 URL 只能证明无 `chrome-extension://` 起源请求，无法区分「内容脚本发起的 https 请求」与站点请求（Playwright 未暴露可信 initiator），内容脚本不发起网络请求改由新增的 src 源码静态不变量单测声明（零网络 API 引用，tests/unit/extension-static.test.ts），断言注释与文档同步收紧措辞；④README/CHANGELOG 对「`REAL_SITE=1` 覆盖 v3 与阶段 6」的高估已修正——v3 组合与阶段 6 用例在真实 origin 模式下按用例设计跳过，仅以模拟页验证。修复后重跑：21 个测试文件 216 项单测、`npm run check`、默认 e2e 与 `REAL_SITE=1` 均通过。
 - 修复组合界面收尾审查发现的三处缺陷：表格单元格改用自有属性读取，列 key 为 `constructor` 等名称且行缺少该值时显示 `—`，筛选不再触发原型属性异常；卡片重置递增 `resetToken` 强制重新挂载表格，清空筛选并恢复 `initialSort`；饼图占比只对实际绘制的正值计算，负值/零值在图例与数据表中显示 `—` 而非负占比。补 3 项回归单测，`npm run check` 通过（17 个测试文件 178 项单测，`dist/content.js` 418.81 kB / gzip 95.11 kB）。
 - 阶段 5 收尾重跑完整检查与默认 E2E，修正阶段 4 P2 回归用例中已过期的断言：`1e12` 仍是合法输入，但派生 `1e12+1` 超出严格计算上限，应显示局部 `[role=status]`「结果超出可计算范围」且不生成派生输出；修正后 Edge/Chrome 均通过。`npm run check` 通过（17 个测试文件、175 项单测、typecheck、lint、构建与 dist 校验），默认 e2e 为 14 passed、6 skipped。
@@ -11,6 +27,8 @@
 
 ### Added
 
+- 完成阶段 8 完整验证与发布准备（2026-11-03）：复跑 `npm run check`（25 个测试文件 253 项单测、typecheck、lint、构建与 dist 校验；`dist/content.js` 440928 B / gzip 102.71 kB，权限仅 `storage`）；默认 e2e（Edge/Chrome 模拟页 18 通过、6 设计性跳过）与 `REAL_SITE=1`（Edge/Chrome 真实 origin 合成回复 DOM 8 通过、16 设计性跳过：阶段 2 合成结构、阶段 3 生命周期回退、阶段 4 本地计算各双通道通过），并记录浏览器版本 Edge 156.0.4314.58、Chrome 156.0.8078.79。新增 [docs/phase8-verification.md](docs/phase8-verification.md) 分层验证报告（已实现/已通过/真实环境未验证/已知限制/后续能力）、[docs/privacy.md](docs/privacy.md) 隐私说明（对应 Edge 政策 1.5.2）与 [docs/store-submission.md](docs/store-submission.md)（按官方《Developer policies》2026-07-24 版逐条复核用途/描述/隐私/权限/审核测试步骤，无阻断项；含上架素材、上架前清单与审核测试步骤；商店提交未执行，发布准备≠已上架）。生成发布包 `release/deepseek-genui-v0.1.0.zip`（扁平 `manifest.json`+`content.js`，SHA256 见 phase8-verification）。如实说明恢复行为：原始 `genui` JSON 代码块永久保留、卡片从它重新挂载、交互状态回到初始值（单卡内存不持久化）；「重新打开历史会话」未在真实页面单独立项人工验证，如实列为真实环境未验证项。README 补卸载步骤与阶段 8 口径。
+- 完成阶段 7 默认增强与真实生成验收：新增 `src/content/prompt.ts`（提示词 v2，显式说明协议、组件、绑定、运算与示例，表格 `initialSort` 要求 `{key,dir}` 且禁止 `direction`）、`src/content/augment.ts`（700ms 停止输入后向非空草稿逐字追加可见说明；不自动发送、不使用隐藏消息；关闭时仅移除完整尾部追加并保留用户原文/修改；手动删除后本草稿不再追加；等待追加期间切换会话不会写入新草稿）、`src/content/toggle.ts` 的「查看增强说明」面板（逐字展示实际注入内容、版本、状态和关闭行为），并在 `controller.ts`/`index.ts` 接线。新增 prompt/augment/controller-augment/protocol-v3 单测与阶段 7 模拟页 e2e；真实 DeepSeek 网页完成二次函数抛物线、5000 元笔记本选购、每月预算三场景，健身房会员卡同类新问题与水的沸点普通问答。验收记录见 [docs/phase7-acceptance.md](docs/phase7-acceptance.md)，正式提示词见 [docs/prompt.md](docs/prompt.md)。`npm run check` 通过（25 个测试文件 253 项单测、构建 `dist/content.js` 440928 B、权限仅 `storage`、无 host_permissions/后台），默认 e2e 18 通过、6 跳过；已记录离屏代码块延迟渲染与流式不完整 JSON 的瞬时现象，以及真实页面未做 URL 级网络抓包的归因局限。
 - 完成阶段 6 完整操作体验与继续讨论：新增站点主题跟随 `src/render/theme.ts`（按取证优先级 `data-ds-dark-theme` > body class > documentElement class > `prefers-color-scheme` > light，MutationObserver + matchMedia 监听仅在变化时回调，`data-site-theme` 写入卡片根与增强开关并保持同步，card.css 增加暗色变量组并保留媒体查询回退）；Card 头部新增可键盘操作的展开/收起按钮（`aria-expanded`/`aria-controls`，主体与脚注显隐、React 树不卸载，状态/草稿/错误/重置计数保留，重置不影响展开，v1 亦支持）；新增继续讨论（Card 脚注 v2/v3 按钮 → `src/render/summarize.ts` 生成带标题、状态行与派生行的当前摘要，状态缺失与派生失败如实标注且不带失败数值 → `src/content/followup.ts` 回填输入框：只认 `textarea[name="search"]` 或 placeholder「给 DeepSeek 发送消息」两个确定标记，无标记时返回 `no-input` 不猜测其他 textarea，输入框为空直接填入，已有草稿则逐字节保留原文后追加摘要并去重，原生 value setter + 冒泡 input 事件兼容受控组件，反馈文案以 `role=status` 明确「发送由你完成」），未接线时显示不可用反馈并接受 onContinue 注入（`EnhanceOptions`/`MountCardOptions` 透传，生产入口在 `src/content/index.ts` 接线）。新增单测 38 项（theme/summarize/followup/Card/enhance 与复核修复，累计 216 项）与 e2e「阶段 6」（模拟页双通道主题标记同步、收起保留滑块值与派生输出、filled/appended/去重、v1 无入口、草稿逐字节保留）。`npm run check` 通过（typecheck、lint、216 单测、build + dist 校验，`dist/content.js` 425.99 kB / gzip 96.95 kB），默认 e2e 16 passed、6 skipped，`REAL_SITE=1` 8 passed、0 failed（真实 origin 口径仅覆盖阶段 1–4 用例，v3 与阶段 6 设计为模拟页运行）。真实 origin 站点遥测（`gator.volces.com`）出现在交互窗口时不归因扩展，该用例请求断言仅禁止 `chrome-extension://` 起源并记录站点请求，归因局限与补偿的静态不变量单测见 Fixed 记录；模拟页保持零请求断言；Edge/Chrome 功能断言无差异，站点遥测出现时序不同属于站点行为差异。未做真实模型生成与人工浏览器验收（归阶段 7–8）。
 - 完成阶段 5 组合界面与三个产品场景的本地实现：protocol v3 新增 `note`、`section`、`columns`、`chart`（bar/line/pie）和 `table`，新增 `state-eq/neq`、`num-*`、`and/or/not` 条件与 `visibleIf`；图表/表格复用白名单表达式，新增 v3 元素/嵌套/图表/表格/条件/表达式预算和本地 `#RRGGBB` 颜色约束，校验器由 Schema 重新生成。
 - 新增组合渲染与统一求值：`evaluateComposite` 每次更新生成派生、图表/表格表达式与条件的单一快照；柱状/折线/饼图含标题、图例与「查看数据」，表格支持列定义、排序、筛选、横向滚动、条件行、空状态和计数，说明/分区/多列布局与 Card、控件、重置和错误边界组合；三场景示例见 [docs/examples/parabola-v3.json](docs/examples/parabola-v3.json)、[shopping-comparison-v3.json](docs/examples/shopping-comparison-v3.json)、[budget-v3.json](docs/examples/budget-v3.json)。
@@ -37,5 +55,7 @@
 - 将 development-task 按阶段 0 至阶段 8 的开发顺序重排，每阶段列出待办、交付物和通过条件。
 - 复核阶段 0 补测记录：明确默认开启为已确认产品要求，区分人工透明带入链路与未实现的扩展增强；旧 json 样本按识别规则跳过，初次发送按钮快照不作为流式状态判据；同步更新开发任务首页状态。
 - 阶段 6 真实 origin 口径调整：「阶段 4 · 真实 origin」的零请求严格断言在站点自身遥测心跳（`gator.volces.com`）出现在交互窗口时不可成立（该请求属站点、不可归因扩展——manifest 无 host_permissions、无后台、内容脚本不发起请求），按「仅扩展桶判定」收紧扩展红线：仍禁止任何 `chrome-extension://` 起源请求并记录站点遥测；模拟页保持零请求严格断言不变。
+- 阶段 8 文档口径更新：README「当前状态」「环境要求」「已验证内容」与目录说明更新至阶段 8 完成、Edge 验证版本追加 156.0.4314.58；CHANGELOG 章节由 Unreleased 改为 0.1.0（发布准备完成，商店提交未执行）；development-task 首页状态与阶段 8 清单全部勾选并附结果。
+- 阶段 8 发布前复审修正：store-submission 的 1.3.1/1.3.2 行由「不需要账号 / N-A」改为登录与站点在线服务依赖的如实披露（含无法提供站点测试账号的原因与替代复核路径）；privacy「第三方」区分本地打包依赖（React/react-dom）与外部服务，privacy/README 卸载说明补充「已打开页面需刷新后注入效果消失」；store-submission 状态行改为「商店素材尚未全部就绪」，Logo 规格按官方说明改为 300×300 推荐、最低 128×128、截图可选。
 
-当前状态：阶段 0–6 的本地实现与自动化验证已完成；阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5 组合界面/三份示例与阶段 6 主题跟随/展开/继续讨论均为本地与合成数据（mock 页与真实 origin 合成结构）验证，未做真实模型生成或人工浏览器验收。阶段 7–8 未完成，默认提示词增强和多场景真实模型产品验收仍待阶段 7。真实 origin 自动化使用合成回复 DOM，各阶段状态以 development-task 与本记录为准。
+0.1.0 阶段收尾状态：阶段 0–8 的本地实现、自动化验证、真实网页验收与发布准备已完成（阶段 8 复检见 [docs/phase8-verification.md](docs/phase8-verification.md)：253 项单测、默认 e2e 18 通过/6 设计性跳过、`REAL_SITE=1` 8 通过/16 设计性跳过、Edge 156.0.4314.58 与 Chrome 156.0.8078.79、发布包 `release/deepseek-genui-v0.1.0.zip` 与 SHA256 基线）；Edge Add-ons 商店提交未执行（无 Partner Center 账号，政策复核与素材见 [docs/store-submission.md](docs/store-submission.md)），发布准备不等于已上架。场景 2 首轮 v1 因 `initialSort.direction` 失败、v2 修复后重跑通过的事实保留记录；离屏代码块延迟渲染与流式不完整 JSON 的瞬时现象已记录。真实页面未做 URL 级网络抓包，零未声明网络行为的结论来自源码零网络 API 静态不变量、manifest、构建扫描与模拟页零请求断言。重新打开历史会话按设计如实说明：原始 `genui` JSON 代码块永久保留，卡片总是从它重新挂载，交互状态回到初始值（单卡内存不持久化）。隐私说明见 [docs/privacy.md](docs/privacy.md)；各阶段状态以 development-task 与本记录为准。

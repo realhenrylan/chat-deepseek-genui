@@ -203,6 +203,21 @@ describe('genui v3 协议', () => {
     ).toContain('missing');
   });
 
+  it('initialSort 使用 direction 时返回 schema-violation', () => {
+    const raw = {
+      ...doc(),
+      elements: [
+        {
+          kind: 'table',
+          columns: [{ key: 'name', label: '名称' }],
+          rows: [{ cells: { name: 'A' } }],
+          initialSort: { key: 'name', direction: 'asc' },
+        },
+      ],
+    };
+    expectFailure(parseGenui(JSON.stringify(raw)), 'schema-violation');
+  });
+
   it('表格列 key 重复返回 semantic-violation', () => {
     const duplicate = doc({
       elements: [

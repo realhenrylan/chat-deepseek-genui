@@ -1,17 +1,38 @@
 import { attachThemeAttribute } from '../render/theme';
+import { getBrandMarkUrl } from '../branding';
+import type { AugmentStatus } from './augment';
 
 const CONTROL_ATTR = 'data-genui-control';
 
+export const AUGMENT_STATUS_LABELS: Record<AugmentStatus, string> = {
+  idle: '等待输入',
+  scheduled: '将在停止输入后追加',
+  appended: '已追加到当前草稿',
+  dismissed: '你删除了增强说明，本草稿不再自动追加',
+  disabled: '增强已关闭，不会追加',
+  'no-input': '未找到聊天输入框',
+};
+
 export interface ToggleControl {
   setEnabled(enabled: boolean): void;
+  /** 面板中的实时草稿状态；null 表示设置仍在加载。 */
+  setAugmentStatus(status: AugmentStatus | null): void;
   dispose(): void;
 }
 
-/** 创建隔离样式、键盘可操作的页面级增强开关。 */
+export interface ToggleOptions {
+  /** 实际参与对话的增强文本；面板逐字展示同一常量。 */
+  promptText?: string;
+  promptVersion?: number;
+  initialStatus?: AugmentStatus;
+}
+
+/** 创建隔离样式、键盘可操作的页面级增强开关与可查看的增强说明面板。 */
 export function createToggleControl(
   doc: Document,
   initialEnabled: boolean,
   onChange: (enabled: boolean) => void,
+  options: ToggleOptions = {},
 ): ToggleControl {
   const host = doc.createElement('div');
   host.setAttribute(CONTROL_ATTR, '');
@@ -37,6 +58,9 @@ export function createToggleControl(
     }
     button {
       appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       border: 1px solid rgba(120, 120, 120, .35);
       border-radius: 999px;
       padding: 8px 11px;
@@ -50,22 +74,84 @@ export function createToggleControl(
       user-select: none;
       -webkit-user-select: none;
     }
+    .brand-mark { display: block; width: 16px; height: 16px; flex: 0 0 auto; }
     .column > button:first-child { cursor: grab; }
     .column > button:first-child:active,
     .column > button:first-child[data-dragging] { cursor: grabbing; }
     button:hover { background: #f4f4f4; }
     button:focus-visible { outline: 3px solid #4f8cff; outline-offset: 2px; }
     button[aria-pressed="false"] { color: #555; background: #f3f3f3; }
+    /* 阶段 7：说明面板；order:-1 让它出现在浮标左侧，但不改变按钮的 DOM 首项。 */
+    .panel {
+      order: -1;
+      box-sizing: border-box;
+      width: min(380px, calc(100vw - 88px));
+      max-height: 70vh;
+      overflow: auto;
+      padding: 14px;
+      border: 1px solid rgba(120, 120, 120, .35);
+      border-radius: 12px;
+      color: #202124;
+      background: #fff;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .18);
+      text-align: left;
+      cursor: auto;
+    }
+    .panel[hidden] { display: none; }
+    .panel h2 {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 0 0 8px;
+      font: 600 15px/1.3 system-ui, sans-serif;
+    }
+    .panel .version {
+      color: #666;
+      font: 500 12px/1.3 system-ui, sans-serif;
+    }
+    .panel p {
+      margin: 0 0 10px;
+      color: #555;
+      font: 400 12px/1.55 system-ui, sans-serif;
+    }
+    .panel .status { color: #1557b0; font-weight: 600; }
+    .panel pre {
+      box-sizing: border-box;
+      max-height: 40vh;
+      margin: 0 0 12px;
+      padding: 10px;
+      overflow: auto;
+      border: 1px solid #e3e5e8;
+      border-radius: 8px;
+      color: #202124;
+      background: #f6f7f9;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .panel pre:focus-visible { outline: 3px solid #4f8cff; outline-offset: 2px; }
+    .panel .actions { display: flex; justify-content: flex-end; }
     /* 无站点主题标记（旧环境）时才回退系统偏好；有标记时跟随站点。 */
     @media (prefers-color-scheme: dark) {
       :host(:not([data-site-theme])) button { color: #eee; background: #282828; border-color: #555; }
       :host(:not([data-site-theme])) button:hover { background: #383838; }
       :host(:not([data-site-theme])) button[aria-pressed="false"] { color: #bbb; background: #202020; }
+      :host(:not([data-site-theme])) .panel { color: #eee; background: #242424; border-color: #555; }
+      :host(:not([data-site-theme])) .panel p { color: #bbb; }
+      :host(:not([data-site-theme])) .panel .status { color: #8ab4f8; }
+      :host(:not([data-site-theme])) .panel pre { color: #eee; background: #1b1b1b; border-color: #444; }
     }
     /* 阶段 6：跟随站点亮暗主题（data-site-theme 由 attachThemeAttribute 维护）。 */
     :host([data-site-theme="dark"]) button { color: #eee; background: #282828; border-color: #555; }
     :host([data-site-theme="dark"]) button:hover { background: #383838; }
     :host([data-site-theme="dark"]) button[aria-pressed="false"] { color: #bbb; background: #202020; }
+    :host([data-site-theme="dark"]) .panel { color: #eee; background: #242424; border-color: #555; }
+    :host([data-site-theme="dark"]) .panel p { color: #bbb; }
+    :host([data-site-theme="dark"]) .panel .status { color: #8ab4f8; }
+    :host([data-site-theme="dark"]) .panel pre { color: #eee; background: #1b1b1b; border-color: #444; }
   `;
 
   const wrap = doc.createElement('div');
@@ -75,6 +161,17 @@ export function createToggleControl(
 
   const button = doc.createElement('button');
   button.type = 'button';
+  const brandMarkUrl = getBrandMarkUrl();
+  if (brandMarkUrl) {
+    const brandMark = doc.createElement('img');
+    brandMark.className = 'brand-mark';
+    brandMark.src = brandMarkUrl;
+    brandMark.alt = '';
+    brandMark.setAttribute('aria-hidden', 'true');
+    button.append(brandMark);
+  }
+  const buttonLabel = doc.createElement('span');
+  button.append(buttonLabel);
   button.addEventListener('click', handleClick);
   button.addEventListener('pointerdown', handlePointerDown);
   button.addEventListener('pointermove', handlePointerMove);
@@ -82,14 +179,63 @@ export function createToggleControl(
   button.addEventListener('pointercancel', handlePointerCancel);
   button.addEventListener('keydown', handleKeyDown);
 
-  column.append(button);
-  wrap.append(column);
+  const infoButton = doc.createElement('button');
+  infoButton.type = 'button';
+  infoButton.textContent = '查看增强说明';
+  infoButton.setAttribute('aria-expanded', 'false');
+  infoButton.setAttribute('aria-controls', 'genui-panel');
+  infoButton.hidden = !options.promptText;
+  infoButton.addEventListener('click', handleInfoClick);
+
+  const panel = doc.createElement('section');
+  panel.id = 'genui-panel';
+  panel.className = 'panel';
+  panel.hidden = true;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-labelledby', 'genui-panel-title');
+  panel.setAttribute('aria-describedby', 'genui-panel-desc');
+
+  const heading = doc.createElement('h2');
+  heading.id = 'genui-panel-title';
+  heading.textContent = 'GenUI 增强说明';
+  const version = doc.createElement('span');
+  version.className = 'version';
+  version.textContent = `v${options.promptVersion ?? 1}`;
+  heading.append(version);
+
+  const description = doc.createElement('p');
+  description.id = 'genui-panel-desc';
+  description.textContent =
+    '下面这段文本会逐字追加在你输入框草稿的末尾，作为你消息的一部分发送。扩展不会自动发送消息，也不使用隐藏消息；发送前你可以在输入框里完整查看和修改它。';
+
+  const behavior = doc.createElement('p');
+  behavior.textContent =
+    '关闭开关时，扩展会移除仍在草稿末尾的自动追加说明（即使你已在说明前继续输入），并保留你的原文；如果你修改过说明文本本身，则不会覆盖你的内容。手动删除说明后，本草稿不再重复追加。';
+
+  const statusLine = doc.createElement('p');
+  statusLine.className = 'status';
+  statusLine.setAttribute('aria-live', 'polite');
+  const prompt = doc.createElement('pre');
+  prompt.tabIndex = 0;
+  prompt.textContent = options.promptText ?? '';
+  const actions = doc.createElement('div');
+  actions.className = 'actions';
+  const closeButton = doc.createElement('button');
+  closeButton.type = 'button';
+  closeButton.textContent = '关闭说明';
+  closeButton.addEventListener('click', handleCloseClick);
+
+  panel.append(heading, description, behavior, statusLine, prompt, actions);
+  actions.append(closeButton);
+  column.append(button, infoButton);
+  wrap.append(column, panel);
   shadow.append(style, wrap);
   (doc.documentElement ?? doc.body).append(host);
   // 阶段 6：开关视觉跟随站点亮暗主题。
   const disposeTheme = attachThemeAttribute(host, doc);
 
   let enabled = initialEnabled;
+  let augmentStatus: AugmentStatus | null = options.initialStatus ?? null;
   let dragState: {
     pointerId: number;
     startX: number;
@@ -103,7 +249,40 @@ export function createToggleControl(
   let suppressClickTimer: number | null = null;
   const win = doc.defaultView;
 
+  function renderStatus(): void {
+    statusLine.textContent =
+      augmentStatus === null
+        ? '状态：正在读取设置…'
+        : `状态：${AUGMENT_STATUS_LABELS[augmentStatus]}`;
+    statusLine.setAttribute('data-status', augmentStatus ?? 'loading');
+  }
 
+  function setPanelOpen(open: boolean): void {
+    if (!options.promptText) return;
+    panel.hidden = !open;
+    infoButton.setAttribute('aria-expanded', String(open));
+    if (open) closeButton.focus();
+    else infoButton.focus();
+  }
+
+  function handleInfoClick(event: MouseEvent): void {
+    event.stopPropagation();
+    setPanelOpen(panel.hasAttribute('hidden'));
+  }
+
+  function handleCloseClick(event: MouseEvent): void {
+    event.stopPropagation();
+    setPanelOpen(false);
+  }
+
+  function handlePanelKeyDown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || panel.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPanelOpen(false);
+  }
+
+  panel.addEventListener('keydown', handlePanelKeyDown);
 
   function clampPosition(left: number, top: number): { left: number; top: number } {
     const rect = host.getBoundingClientRect();
@@ -210,6 +389,7 @@ export function createToggleControl(
   }
 
   render();
+  renderStatus();
   button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight');
   button.setAttribute('aria-description', '可拖动移动；按住 Alt 并使用方向键移动，Shift 加方向键可快速移动。');
   win?.addEventListener('resize', handleResize);
@@ -218,7 +398,7 @@ export function createToggleControl(
     button.setAttribute('aria-pressed', String(enabled));
     button.setAttribute('aria-label', `${enabled ? '关闭' : '开启'} GenUI 增强`);
     button.title = `${enabled ? '关闭' : '开启'} GenUI 增强；可拖动移动，或按住 Alt 使用方向键移动`;
-    button.textContent = `GenUI ${enabled ? '已开启' : '已关闭'}`;
+    buttonLabel.textContent = `GenUI ${enabled ? '已开启' : '已关闭'}`;
   }
 
   function handleClick(event: MouseEvent): void {
@@ -239,6 +419,10 @@ export function createToggleControl(
       enabled = nextEnabled;
       render();
     },
+    setAugmentStatus(nextStatus) {
+      augmentStatus = nextStatus;
+      renderStatus();
+    },
     dispose() {
       button.removeEventListener('click', handleClick);
       button.removeEventListener('pointerdown', handlePointerDown);
@@ -246,6 +430,9 @@ export function createToggleControl(
       button.removeEventListener('pointerup', handlePointerUp);
       button.removeEventListener('pointercancel', handlePointerCancel);
       button.removeEventListener('keydown', handleKeyDown);
+      infoButton.removeEventListener('click', handleInfoClick);
+      closeButton.removeEventListener('click', handleCloseClick);
+      panel.removeEventListener('keydown', handlePanelKeyDown);
       win?.removeEventListener('resize', handleResize);
       clearSuppressedClick();
       disposeTheme();

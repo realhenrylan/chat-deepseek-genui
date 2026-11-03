@@ -31,6 +31,12 @@ export interface EnhanceOptions {
    * 生产接线 content/followup.fillContinueIntoInput（追加不覆盖、不发送）。
    */
   onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
+  /**
+   * 返回 true 表示该候选块此刻不可作为判定依据（典型：站点对视口外代码块
+   * 延迟渲染，DOM 中只有短前缀）。对这类块不写 failed 状态、不记失败签名，
+   * 等可验证后的重新扫描再判定；生产接线 content/viewport-gate。
+   */
+  isBlockUnverifiable?: (block: HTMLElement) => boolean;
 }
 
 export interface EnhanceResult {
@@ -147,7 +153,9 @@ export class EnhancementManager {
       removeState(block);
       const outcome = this.mountCandidate(candidate, signature);
       if (outcome === 'mounted') result.mounted += 1;
-      else result.failed += 1;
+      // deferred（视口门控）与 failed 都不算数：前者等待可验证性，后者已被
+      // markFailed 记入 Map，下一轮扫描靠签名比对决定是否重试。
+      else if (outcome === 'failed') result.failed += 1;
     }
 
     return result;
@@ -181,38 +189,47 @@ export class EnhancementManager {
     for (const host of this.doc.querySelectorAll(`[data-genui-host]`)) host.remove();
   }
 
-  private mountCandidate(candidate: GenuiBlockCandidate, signature: string): 'mounted' | 'failed' {
+  private mountCandidate(
+    candidate: GenuiBlockCandidate,
+    signature: string,
+  ): 'mounted' | 'failed' | 'deferred' {
     const { block } = candidate;
-    const fail = (reason: EnhanceFailureReason): void => {
-      block.style.display = originalDisplay;
-      host.remove();
-      if (this.enabled) {
-        markFailed(block, reason);
-        this.failed.set(block, { signature, reason });
-      } else {
-        removeState(block);
-      }
-    };
 
     const originalDisplay = block.style.display;
     const host = this.doc.createElement('div');
     host.className = HOST_CLASS;
     host.setAttribute('data-genui-host', '');
 
-    if (!candidate.pre) {
-      markFailed(block, 'missing-pre');
-      this.failed.set(block, { signature, reason: 'missing-pre' });
-      console.debug(`${LOG_PREFIX} block skipped (missing-pre): 结构异常，无 pre 内容`);
+    /** 统一失败出口：视口门控命中时不判失败，等可验证后的重新扫描。 */
+    const reject = (reason: EnhanceFailureReason, detail?: string): 'failed' | 'deferred' => {
+      block.style.display = originalDisplay;
+      host.remove();
+      const suffix = detail ? `: ${detail}` : '';
+      if (this.options.isBlockUnverifiable?.(block)) {
+        // 站点对视口外代码块延迟渲染（docs/phase7-acceptance.md 限制 2）：
+        // 此刻的 missing-pre / invalid-json 只是文本尚未补齐，不能当真实失败。
+        removeState(block);
+        console.debug(`${LOG_PREFIX} block deferred (offscreen)${suffix}`);
+        return 'deferred';
+      }
+      if (this.enabled) {
+        markFailed(block, reason);
+        this.failed.set(block, { signature, reason });
+        console.debug(`${LOG_PREFIX} block skipped (${reason})${suffix}`);
+      } else {
+        removeState(block);
+      }
       return 'failed';
+    };
+
+    if (!candidate.pre) {
+      return reject('missing-pre', '结构异常，无 pre 内容');
     }
 
     const raw = candidate.pre.textContent ?? '';
     const parsed = parseGenui(raw);
     if (!parsed.ok) {
-      markFailed(block, parsed.code);
-      this.failed.set(block, { signature, reason: parsed.code });
-      console.debug(`${LOG_PREFIX} block skipped (${parsed.code}): ${parsed.detail}`);
-      return 'failed';
+      return reject(parsed.code, parsed.detail);
     }
 
     block.before(host);
@@ -234,7 +251,7 @@ export class EnhancementManager {
           console.error(`${LOG_PREFIX} card render failed, original content restored`, error);
           if (!record) {
             fatalDuringInitialRender = true;
-            fail('render-error');
+            reject('render-error');
             return;
           }
           if (this.mounted.get(block) !== record) return;
@@ -250,8 +267,7 @@ export class EnhancementManager {
       });
     } catch (error) {
       console.error(`${LOG_PREFIX} card mount failed`, error);
-      fail('mount-failed');
-      return 'failed';
+      return reject('mount-failed');
     }
 
     if (fatalDuringInitialRender) {
