@@ -1,10 +1,10 @@
 # DeepSeek GenUI Logo 候选
 
-使用内置 image_gen 工具分别生成，透明背景。原有方案保留为 v1，新方案分别保存为 v2、v3、v4；本轮未接入扩展清单。
+使用内置 image_gen 工具分别生成，透明背景。原有方案曾保存为 v1，新方案分别保存为 v2、v3、v4；本轮未接入扩展清单。未选方案的预览 PNG 已移除，保留文字说明作为设计记录。
 
 ## v2 模块鲸
 
-文件：deepseek-genui-logo-v2.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Create ONE polished original icon logo for DeepSeek GenUI, an independent browser extension that turns DeepSeek answers into interactive interface cards and tools.
@@ -15,7 +15,7 @@ One centered mark, square 1024x1024 composition, generous 14% padding around ALL
 
 ## v3 鲸尾指针
 
-文件：deepseek-genui-logo-v3.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Create ONE premium original logo symbol for DeepSeek GenUI, an independent extension adding interactive tools to DeepSeek chat.
@@ -26,7 +26,7 @@ Square 1024x1024 composition with ONE icon centered and 16% transparent padding 
 
 ## v4 数据鲸
 
-文件：deepseek-genui-logo-v4.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Create ONE professionally crafted original icon logo for DeepSeek GenUI, an independent browser extension generating interactive visualizations and tools inside DeepSeek chat.

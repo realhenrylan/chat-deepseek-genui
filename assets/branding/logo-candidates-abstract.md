@@ -6,7 +6,7 @@
 
 ## v5 流线卡片
 
-文件：deepseek-genui-logo-v5.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Design ONE exquisite abstract logo symbol for DeepSeek GenUI, a browser extension that turns DeepSeek chat answers into interactive interfaces. This is an abstract technology brand identity, NOT an animal illustration.
@@ -17,7 +17,7 @@ Visual style: premium minimalist Swiss geometric brand identity, precise optical
 
 ## v6 生成鲸尾
 
-文件：deepseek-genui-logo-v6.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Create ONE striking original abstract brand mark for DeepSeek GenUI, a browser extension that transforms AI chat answers into interactive tools.
@@ -28,7 +28,7 @@ ONE centered emblem on a genuinely transparent square canvas. Strong roughly squ
 
 ## v7 交互涌流
 
-文件：deepseek-genui-logo-v7.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Design ONE world-class minimalist abstract symbol for DeepSeek GenUI, an independent browser extension bringing interactive generated interfaces to DeepSeek conversations.

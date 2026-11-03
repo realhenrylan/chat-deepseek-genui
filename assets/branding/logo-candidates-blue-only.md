@@ -4,7 +4,7 @@
 
 ## v8 生成卡片
 
-文件：deepseek-genui-logo-v8.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Create ONE outstanding original logo symbol for DeepSeek GenUI, a browser extension that turns text answers into interactive interfaces and useful small tools.
@@ -16,7 +16,7 @@ ONE isolated centered logo on square canvas, icon about 65% of canvas with gener
 
 ## v9 交互节点
 
-文件：deepseek-genui-logo-v9.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Design ONE original and beautifully balanced abstract logo for DeepSeek GenUI, a browser extension that creates interactive tools directly inside AI chat answers.
@@ -27,7 +27,7 @@ NO whale, tail, animal, ocean or nature motif. NO letters, wordmark, text, spark
 
 ## v10 流动光标
 
-文件：deepseek-genui-logo-v10.png
+预览图：已移除（未选方案）。
 
 ```text
 Use case: logo-brand. Create ONE premium abstract logo symbol for DeepSeek GenUI, an independent browser extension turning AI responses into interfaces that people can directly manipulate.
