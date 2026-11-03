@@ -616,7 +616,7 @@ for (const { label, channel } of CHANNELS) {
       await expect(first.locator('.genui-value-output').nth(1)).toHaveText('60 元');
       // 默认增强已生效：草稿保留在开头，可见说明追加在其后。
       await expect(page.locator('#e2e-input')).toHaveValue(
-        /^保留的本地草稿\n\n〔GenUI 增强 v2.1/,
+        `保留的本地草稿\n\n${GENUI_PROMPT_TEXT}`,
       );
       expect(interactionRequests, '控件操作期间不得产生网络请求').toEqual([]);
 
@@ -1108,7 +1108,7 @@ for (const { label, channel } of CHANNELS) {
       // 只有用户输入后、停止输入达到延迟，才把可见说明追加到草稿末尾。
       const original = '帮我做一份月度预算';
       await input.fill(original);
-      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2.1`), {
+      await expect(input).toHaveValue(`${original}\n\n${GENUI_PROMPT_TEXT}`, {
         timeout: 5_000,
       });
       await expect(input).toHaveValue(/〔GenUI 增强说明结束〕$/);
@@ -1130,7 +1130,7 @@ for (const { label, channel } of CHANNELS) {
 
       // 重新开启后，现有草稿在停止输入后再次得到可见说明。
       await toggle.click();
-      await expect(input).toHaveValue(new RegExp(`^${original}\\n\\n〔GenUI 增强 v2.1`), {
+      await expect(input).toHaveValue(`${original}\n\n${GENUI_PROMPT_TEXT}`, {
         timeout: 5_000,
       });
 
