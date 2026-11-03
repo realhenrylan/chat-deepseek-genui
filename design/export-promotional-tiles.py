@@ -187,15 +187,4 @@ if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     results = [export(small_tile(), "promotional-tile-440x280"),
                export(large_tile(), "promotional-tile-1400x560")]
-    # Preserve the original names; make the store upload slots explicit in aliases.
-    for slot, width, height in [("small", 440, 280), ("large", 1400, 560)]:
-        source = OUT / f"promotional-tile-{width}x{height}.png"
-        target = OUT / f"{slot}-promotional-tile-{width}x{height}.png"
-        with Image.open(source) as image:
-            image.convert("RGB").save(target, format="PNG", compress_level=9, dpi=(96, 96))
-        with Image.open(target) as check:
-            assert check.size == (width, height) and check.mode == "RGB"
-            check.verify()
-        results.append({"file": str(target.relative_to(ROOT)), "slot": slot,
-                        "size": [width, height], "mode": "RGB", "bytes": target.stat().st_size})
     print(json.dumps(results, ensure_ascii=False, indent=2))
