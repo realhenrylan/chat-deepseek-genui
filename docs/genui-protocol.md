@@ -68,7 +68,7 @@ v3 的 `elements` 除上述叶元素外还允许：
 | `section` | 可选 `title`、`children` | 带标题的分组，可嵌套其他 v3 元素 |
 | `columns` | `columns`，2–3 个元素数组 | 多列布局；窄窗口自动变为单列 |
 | `chart` | `chartType`、`title`、`legend`、`items` 或 `series` | 柱状、饼状或折线图 |
-| `table` | `columns`、`rows`、`sortable`、`initialSort`、`emptyText`、可选 `visibleIf` | 本地排序、筛选、条件行与横向滚动 |
+| `table` | `columns`、`rows`、`sortable`、`selectable`、`initialSort`、`emptyText`、可选 `visibleIf` | 本地排序、筛选、条件行与横向滚动；可选行选中 |
 
 `section` 的 `children` 为 1–20 个元素；`columns` 为 2–3 列，每列 1–20 个元素。布局嵌套语义深度不超过 4，整张 Card 的 v3 元素总数不超过 80。
 
@@ -126,7 +126,9 @@ v3 的 `elements` 除上述叶元素外还允许：
 
 `columns` 为 1–10 个 `{ "key", "label", "numeric"?, "unit"? }`，列 `key` 须唯一且符合 ID 规则。`rows` 最多 30 行，每行 `cells` 按列 `key` 提供字符串、数字、`null` 或数值表达式；未定义的列 key 会被拒绝。行可带 `visibleIf`。
 
-`sortable: true` 时列头可点击排序，并显示 `aria-sort`；`initialSort` 指定初始排序列和 `asc`/`desc`。当 `sortable` 为真或行数超过 3 时显示筛选框与行计数。表格容器可横向滚动并获得键盘焦点；空结果使用 `emptyText`，默认文案为“没有可显示的数据”。条件行无法求值时仍显示该行，并在表格上方汇总提示。
+`sortable: true` 时列头可点击排序，并显示 `aria-sort`；`initialSort` 指定初始排序列和 `asc`/`desc`。当 `sortable` 为真、`selectable` 为真或行数超过 3 时显示筛选框与行计数。表格容器可横向滚动并获得键盘焦点；空结果使用 `emptyText`，默认文案为“没有可显示的数据”。条件行无法求值时仍显示该行，并在表格上方汇总提示。
+
+`selectable: true` 时每行首列出现单选控件，用户选中一行作为候选项；选中项按文档行序号记录，排序或筛选不会改变身份。选中行不在当前筛选结果中时显示提示，而不是悄悄取消选择；再次点击「清除选择」可取消。候选表的筛选文本、排序、选中项与可见行会在点击「继续讨论」时进入同一份摘要快照。
 
 ## 规模限制
 

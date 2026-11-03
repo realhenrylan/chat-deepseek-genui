@@ -1,8 +1,10 @@
 /**
- * 阶段 7：默认增强提示词（v2.2）。
+ * 阶段 7：默认增强提示词（v2.3）。
  *
  * v2.2 修订：正文与界面共同完成回答，按内容分工，避免完整正文后再附一份重复界面；
  * 动态结果留在界面中，正文保留结论、必要解释与来源。
+ * v2.3 修订：候选方案表可声明 selectable，让用户选中一行后把筛选、选中项与一致快照
+ * 带入「继续讨论」；提示词只增加可选字段说明，不改变既有生成约束。
  *
  * 设计约束（docs/development-task.md 阶段 7、docs/compatibility-investigation.md §6）：
  * - 提示词对用户完全可见：它作为普通文本追加在输入框草稿末尾，发送前可逐字检查，
@@ -13,11 +15,11 @@
  * - 与用户已有草稿逐字节隔离：本模块只负责纯字符串追加，绝不裁剪或覆盖原草稿。
  */
 
-export const GENUI_PROMPT_VERSION = 2.2;
+export const GENUI_PROMPT_VERSION = 2.3;
 
 /** 用于识别、去重和关闭恢复的稳定标记；修改提示词时同步升级版本号。 */
 export const GENUI_PROMPT_START =
-  '〔GenUI 增强 v2.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 增强 v2.3｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 
 const PROMPT_BODY = `你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 \`\`\`genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
@@ -45,7 +47,7 @@ elements 项（按顺序显示）：
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
 - chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[{"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}]}。绘制连续函数（尤其二次函数）时，在对应 series 写 "smooth":true，并提供至少 3 个递增 x 采样点覆盖区间；平滑曲线通过采样点，数据表仍列出原始采样值。实测或离散数据不要启用 smooth。
-- table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。
+- table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"selectable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。候选方案、商品或路线等需要用户拍板的对比表，写 "selectable":true：用户可选中一行，选中项、筛选和排序会进入「继续讨论」摘要；普通数据表不要开启。
 visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列 2–50 点、总点数不超过 100，同系列 x 严格递增；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8；每次重算不超过 500 次运算。
 内容：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实；示例值要贴近场景。全局依据、来源和缺失数据在正文说明，控件相关的假设、示例标记与条件提醒放在界面 note 中，避免两处冗长重复；影响理解的必要说明必须保留。

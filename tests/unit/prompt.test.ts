@@ -18,7 +18,7 @@ const USER_DRAFT = '帮我算一下每月能存多少钱';
 
 describe('默认增强提示词', () => {
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe(2.2);
+    expect(GENUI_PROMPT_VERSION).toBe(2.3);
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
@@ -50,6 +50,7 @@ describe('默认增强提示词', () => {
     ];
     for (const token of required) expect(GENUI_PROMPT_TEXT).toContain(token);
     expect(GENUI_PROMPT_TEXT).toContain('"initialSort"');
+    expect(GENUI_PROMPT_TEXT).toContain('"selectable"');
     expect(GENUI_PROMPT_TEXT).toContain('不能写 direction');
     expect(GENUI_PROMPT_TEXT).toContain('elements 必填，且至少包含 1 个元素');
     expect(GENUI_PROMPT_TEXT).toContain('不要为了展示而强行生成界面');
