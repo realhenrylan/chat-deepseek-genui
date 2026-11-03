@@ -118,14 +118,6 @@ npm run build
 - 已有真实网页场景验收与 Edge/Chrome 自动化验证；模型生成稳定性、其他系统和 Firefox 不在当前验证范围内。
 - 当前提供本地加载包；商店素材、公开隐私链接及提交状态见 [商店准备记录](docs/store-submission.md)。
 
-## 商店推广图
-
-两种尺寸的推广图，沿用定稿 Logo 与主色 `#4D6BFE`；画面为示意界面与示例数据，不是站点截图。1400 × 560 大图展示在页面顶部，440 × 280 小图如下。
-
-![小尺寸推广图：让 AI 回答动起来，展示月收入、支出预算与可支配余额](assets/store/promotional-tiles/promotional-tile-440x280.png)
-
-*440 × 280 小尺寸推广图；对应的同名 SVG 为文字转轮廓的矢量源文件。上传栏位、文件清单与重新导出方法见 [商店推广图资源](assets/store/promotional-tiles/README.md)。*
-
 ## 开发与验证
 
 ```bash
