@@ -44,7 +44,7 @@ export function appendDraftIntoInput(doc: Document, text: string): FillResult {
   if (!textarea) return 'no-input';
 
   const existing = textarea.value;
-  if (existing.trim() === '') {
+  if (existing === '') {
     setNativeValue(textarea, text);
     return 'filled';
   }

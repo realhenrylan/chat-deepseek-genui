@@ -1,6 +1,6 @@
 import type { ErrorObject } from 'ajv';
 import genuiValidate from './genui-validator.generated';
-import { buildSchemaIssues } from './diagnose';
+import { buildSchemaIssues, formatSchemaPath } from './diagnose';
 import { isStepAligned } from './step';
 import {
   LIMITS,
@@ -97,13 +97,37 @@ function errorMessage(error: unknown): string {
 
 type SemanticFailure = Extract<ParseGenuiResult, { ok: false }>;
 
-function semanticFailure(code: SemanticFailure['code'], detail: string): SemanticFailure {
-  return { ok: false, code, detail };
+function semanticFailure(
+  code: SemanticFailure['code'],
+  detail: string,
+  pointer?: string,
+  expected?: string,
+): SemanticFailure {
+  if (!pointer) return { ok: false, code, detail };
+  const issue = {
+    pointer,
+    path: formatSchemaPath(pointer),
+    keyword: 'semantic',
+    message: detail,
+    ...(expected ? { expected } : {}),
+  };
+  return { ok: false, code, detail, issues: [issue] };
+}
+
+/** 给 JSON Pointer 追加一段，用于把语义错误定位到具体字段。 */
+function at(pointer: string | undefined, segment: string): string | undefined {
+  return pointer ? `${pointer}/${segment}` : undefined;
+}
+
+/** RFC 6901 转义，用于把表格列 key 等动态字段写进 JSON Pointer。 */
+function pointerToken(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
 interface SemanticContext {
   stateById: Map<string, StateVariable>;
   derivedById: Map<string, DerivedValue>;
+  derivedIndexById: Map<string, number>;
   dependencies: Map<string, Set<string>>;
   expressionNodes: number;
   expressionBudget: number;
@@ -114,6 +138,7 @@ function createContext(document: GenuiV2Document | GenuiV3Document): SemanticCon
   return {
     stateById: new Map(document.state.map((variable) => [variable.id, variable])),
     derivedById: new Map(document.derived.map((value) => [value.id, value])),
+    derivedIndexById: new Map(document.derived.map((value, index) => [value.id, index])),
     dependencies: new Map(),
     expressionNodes: 0,
     expressionBudget:
@@ -134,45 +159,53 @@ function inspectExpression(
   context: SemanticContext,
   expression: NumericExpression,
   depth: number,
+  pointer?: string,
 ): SemanticFailure | null {
   context.expressionNodes += 1;
   if (context.expressionNodes > context.expressionBudget || depth > LIMITS.maxExpressionDepth) {
-    return semanticFailure('too-complex', '表达式超过节点数或嵌套深度上限');
+    return semanticFailure('too-complex', '表达式超过节点数或嵌套深度上限', pointer);
   }
 
   const record = expression as unknown as Record<string, unknown>;
   switch (expression.op) {
     case 'const': {
       if (!hasExactKeys(record, 'op', 'value') || typeof record.value !== 'number') {
-        return semanticFailure('semantic-violation', 'const 运算的字段无效');
+        return semanticFailure('semantic-violation', 'const 运算的字段无效', pointer);
       }
       if (
         !Number.isFinite(expression.value) ||
         Math.abs(expression.value) > LIMITS.maxNumberMagnitude
       ) {
-        return semanticFailure('semantic-violation', '表达式常量超出数值范围');
+        return semanticFailure('semantic-violation', '表达式常量超出数值范围', at(pointer, 'value'));
       }
       return null;
     }
     case 'state': {
       if (!hasExactKeys(record, 'op', 'id') || typeof record.id !== 'string') {
-        return semanticFailure('semantic-violation', 'state 引用的字段无效');
+        return semanticFailure('semantic-violation', 'state 引用的字段无效', pointer);
       }
       const variable = context.stateById.get(expression.id);
       if (!variable || variable.kind !== 'number') {
         return semanticFailure(
           'invalid-reference',
           `数值表达式引用了不存在或非数值状态：${expression.id}`,
+          at(pointer, 'id'),
+          '表达式中的 state.id 必须是已声明的 number 状态 id',
         );
       }
       return null;
     }
     case 'derived': {
       if (!hasExactKeys(record, 'op', 'id') || typeof record.id !== 'string') {
-        return semanticFailure('semantic-violation', 'derived 引用的字段无效');
+        return semanticFailure('semantic-violation', 'derived 引用的字段无效', pointer);
       }
       if (!context.derivedById.has(expression.id)) {
-        return semanticFailure('invalid-reference', `引用了不存在的派生值：${expression.id}`);
+        return semanticFailure(
+          'invalid-reference',
+          `引用了不存在的派生值：${expression.id}`,
+          at(pointer, 'id'),
+          '表达式中的 derived.id 必须是已声明的派生值 id',
+        );
       }
       return null;
     }
@@ -182,9 +215,9 @@ function inspectExpression(
     case 'floor':
     case 'ceil': {
       if (!hasExactKeys(record, 'op', 'value') || typeof record.value !== 'object' || record.value === null) {
-        return semanticFailure('semantic-violation', `${expression.op} 运算的字段无效`);
+        return semanticFailure('semantic-violation', `${expression.op} 运算的字段无效`, pointer);
       }
-      return inspectExpression(context, record.value as NumericExpression, depth + 1);
+      return inspectExpression(context, record.value as NumericExpression, depth + 1, at(pointer, 'value'));
     }
     case 'add':
     case 'subtract':
@@ -197,15 +230,20 @@ function inspectExpression(
         typeof record.left !== 'object' || record.left === null ||
         typeof record.right !== 'object' || record.right === null
       ) {
-        return semanticFailure('semantic-violation', `${expression.op} 运算的字段无效`);
+        return semanticFailure('semantic-violation', `${expression.op} 运算的字段无效`, pointer);
       }
-      const leftFailure = inspectExpression(context, record.left as NumericExpression, depth + 1);
+      const leftFailure = inspectExpression(
+        context,
+        record.left as NumericExpression,
+        depth + 1,
+        at(pointer, 'left'),
+      );
       if (leftFailure) return leftFailure;
-      return inspectExpression(context, record.right as NumericExpression, depth + 1);
+      return inspectExpression(context, record.right as NumericExpression, depth + 1, at(pointer, 'right'));
     }
     default: {
       const exhaustive: never = expression;
-      return semanticFailure('semantic-violation', `不支持的运算：${String(exhaustive)}`);
+      return semanticFailure('semantic-violation', `不支持的运算：${String(exhaustive)}`, pointer);
     }
   }
 }
@@ -215,10 +253,11 @@ function inspectCondition(
   context: SemanticContext,
   condition: Condition,
   depth: number,
+  pointer?: string,
 ): SemanticFailure | null {
   context.conditionNodes += 1;
   if (context.conditionNodes > LIMITS.maxConditionNodes || depth > LIMITS.maxConditionDepth) {
-    return semanticFailure('too-complex', '条件超过节点数或嵌套深度上限');
+    return semanticFailure('too-complex', '条件超过节点数或嵌套深度上限', pointer);
   }
 
   if (condition.op === 'state-eq' || condition.op === 'state-neq') {
@@ -227,35 +266,54 @@ function inspectCondition(
       return semanticFailure(
         'invalid-reference',
         `条件引用了不存在或非选择状态：${condition.id}`,
+        at(pointer, 'id'),
+        '条件 state-eq/state-neq 的 id 必须是已声明的 select 状态 id',
       );
     }
     if (!variable.options.some((option) => option.value === condition.value)) {
       return semanticFailure(
         'semantic-violation',
         `条件引用了选择状态 ${condition.id} 不存在的选项：${condition.value}`,
+        at(pointer, 'value'),
+        '条件的 value 必须是该 select 状态 options 中已声明的值',
       );
     }
     return null;
   }
 
   if (condition.op === 'and' || condition.op === 'or') {
-    for (const child of condition.conditions) {
-      const failure = inspectCondition(context, child, depth + 1);
+    for (const [index, child] of condition.conditions.entries()) {
+      const failure = inspectCondition(
+        context,
+        child,
+        depth + 1,
+        pointer ? `${pointer}/conditions/${index}` : undefined,
+      );
       if (failure) return failure;
     }
     return null;
   }
 
   if (condition.op === 'not') {
-    return inspectCondition(context, condition.condition, depth + 1);
+    return inspectCondition(context, condition.condition, depth + 1, at(pointer, 'condition'));
   }
 
   if (!('left' in condition) || !('right' in condition)) {
-    return semanticFailure('semantic-violation', `不支持的条件运算：${String(condition.op)}`);
+    return semanticFailure('semantic-violation', `不支持的条件运算：${String(condition.op)}`, pointer);
   }
-  const leftFailure = inspectExpression(context, condition.left, 1);
+  const leftFailure = inspectExpression(context, condition.left, 1, at(pointer, 'left'));
   if (leftFailure) return leftFailure;
-  return inspectExpression(context, condition.right, 1);
+  return inspectExpression(context, condition.right, 1, at(pointer, 'right'));
+}
+
+function firstDuplicateIndex<T>(items: T[], keyOf: (item: T) => string): number {
+  const seen = new Set<string>();
+  for (const [index, item] of items.entries()) {
+    const key = keyOf(item);
+    if (seen.has(key)) return index;
+    seen.add(key);
+  }
+  return -1;
 }
 
 /** 状态定义、派生定义、表达式预算与循环依赖（v2/v3 共用）。 */
@@ -263,49 +321,96 @@ function inspectStateAndDerived(
   context: SemanticContext,
   document: GenuiV2Document | GenuiV3Document,
 ): SemanticFailure | null {
-  if (context.stateById.size !== document.state.length) {
-    return semanticFailure('invalid-reference', 'state 中存在重复 id');
+  const duplicateState = firstDuplicateIndex(document.state, (variable) => variable.id);
+  if (duplicateState >= 0) {
+    return semanticFailure(
+      'invalid-reference',
+      `state 中存在重复 id：${document.state[duplicateState].id}`,
+      `/state/${duplicateState}/id`,
+      'state 的 id 必须唯一',
+    );
   }
-  if (context.derivedById.size !== document.derived.length) {
-    return semanticFailure('invalid-reference', 'derived 中存在重复 id');
+  const duplicateDerived = firstDuplicateIndex(document.derived, (value) => value.id);
+  if (duplicateDerived >= 0) {
+    return semanticFailure(
+      'invalid-reference',
+      `derived 中存在重复 id：${document.derived[duplicateDerived].id}`,
+      `/derived/${duplicateDerived}/id`,
+      'derived 的 id 必须唯一',
+    );
   }
-  for (const id of context.derivedById.keys()) {
-    if (context.stateById.has(id)) {
-      return semanticFailure('invalid-reference', `state 与 derived 的 id 冲突：${id}`);
+  for (const [index, value] of document.derived.entries()) {
+    if (context.stateById.has(value.id)) {
+      return semanticFailure(
+        'invalid-reference',
+        `state 与 derived 的 id 冲突：${value.id}`,
+        `/derived/${index}/id`,
+        'state 与 derived 不能复用同一个 id',
+      );
     }
   }
 
-  for (const variable of document.state) {
+  for (const [index, variable] of document.state.entries()) {
+    const base = `/state/${index}`;
     if (variable.kind === 'number') {
-      if (
-        variable.min >= variable.max ||
-        variable.initial < variable.min ||
-        variable.initial > variable.max
-      ) {
-        return semanticFailure('semantic-violation', `数值状态 ${variable.id} 的初始值或范围无效`);
+      if (variable.min >= variable.max) {
+        return semanticFailure(
+          'semantic-violation',
+          `数值状态 ${variable.id} 的范围无效`,
+          `${base}/min`,
+          'min 必须小于 max',
+        );
       }
-      if (
-        !isStepAligned(variable.initial, variable.min, variable.step) ||
-        !isStepAligned(variable.max, variable.min, variable.step)
-      ) {
-        return semanticFailure('semantic-violation', `数值状态 ${variable.id} 的初始值或最大值不符合步长`);
+      if (variable.initial < variable.min || variable.initial > variable.max) {
+        return semanticFailure(
+          'semantic-violation',
+          `数值状态 ${variable.id} 的初始值或范围无效`,
+          `${base}/initial`,
+          'initial 必须位于 min 与 max 之间',
+        );
+      }
+      if (!isStepAligned(variable.initial, variable.min, variable.step)) {
+        return semanticFailure(
+          'semantic-violation',
+          `数值状态 ${variable.id} 的初始值或最大值不符合步长`,
+          `${base}/initial`,
+          'initial 必须与 min、step 对齐',
+        );
+      }
+      if (!isStepAligned(variable.max, variable.min, variable.step)) {
+        return semanticFailure(
+          'semantic-violation',
+          `数值状态 ${variable.id} 的初始值或最大值不符合步长`,
+          `${base}/max`,
+          'max 必须与 min、step 对齐',
+        );
       }
       continue;
     }
 
     const options = new Set(variable.options.map((option) => option.value));
     if (options.size !== variable.options.length) {
-      return semanticFailure('semantic-violation', `选择状态 ${variable.id} 存在重复选项值`);
+      return semanticFailure(
+        'semantic-violation',
+        `选择状态 ${variable.id} 存在重复选项值`,
+        `${base}/options`,
+        'options 的 value 必须唯一',
+      );
     }
     if (!options.has(variable.initial)) {
-      return semanticFailure('semantic-violation', `选择状态 ${variable.id} 的初始值不在选项中`);
+      return semanticFailure(
+        'semantic-violation',
+        `选择状态 ${variable.id} 的初始值不在选项中`,
+        `${base}/initial`,
+        'initial 必须是 options 中已声明的值',
+      );
     }
   }
 
-  for (const derived of document.derived) {
+  for (const [index, derived] of document.derived.entries()) {
     const dependencies = new Set<string>();
     context.dependencies.set(derived.id, dependencies);
-    const failure = inspectExpression(context, derived.expression, 1);
+    const failure = inspectExpression(context, derived.expression, 1, `/derived/${index}/expression`);
     if (failure) return failure;
     collectDerivedDependencies(derived.expression, dependencies);
   }
@@ -358,7 +463,15 @@ function inspectDependencyCycles(context: SemanticContext): SemanticFailure | nu
     return true;
   };
   for (const id of context.dependencies.keys()) {
-    if (!visit(id)) return semanticFailure('dependency-cycle', `派生值存在循环依赖：${id}`);
+    if (!visit(id)) {
+      const index = context.derivedIndexById.get(id);
+      return semanticFailure(
+        'dependency-cycle',
+        `派生值存在循环依赖：${id}`,
+        typeof index === 'number' ? `/derived/${index}/expression` : undefined,
+        '派生值之间不能循环引用',
+      );
+    }
   }
   return null;
 }
@@ -367,6 +480,7 @@ function inspectDependencyCycles(context: SemanticContext): SemanticFailure | nu
 function inspectLeafElement(
   context: SemanticContext,
   element: Exclude<GenuiV2Document['elements'][number], { kind: 'text' }>,
+  pointer: string,
 ): SemanticFailure | null {
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = context.stateById.get(element.bind);
@@ -375,6 +489,8 @@ function inspectLeafElement(
       return semanticFailure(
         'invalid-reference',
         `${element.kind} 控件绑定了不存在或类型不匹配的状态：${element.bind}`,
+        `${pointer}/bind`,
+        `bind 必须是已声明的 ${expectedKind} 状态 id`,
       );
     }
     return null;
@@ -387,6 +503,8 @@ function inspectLeafElement(
       return semanticFailure(
         'invalid-reference',
         `结果引用不存在：${element.source.kind}.${element.source.id}`,
+        `${pointer}/source/id`,
+        `source.id 必须是已声明的 ${element.source.kind} id`,
       );
     }
   }
@@ -398,9 +516,9 @@ function validateV2Semantics(document: GenuiV2Document): SemanticFailure | null 
   const stateFailure = inspectStateAndDerived(context, document);
   if (stateFailure) return stateFailure;
 
-  for (const element of document.elements) {
+  for (const [index, element] of document.elements.entries()) {
     if (element.kind === 'text') continue;
-    const failure = inspectLeafElement(context, element);
+    const failure = inspectLeafElement(context, element, `/elements/${index}`);
     if (failure) return failure;
   }
 
@@ -414,27 +532,32 @@ function inspectV3Elements(
 ): SemanticFailure | null {
   let elementCount = 0;
 
-  const walk = (list: GenuiV3Element[], depth: number): SemanticFailure | null => {
-    for (const element of list) {
+  const walk = (
+    list: GenuiV3Element[],
+    depth: number,
+    base: string,
+  ): SemanticFailure | null => {
+    for (const [index, element] of list.entries()) {
+      const pointer = `${base}/${index}`;
       if (depth > LIMITS.maxNestingDepth) {
-        return semanticFailure('too-complex', '组合布局嵌套超过上限');
+        return semanticFailure('too-complex', '组合布局嵌套超过上限', pointer);
       }
       elementCount += 1;
       if (elementCount > LIMITS.maxElementsV3) {
-        return semanticFailure('too-complex', '元素总数超过上限');
+        return semanticFailure('too-complex', '元素总数超过上限', base);
       }
 
       switch (element.kind) {
         case 'text': {
           if (element.visibleIf) {
-            const failure = inspectCondition(context, element.visibleIf, 1);
+            const failure = inspectCondition(context, element.visibleIf, 1, `${pointer}/visibleIf`);
             if (failure) return failure;
           }
           break;
         }
         case 'note': {
           if (element.visibleIf) {
-            const failure = inspectCondition(context, element.visibleIf, 1);
+            const failure = inspectCondition(context, element.visibleIf, 1, `${pointer}/visibleIf`);
             if (failure) return failure;
           }
           break;
@@ -442,24 +565,39 @@ function inspectV3Elements(
         case 'chart': {
           if (element.chartType === 'line') {
             let points = 0;
-            for (const series of element.series) {
+            for (const [seriesIndex, series] of element.series.entries()) {
               let previousX = Number.NEGATIVE_INFINITY;
-              for (const point of series.points) {
+              for (const [pointIndex, point] of series.points.entries()) {
                 if (point.x <= previousX) {
-                  return semanticFailure('semantic-violation', '折线图数据点的 x 必须严格递增');
+                  return semanticFailure(
+                    'semantic-violation',
+                    '折线图数据点的 x 必须严格递增',
+                    `${pointer}/series/${seriesIndex}/points/${pointIndex}/x`,
+                    '同一系列内每个数据点的 x 必须大于前一个点的 x',
+                  );
                 }
                 previousX = point.x;
                 points += 1;
-                const failure = inspectExpression(context, point.y, 1);
+                const failure = inspectExpression(
+                  context,
+                  point.y,
+                  1,
+                  `${pointer}/series/${seriesIndex}/points/${pointIndex}/y`,
+                );
                 if (failure) return failure;
               }
             }
             if (points > LIMITS.maxChartPointsTotal) {
-              return semanticFailure('too-complex', '折线图数据点总数超过上限');
+              return semanticFailure('too-complex', '折线图数据点总数超过上限', `${pointer}/series`);
             }
           } else {
-            for (const item of element.items) {
-              const failure = inspectExpression(context, item.value, 1);
+            for (const [itemIndex, item] of element.items.entries()) {
+              const failure = inspectExpression(
+                context,
+                item.value,
+                1,
+                `${pointer}/items/${itemIndex}/value`,
+              );
               if (failure) return failure;
             }
           }
@@ -467,13 +605,18 @@ function inspectV3Elements(
         }
         case 'table': {
           if (element.visibleIf) {
-            const failure = inspectCondition(context, element.visibleIf, 1);
+            const failure = inspectCondition(context, element.visibleIf, 1, `${pointer}/visibleIf`);
             if (failure) return failure;
           }
           const keys = new Set<string>();
-          for (const column of element.columns) {
+          for (const [columnIndex, column] of element.columns.entries()) {
             if (keys.has(column.key)) {
-              return semanticFailure('semantic-violation', `表格列 key 重复：${column.key}`);
+              return semanticFailure(
+                'semantic-violation',
+                `表格列 key 重复：${column.key}`,
+                `${pointer}/columns/${columnIndex}/key`,
+                'columns 的 key 必须唯一',
+              );
             }
             keys.add(column.key);
           }
@@ -481,19 +624,32 @@ function inspectV3Elements(
             return semanticFailure(
               'invalid-reference',
               `表格初始排序引用了不存在的列：${element.initialSort.key}`,
+              `${pointer}/initialSort/key`,
+              'initialSort.key 必须是 columns 中已声明的列 key',
             );
           }
-          for (const row of element.rows) {
+          for (const [rowIndex, row] of element.rows.entries()) {
             if (row.visibleIf) {
-              const failure = inspectCondition(context, row.visibleIf, 1);
+              const failure = inspectCondition(
+                context,
+                row.visibleIf,
+                1,
+                `${pointer}/rows/${rowIndex}/visibleIf`,
+              );
               if (failure) return failure;
             }
             for (const [key, cell] of Object.entries(row.cells)) {
+              const cellPointer = `${pointer}/rows/${rowIndex}/cells/${pointerToken(key)}`;
               if (!keys.has(key)) {
-                return semanticFailure('invalid-reference', `表格行包含未定义的列：${key}`);
+                return semanticFailure(
+                  'invalid-reference',
+                  `表格行包含未定义的列：${key}`,
+                  cellPointer,
+                  'rows.cells 的键必须是 columns 中已声明的列 key',
+                );
               }
               if (typeof cell === 'object' && cell !== null) {
-                const failure = inspectExpression(context, cell, 1);
+                const failure = inspectExpression(context, cell, 1, cellPointer);
                 if (failure) return failure;
               }
             }
@@ -501,19 +657,19 @@ function inspectV3Elements(
           break;
         }
         case 'section': {
-          const failure = walk(element.children, depth + 1);
+          const failure = walk(element.children, depth + 1, `${pointer}/children`);
           if (failure) return failure;
           break;
         }
         case 'columns': {
-          for (const column of element.columns) {
-            const failure = walk(column, depth + 1);
+          for (const [columnIndex, column] of element.columns.entries()) {
+            const failure = walk(column, depth + 1, `${pointer}/columns/${columnIndex}`);
             if (failure) return failure;
           }
           break;
         }
         default: {
-          const failure = inspectLeafElement(context, element);
+          const failure = inspectLeafElement(context, element, pointer);
           if (failure) return failure;
           break;
         }
@@ -522,7 +678,7 @@ function inspectV3Elements(
     return null;
   };
 
-  return walk(elements, 1);
+  return walk(elements, 1, '/elements');
 }
 
 function validateV3Semantics(document: GenuiV3Document): SemanticFailure | null {

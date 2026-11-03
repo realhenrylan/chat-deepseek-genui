@@ -283,10 +283,16 @@ export class EnhancementManager {
     if (!enabled) this.restoreAll();
   }
 
-  /** 流式重新生成期间先撤下旧卡片，完成后由稳定扫描重新挂载。 */
-  suspendMounted(): void {
-    for (const record of this.mounted.values()) disposeMounted(record, true);
-    this.mounted.clear();
+  /**
+   * 流式重新生成期间先撤下正在变化的卡片，完成后由稳定扫描重新挂载。
+   * 传入 container 时只处理该回复内的卡片，历史回答的已挂载卡片保持不变。
+   */
+  suspendMounted(container?: Element | null): void {
+    for (const [block, record] of [...this.mounted]) {
+      if (container && !container.contains(block)) continue;
+      disposeMounted(record, true);
+      this.mounted.delete(block);
+    }
   }
 
   /** Idempotent cleanup for pagehide and controller disposal. */

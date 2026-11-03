@@ -334,6 +334,132 @@ describe('状态面板：等待、验证、离屏与恢复', () => {
   });
 });
 
+describe('语义错误的修复路径', () => {
+  it('表格 initialSort 引用列 key 时给出具体字段与修复目标', () => {
+    const raw = tableDocument({ key: 'missing', dir: 'asc' });
+    const failure = failureOf(raw);
+    const diagnostic = diagnoseParseFailure(failure, raw);
+
+    expect(failure.code).toBe('invalid-reference');
+    const issue = failure.issues?.[0];
+    expect(issue?.pointer).toBe('/elements/0/initialSort/key');
+    expect(issue?.path).toBe('elements[0].initialSort.key');
+    expect(issue?.expected).toContain('列 key');
+    expect(diagnostic.path).toBe('elements[0].initialSort.key');
+    expect(diagnostic.expected).toContain('列 key');
+
+    const prompt = buildRepairPrompt(diagnostic, raw);
+    expect(prompt).toContain('elements[0].initialSort.key');
+    expect(prompt).toContain('/elements/0/initialSort/key');
+    expect(prompt).not.toContain('"cells"');
+  });
+
+  it('数值状态的 min/max 范围错误定位到 min 字段', () => {
+    const raw = JSON.stringify({
+      type: 'genui',
+      version: 3,
+      state: [
+        {
+          id: 'amount',
+          label: '金额',
+          kind: 'number',
+          initial: 10,
+          min: 10,
+          max: 0,
+          step: 1,
+        },
+      ],
+      derived: [],
+      elements: [{ kind: 'text', value: '金额' }],
+    });
+    const failure = failureOf(raw);
+    const diagnostic = diagnoseParseFailure(failure, raw);
+
+    expect(failure.code).toBe('semantic-violation');
+    expect(failure.issues?.[0]?.pointer).toBe('/state/0/min');
+    expect(diagnostic.path).toBe('state[0].min');
+    expect(diagnostic.expected).toContain('min');
+  });
+
+  it('派生值循环依赖定位到具体 derived.expression', () => {
+    const raw = JSON.stringify({
+      type: 'genui',
+      version: 3,
+      state: [],
+      derived: [
+        { id: 'a', label: 'A', expression: { op: 'derived', id: 'b' } },
+        { id: 'b', label: 'B', expression: { op: 'derived', id: 'a' } },
+      ],
+      elements: [{ kind: 'text', value: '循环' }],
+    });
+    const failure = failureOf(raw);
+    const diagnostic = diagnoseParseFailure(failure, raw);
+
+    expect(failure.code).toBe('dependency-cycle');
+    expect(failure.issues?.[0]?.pointer).toMatch(/^\/derived\/\d+\/expression$/);
+    expect(diagnostic.path).toMatch(/^derived\[\d+\]\.expression$/);
+    expect(diagnostic.expected).toContain('循环');
+  });
+});
+
+describe('长 JSON 的修复请求位置', () => {
+  it('错误位置位于长内容中间时，片段以现场为中心而不是只取首尾', () => {
+    const marker = '现场标记';
+    const raw = `${'a'.repeat(1250)}${marker}${'b'.repeat(1800)}`;
+    const position = 1300;
+    const diagnostic = diagnoseParseFailure(
+      {
+        ok: false,
+        code: 'invalid-json',
+        detail: `Unexpected token } in JSON at position ${position}`,
+        position,
+      },
+      raw,
+    );
+    const prompt = buildRepairPrompt(diagnostic, raw);
+
+    expect(diagnostic.position).toBe(position);
+    expect(prompt).toContain(marker);
+  });
+});
+
+describe('无输入框且自动复制失败的手动退路', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('面板展开完整修复请求，而不是只给原始内容', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    const doc = document.implementation.createHTMLDocument('test');
+    (doc as unknown as { execCommand: () => boolean }).execCommand = () => false;
+
+    const raw = tableDocument({ key: 'price', direction: 'asc' });
+    const diagnostic = diagnoseParseFailure(failureOf(raw), raw);
+    const { panel } = panelFor(raw, doc, {
+      onRequestRepair: (prompt) => deliverRepairRequest(doc, prompt),
+    });
+    panel.showDiagnostic(diagnostic, raw);
+
+    panel.host.shadowRoot
+      ?.querySelector<HTMLButtonElement>('[data-genui-action="repair"]')
+      ?.click();
+
+    await vi.waitFor(() => {
+      expect(panel.host.shadowRoot?.querySelector('[data-genui-feedback]')?.textContent).toContain(
+        '手动复制完整修复请求',
+      );
+    });
+
+    const manual = panel.host.shadowRoot?.querySelector<HTMLDetailsElement>(
+      '[data-genui-manual-copy]',
+    );
+    expect(manual?.open).toBe(true);
+    expect(
+      panel.host.shadowRoot?.querySelector('pre[data-genui-repair-prompt]')?.textContent,
+    ).toContain('elements[0].initialSort.direction');
+  });
+});
+
 describe('appendDraftIntoInput 的草稿语义', () => {
   it('空草稿直接填入，已有内容按换行追加且保留原字节', () => {
     const doc = document.implementation.createHTMLDocument('test');

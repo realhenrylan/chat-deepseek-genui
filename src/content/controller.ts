@@ -1,7 +1,7 @@
 import { LOG_PREFIX } from './lifecycle';
 import { createEnhancementManager, type EnhanceOptions } from './enhance';
 import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
-import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
+import { ASSISTANT_SELECTOR, findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
@@ -161,7 +161,13 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     }
     if (isGenerationActive(doc)) {
       // 生成中只显示等待状态；流式截断是暂态，不能写 failed。
-      manager.suspendMounted();
+      // 只撤下当前正在生成的回复内卡片，历史回答的已挂载卡片保持不变。
+      const containers = doc.querySelectorAll<HTMLElement>(ASSISTANT_SELECTOR);
+      const activeContainer = containers[containers.length - 1];
+      const hasActiveBlock =
+        activeContainer !== undefined &&
+        candidates.some((candidate) => activeContainer.contains(candidate.block));
+      if (hasActiveBlock) manager.suspendMounted(activeContainer);
       manager.markPending(candidates);
       stableSnapshot = null;
       clearSettleTimer();

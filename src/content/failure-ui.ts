@@ -51,8 +51,12 @@ const PANEL_CSS = `
   color: #4d6bfe;
 }
 .genui-status-feedback { margin: 8px 0 0; min-height: 1.2em; color: inherit; opacity: .8; }
+.genui-status-manual { margin-top: 8px; opacity: .9; }
+.genui-status-manual summary { cursor: pointer; }
+.genui-status-manual p { margin: 4px 0 0; opacity: .75; font-size: 12px; }
 .genui-status-raw { margin-top: 8px; opacity: .9; }
 .genui-status-raw summary { cursor: pointer; }
+.genui-status-manual pre,
 .genui-status-raw pre {
   max-height: 220px; overflow: auto; margin: 6px 0 0; padding: 8px;
   border-radius: 8px; background: color-mix(in srgb, currentColor 7%, transparent);
@@ -93,7 +97,7 @@ const FEEDBACK: Record<RepairDeliveryResult, string> = {
   filled: '已填入输入框；请检查草稿后自行发送。',
   appended: '草稿已保留：修复请求已写入；若草稿中已有相同内容则不会重复追加，请检查后发送。',
   copied: '修复请求已复制；可粘贴到输入框，检查后发送。',
-  'copy-failed': '未找到聊天输入框，也无法自动复制；请展开原始内容手动复制。',
+  'copy-failed': '未找到聊天输入框，自动复制也失败；请展开「手动复制完整修复请求」选择文本。',
 };
 
 function createElement<K extends keyof HTMLElementTagNameMap>(
@@ -236,6 +240,25 @@ export class GenuiStatusPanel {
     feedback.setAttribute('data-genui-feedback', '');
     nodes.push(feedback);
 
+    if (diagnostic.repairable) {
+      const manual = createElement(this.doc, 'details', 'genui-status-manual');
+      manual.setAttribute('data-genui-manual-copy', '');
+      manual.append(
+        createElement(this.doc, 'summary', undefined, '手动复制完整修复请求'),
+        createElement(
+          this.doc,
+          'p',
+          undefined,
+          '自动填入或复制受限时，可展开并选择下方全文；发送仍由你完成。',
+        ),
+      );
+      const prompt = this.doc.createElement('pre');
+      prompt.setAttribute('data-genui-repair-prompt', '');
+      prompt.textContent = buildRepairPrompt(diagnostic, raw);
+      manual.append(prompt);
+      nodes.push(manual);
+    }
+
     const details = createElement(this.doc, 'details', 'genui-status-raw');
     details.append(createElement(this.doc, 'summary', undefined, '查看原始内容'));
     const pre = this.doc.createElement('pre');
@@ -283,11 +306,19 @@ export class GenuiStatusPanel {
         result = (await copyText(this.doc, prompt)) ? 'copied' : 'copy-failed';
       }
       this.setFeedback(FEEDBACK[result]);
+      if (result === 'copy-failed') this.revealManualPrompt();
     } catch {
       this.setFeedback('生成修复请求失败；原始内容与聊天仍可正常使用。');
     } finally {
       this.setBusy(false);
     }
+  }
+
+  private revealManualPrompt(): void {
+    const manual = this.host.shadowRoot?.querySelector<HTMLDetailsElement>(
+      '[data-genui-manual-copy]',
+    );
+    if (manual) manual.open = true;
   }
 
   destroy(): void {

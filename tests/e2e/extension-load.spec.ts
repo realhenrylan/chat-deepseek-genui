@@ -983,37 +983,38 @@ for (const { label, channel } of CHANNELS) {
       await page.waitForTimeout(850);
       await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'mounted');
       await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'failed');
-      await expect(page.locator('.genui-card-host')).toHaveCount(0);
+      // 历史回答的卡片保持挂载，只等待当前回复。
+      await expect(page.locator('.genui-card-host')).toHaveCount(2);
 
       await page.locator('#e2e-stream-block pre span').evaluate((node, value) => {
         node.textContent = value;
       }, VALID_RAW_2);
       await page.waitForTimeout(850);
       await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'mounted');
-      await expect(page.locator('.genui-card-host')).toHaveCount(0);
+      await expect(page.locator('.genui-card-host')).toHaveCount(2);
 
       await page.locator('#e2e-stop').evaluate((node) => node.remove());
       await expect(page.locator('#e2e-stream-block')).toHaveAttribute('data-genui-state', 'mounted');
       await expect(page.locator('.genui-card-host')).toHaveCount(3);
 
-      // 重新生成沿用同一节点时先卸载旧卡片；稳定后只保留一个新卡片。
+      // 重新生成当前回复并沿用同一节点时先卸载该卡片；历史回答保持挂载。
       await page.evaluate(() => {
         const stop = document.createElement('div');
         stop.id = 'e2e-stop-regen';
         stop.setAttribute('role', 'button');
         stop.setAttribute('aria-label', '停止生成');
         document.body.append(stop);
-        const block = document.querySelector('#e2e-block-1 pre span');
+        const block = document.querySelector('#e2e-stream-block pre span');
         if (block) block.textContent = '{"type":"genui",';
       });
-      await expect(page.locator('.genui-card-host')).toHaveCount(0);
-      await expect(page.locator('#e2e-block-1')).toBeVisible();
-      await expect(page.locator('#e2e-block-1')).not.toHaveAttribute('data-genui-state', 'mounted');
-      await page.locator('#e2e-block-1 pre span').evaluate((node, value) => {
+      await expect(page.locator('.genui-card-host')).toHaveCount(2);
+      await expect(page.locator('#e2e-stream-block')).toBeVisible();
+      await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'mounted');
+      await page.locator('#e2e-stream-block pre span').evaluate((node, value) => {
         node.textContent = value;
       }, VALID_RAW_2);
       await page.locator('#e2e-stop-regen').evaluate((node) => node.remove());
-      await expect(page.locator('#e2e-block-1')).toHaveAttribute('data-genui-state', 'mounted');
+      await expect(page.locator('#e2e-stream-block')).toHaveAttribute('data-genui-state', 'mounted');
       await expect(page.locator('.genui-card-host')).toHaveCount(3);
 
       // 会话列表替换回复容器后，旧卡片 host 和 React 根均被清理。

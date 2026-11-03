@@ -37,6 +37,8 @@ export interface GenuiDiagnostic {
   expected?: string;
   /** 当前值的短预览。 */
   actual?: string;
+  /** JSON 解析失败时的字符位置，用于让长内容片段覆盖错误现场。 */
+  position?: number;
   /** 原始失败 detail，保留给日志与展开详情。 */
   detail: string;
   issues: GenuiSchemaIssue[];
@@ -614,6 +616,7 @@ function jsonDiagnostic(failure: ParseFailure, raw: string): GenuiDiagnostic {
       summary: `这段 genui 内容在 JSON 中途结束${location}，可能是回答尚未生成完整或复制时被截断。若回答仍在生成请稍候；若已经结束，可生成修复请求。`,
       path: position === undefined ? undefined : `JSON 字符位置 ${position}`,
       pointer: undefined,
+      position,
       expected: '完整的 JSON 对象（以 } 结束）',
       detail: failure.detail,
       issues: [],
@@ -627,6 +630,7 @@ function jsonDiagnostic(failure: ParseFailure, raw: string): GenuiDiagnostic {
     title: '界面内容不是有效 JSON',
     summary: `${localizedJsonReason(failure.detail)}${location}。这段内容没有通过解析，原始内容已保留。`,
     path: position === undefined ? undefined : `JSON 字符位置 ${position}`,
+    position,
     expected: '可解析的 JSON 对象',
     detail: failure.detail,
     issues: [],
@@ -655,38 +659,37 @@ export function diagnoseParseFailure(failure: ParseFailure, raw = ''): GenuiDiag
         repairable: true,
       };
     case 'semantic-violation':
-      return {
-        kind: 'semantic',
-        status: 'needs-repair',
-        title: '界面数据需要修复',
-        summary: firstLine(failure.detail),
-        expected: '检查字段取值与引用是否满足当前文档的约束',
-        detail: failure.detail,
-        issues: [],
-        repairable: true,
-      };
     case 'invalid-reference':
+    case 'dependency-cycle': {
+      const issue = failure.issues?.[0];
+      const title =
+        failure.code === 'dependency-cycle'
+          ? '界面数据存在循环依赖'
+          : failure.code === 'invalid-reference'
+            ? '界面引用了不存在的数据'
+            : '界面数据需要修复';
+      const expected =
+        issue?.expected ??
+        (failure.code === 'dependency-cycle'
+          ? '派生值之间不能形成循环依赖'
+          : failure.code === 'invalid-reference'
+            ? '所有引用都应指向当前文档已声明的字段或值'
+            : '检查字段取值与引用是否满足当前文档的约束');
       return {
         kind: 'semantic',
         status: 'needs-repair',
-        title: '界面引用了不存在的数据',
-        summary: firstLine(failure.detail),
-        expected: '所有引用都应指向当前文档已声明的 id',
+        title,
+        summary: issue?.path
+          ? `在 ${issue.path} 处，${firstLine(failure.detail)}`
+          : firstLine(failure.detail),
+        path: issue?.path,
+        pointer: issue?.pointer,
+        expected,
         detail: failure.detail,
-        issues: [],
+        issues: failure.issues ?? [],
         repairable: true,
       };
-    case 'dependency-cycle':
-      return {
-        kind: 'semantic',
-        status: 'needs-repair',
-        title: '界面数据存在循环依赖',
-        summary: firstLine(failure.detail),
-        expected: '派生值之间不能形成循环依赖',
-        detail: failure.detail,
-        issues: [],
-        repairable: true,
-      };
+    }
     case 'too-large':
       return {
         kind: 'too-large',
@@ -757,21 +760,25 @@ function resolveScopePointer(data: unknown, pointer: string | undefined): string
 
 function capSnippet(text: string, max: number): string {
   if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n…（片段已截断，完整内容仍保留在页面代码块中）`;
+  return `${text.slice(0, max)}
+…（片段已截断，完整内容仍保留在页面代码块中）`;
 }
 
 function invalidJsonSnippet(raw: string, position: number | undefined): string {
   if (raw.length <= 1600) return raw;
   if (position !== undefined && position > 900) {
     const start = Math.max(0, position - 900);
-    return `…（前面内容省略）\n${raw.slice(start, start + 1500)}`;
+    return `…（前面内容省略）
+${raw.slice(start, start + 1500)}`;
   }
-  return `${raw.slice(0, 1200)}\n…（中间内容省略）…\n${raw.slice(-400)}`;
+  return `${raw.slice(0, 1200)}
+…（中间内容省略）…
+${raw.slice(-400)}`;
 }
 
 function scopedSnippet(diagnostic: GenuiDiagnostic, raw: string): string {
   if (diagnostic.kind === 'truncated-json' || diagnostic.kind === 'invalid-json') {
-    return invalidJsonSnippet(raw, undefined);
+    return invalidJsonSnippet(raw, diagnostic.position);
   }
 
   try {
@@ -790,7 +797,7 @@ function scopedSnippet(diagnostic: GenuiDiagnostic, raw: string): string {
     }
     return capSnippet(JSON.stringify(data, null, 2), 1800);
   } catch {
-    return invalidJsonSnippet(raw, undefined);
+    return invalidJsonSnippet(raw, diagnostic.position);
   }
 }
 
@@ -842,5 +849,6 @@ export function buildRepairPrompt(diagnostic: GenuiDiagnostic, raw: string): str
   );
 
   const prompt = lines.join('\n');
-  return prompt.length > 4000 ? `${prompt.slice(0, 3950)}\n…（修复请求已截断）` : prompt;
+  return prompt.length > 4000 ? `${prompt.slice(0, 3950)}
+…（修复请求已截断）` : prompt;
 }
