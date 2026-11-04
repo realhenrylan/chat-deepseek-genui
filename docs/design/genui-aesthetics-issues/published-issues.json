@@ -1,0 +1,49 @@
+{
+  "published_at": "2026-11-03",
+  "repository": "realhenrylan/chat-deepseek-genui",
+  "source_baseline": "5f9c242bde123f3d662153d09007d33eeb1298e8",
+  "issues": [
+    {
+      "localId": "D01",
+      "file": "docs/design/genui-aesthetics-issues/D01-visual-language.md",
+      "number": 11,
+      "url": "https://github.com/realhenrylan/chat-deepseek-genui/issues/11",
+      "title": "[GenUI 美学] 统一 GenUI 的基础视觉语言与明暗主题"
+    },
+    {
+      "localId": "D02",
+      "file": "docs/design/genui-aesthetics-issues/D02-typography-and-results.md",
+      "number": 12,
+      "url": "https://github.com/realhenrylan/chat-deepseek-genui/issues/12",
+      "title": "[GenUI 美学] 建立文字与关键数值的信息层级"
+    },
+    {
+      "localId": "D03",
+      "file": "docs/design/genui-aesthetics-issues/D03-grouping-and-layout.md",
+      "number": 13,
+      "url": "https://github.com/realhenrylan/chat-deepseek-genui/issues/13",
+      "title": "[GenUI 美学] 优化卡片分组与窄聊天栏布局"
+    },
+    {
+      "localId": "D04",
+      "file": "docs/design/genui-aesthetics-issues/D04-controls-and-states.md",
+      "number": 14,
+      "url": "https://github.com/realhenrylan/chat-deepseek-genui/issues/14",
+      "title": "[GenUI 美学] 统一输入控件与交互状态的视觉表现"
+    },
+    {
+      "localId": "D05",
+      "file": "docs/design/genui-aesthetics-issues/D05-actions-and-disclosure.md",
+      "number": 15,
+      "url": "https://github.com/realhenrylan/chat-deepseek-genui/issues/15",
+      "title": "[GenUI 美学] 梳理卡片操作与辅助信息的呈现层级"
+    },
+    {
+      "localId": "D06",
+      "file": "docs/design/genui-aesthetics-issues/D06-data-views.md",
+      "number": 16,
+      "url": "https://github.com/realhenrylan/chat-deepseek-genui/issues/16",
+      "title": "[GenUI 美学] 提升图表与对比表格的可读性和一致性"
+    }
+  ]
+}
