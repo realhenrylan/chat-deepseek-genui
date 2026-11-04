@@ -183,7 +183,7 @@ describe('Card 渲染（Shadow DOM 隔离）', () => {
     const numberInput = shadow?.querySelector<HTMLInputElement>('input[type="number"]');
     const select = shadow?.querySelector<HTMLSelectElement>('select');
 
-    expect(shadow?.querySelectorAll('input')).toHaveLength(2);
+    expect(shadow?.querySelectorAll('input[type="range"], input[type="number"]')).toHaveLength(2);
     expect(shadow?.querySelectorAll('output.genui-value-output')[0]?.textContent).toBe('餐饮');
     expect(shadow?.querySelectorAll('output.genui-value-output')[1]?.textContent).toBe('4000 元');
 

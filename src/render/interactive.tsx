@@ -2,16 +2,20 @@ import { useId } from 'react';
 import type {
   DerivedCalculation,
   DerivedValue,
+  GenuiBasis,
+  GenuiSource,
   InteractiveElement,
   InteractiveStateValues,
   ModelValueElement,
   StateVariable,
   TextElement,
 } from '../protocol/types';
+import { basisKeyForDerived, basisKeyForElement, basisKeyForState } from '../protocol/provenance';
 import type { ModelResult } from '../runtime/evaluate';
 import { getOwn } from '../runtime/records';
 import { UnknownElementView } from './elements';
 import { formatNumber, stateDisplay } from './format';
+import { BasisBadge } from './provenance';
 
 /**
  * v2/v3/v4/v5 共用的交互叶元素视图：数值输入、滑块、下拉选择与结果展示。
@@ -28,6 +32,12 @@ export interface InteractiveElementProps {
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
+  /** v6 依据旁路表；旧协议不传。 */
+  sources?: readonly GenuiSource[];
+  basis?: Readonly<Record<string, GenuiBasis>>;
+  basisPath?: string;
+  today?: string;
+  editedState?: readonly string[];
 }
 
 export function InteractiveElementView({
@@ -40,8 +50,23 @@ export function InteractiveElementView({
   fieldErrors,
   onValueChange,
   onNumberInput,
+  sources,
+  basis,
+  basisPath,
+  today,
+  editedState,
 }: InteractiveElementProps) {
   const controlId = useId();
+  const showBasis = today !== undefined;
+  const badgeFor = (key: string, edited?: boolean) =>
+    showBasis && basis?.[key] !== undefined ? (
+      <BasisBadge
+        basis={basis[key]}
+        sources={sources}
+        today={today}
+        edited={edited}
+      />
+    ) : null;
 
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = document.state.find((item) => item.id === element.bind);
@@ -52,7 +77,13 @@ export function InteractiveElementView({
     if (element.kind === 'select' && variable.kind === 'select') {
       return (
         <div className="genui-control">
-          <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+          <div className="genui-control-head">
+            <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+            {badgeFor(
+              basisKeyForState(variable.id),
+              editedState?.includes(variable.id) ?? false,
+            )}
+          </div>
           <select
             id={controlId}
             className="genui-select"
@@ -77,7 +108,13 @@ export function InteractiveElementView({
     if (element.kind === 'slider') {
       return (
         <div className="genui-control">
-          <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+          <div className="genui-control-head">
+            <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+            {badgeFor(
+              basisKeyForState(variable.id),
+              editedState?.includes(variable.id) ?? false,
+            )}
+          </div>
           <div className="genui-slider-row">
             <input
               id={controlId}
@@ -103,9 +140,15 @@ export function InteractiveElementView({
     const inputValue = getOwn(drafts, variable.id) ?? String(current);
     return (
       <div className="genui-control">
-        <label className="genui-control-label" htmlFor={controlId}>
-          {variable.label}{variable.unit ? <span className="genui-control-unit">（{variable.unit}）</span> : null}
-        </label>
+        <div className="genui-control-head">
+          <label className="genui-control-label" htmlFor={controlId}>
+            {variable.label}{variable.unit ? <span className="genui-control-unit">（{variable.unit}）</span> : null}
+          </label>
+          {badgeFor(
+            basisKeyForState(variable.id),
+            editedState?.includes(variable.id) ?? false,
+          )}
+        </div>
         <input
           id={controlId}
           className="genui-number-input"
@@ -132,7 +175,11 @@ export function InteractiveElementView({
     const unit = element.unit ?? definition?.unit;
     return (
       <div className="genui-value">
-        <span className="genui-value-label">{element.label}</span>
+        <div className="genui-value-head">
+          <span className="genui-value-label">{element.label}</span>
+          {badgeFor(basisKeyForElement(basisPath ?? '')) ??
+            badgeFor(basisKeyForDerived(source.id))}
+        </div>
         {error ? (
           <span className="genui-runtime-error" role="status">无法计算：{error}</span>
         ) : (
@@ -156,7 +203,10 @@ export function InteractiveElementView({
           : null;
     return (
       <div className="genui-value">
-        <span className="genui-value-label">{element.label}</span>
+        <div className="genui-value-head">
+          <span className="genui-value-label">{element.label}</span>
+          {badgeFor(basisKeyForElement(basisPath ?? ''))}
+        </div>
         {error ? (
           <span className="genui-runtime-error" role="status">无法计算：{error}</span>
         ) : (
@@ -178,7 +228,11 @@ export function InteractiveElementView({
 
   return (
     <div className="genui-value">
-      <span className="genui-value-label">{element.label}</span>
+      <div className="genui-value-head">
+        <span className="genui-value-label">{element.label}</span>
+        {badgeFor(basisKeyForElement(basisPath ?? '')) ??
+          badgeFor(basisKeyForState(source.id), editedState?.includes(source.id) ?? false)}
+      </div>
       <output className="genui-value-output" aria-label={element.label}>{display}</output>
     </div>
   );

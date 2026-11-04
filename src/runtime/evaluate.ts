@@ -14,6 +14,7 @@ import {
   type GenuiV4Element,
   type GenuiV5Document,
   type GenuiV5Element,
+  type GenuiV6Document,
   type InteractiveStateValues,
   type ModelKind,
   type NumericExpression,
@@ -32,7 +33,12 @@ import {
  * 逐 x 采样的成本不挤占共享求值池，超预算只影响该系列。
  */
 
-type StatefulDocument = GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document;
+type StatefulDocument =
+  | GenuiV2Document
+  | GenuiV3Document
+  | GenuiV4Document
+  | GenuiV5Document
+  | GenuiV6Document;
 
 /** 运行时只需要状态与派生定义；v2–v5 文档都满足该结构。 */
 interface StatefulDocumentLike {
@@ -1013,7 +1019,7 @@ function expressionUsesX(expression: FunctionExpression): boolean {
  * 表达式、条件、函数系列或模型上，不阻断整张卡片。
  */
 export function evaluateComposite(
-  document: GenuiV3Document | GenuiV4Document | GenuiV5Document,
+  document: GenuiV3Document | GenuiV4Document | GenuiV5Document | GenuiV6Document,
   state: InteractiveStateValues,
 ): CompositeEvaluation {
   const engine = new EvaluationEngine(document, state);
@@ -1024,7 +1030,7 @@ export function evaluateComposite(
   const functions = new Map<ChartFunctionDefinition, FunctionSeriesResult>();
   const models = new Map<string, ModelResult>();
 
-  if (document.version === 5) {
+  if ('models' in document) {
     for (const model of document.models) {
       // 每个模型使用独立引擎与独立预算：模型输入可读 state/derived 和更早
       // 模型的标量，但不会占用元素/条件的共享 500 次池，也不会把失败扩散

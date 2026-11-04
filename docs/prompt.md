@@ -1,6 +1,6 @@
-# GenUI 默认增强提示词（v2.6）
+# GenUI 默认增强提示词（v2.7）
 
-更新日期：2026-11-03。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；issue7 起新增「本轮生成工具」变体（`GENUI_TOOL_PROMPT_TEXT`）与「普通回答」说明（`GENUI_PLAIN_PROMPT_NOTE`），默认自动适配文本保持本节 v2.6 逐字节不变（见下文「本轮模式」）。已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
+更新日期：2026-11-04。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；issue7 起新增「本轮生成工具」变体（`GENUI_TOOL_PROMPT_TEXT`）与「普通回答」说明（`GENUI_PLAIN_PROMPT_NOTE`），默认自动适配文本保持本节 v2.7 逐字节不变（见下文「本轮模式」）。已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
 
 ## 注入方式与可见性
 
@@ -14,8 +14,8 @@
 
 issue7 在浮标开关按钮下新增「本轮：…」循环按钮，只影响当前这一轮草稿：
 
-- **自动适配**（默认）：即上文 v2.6 正式文本，逐字节不变。
-- **明确生成工具**：首段表达策略替换为“用户已在浮标中明确选择本轮回答工具：优先用 ```genui 代码块把本轮任务表达为可交互界面，正文与界面按下方分工互补。纯事实问答、闲聊或过短的请求仍可直接用普通文字回答；现有协议能力确实无法表达任务时不要硬造界面，改用普通文字回答，并简短说明未能生成界面的原因。”；起始标记改为「〔GenUI 本轮生成工具 v2.6｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕」，其余协议主体与 v2.6 逐字节共享（同版本号、同结束标记、同示例）。
+- **自动适配**（默认）：即上文 v2.7 正式文本，逐字节不变。
+- **明确生成工具**：首段表达策略替换为“用户已在浮标中明确选择本轮回答工具：优先用 ```genui 代码块把本轮任务表达为可交互界面，正文与界面按下方分工互补。纯事实问答、闲聊或过短的请求仍可直接用普通文字回答；现有协议能力确实无法表达任务时不要硬造界面，改用普通文字回答，并简短说明未能生成界面的原因。”；起始标记改为「〔GenUI 本轮生成工具 v2.7｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕」，其余协议主体与 v2.7 逐字节共享（同版本号、同结束标记、同示例）。
 - **普通回答**：本轮不追加任何文本，面板显示固定说明「本轮选择「普通回答」：不会向你的草稿追加任何 GenUI 增强文本。」。
 
 模式切换只作用于**草稿末尾逐字完整的扩展说明**：
@@ -34,10 +34,10 @@ issue7 在浮标开关按钮下新增「本轮：…」循环按钮，只影响�
 
 ## 正式文本
 
-以下为 v2.6 提示词的逐字内容（随消息作为普通文本发送）：
+以下为 v2.7 提示词的逐字内容（随消息作为普通文本发送）：
 
 ````text
-〔GenUI 增强 v2.6｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
+〔GenUI 增强 v2.7｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
 你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 ```genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
 
 内容分工（生成前先确定每项信息的主要呈现位置）：
@@ -48,7 +48,7 @@ issue7 在浮标开关按钮下新增「本轮：…」循环按钮，只影响�
 
 输出要求：
 - 需要界面时，只输出一个 ```genui 代码块，放在内容自然衔接的位置；块内是合法 JSON（无注释、尾逗号、模板字符串或 Markdown），块外正文与界面按上述分工互补。
-- 版本固定为 5。根对象：{"type":"genui","version":5,"title":"可选标题","state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models 必填，前两者可为空数组，models 为 1–4 个；elements 必填，且至少包含 1 个元素。
+- 版本固定为 6。根对象：{"type":"genui","version":6,"title":"可选标题","sources":[...],"basis":{...},"state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models、elements 必填，前两者可为空数组，models 为 0–4 个；elements 必填，且至少包含 1 个元素；sources 与 basis 可选。
 - id 以字母开头、不超过 32 字符，仅字母/数字/下划线；标题与文本不超过 120 字。
 state 项：
 - 数值：{"id","label","kind":"number","initial","min","max","step","unit"?}。min<max，initial 在范围内且与 step 对齐，绝对值不超过 1e12；无单位时省略 unit，不要写空字符串。
@@ -63,6 +63,8 @@ models 项（v5 语义能力；按数组顺序计算，只可引用更早模型�
 - 成本 {"kind":"cost","id","label"?,"unit"?,"useUnit"?,"precision"?,"horizon":表达式,"plans":[{"label","fee":表达式,"coverage":数字,"usesPerPeriod":表达式}]}。coverage 是每份覆盖的周期数，购买份数=ceil(周期/coverage)，周期为 0 时总成本为 0；总次数=每周期次数×周期，单次成本=总成本/总次数，总次数为 0 时不可用；输出周期/方案数/最低总成本/最低单次成本，按单次成本升序。
 - 偏好 {"kind":"preference","id","label"?,"precision"?,"dimensions":[{"id","label","weight":数字或表达式,"direction":"higher|lower"}],"candidates":[{"label","values":{维度id:数字|null}}],"filters"?:[{"dimension","min"?,"max"?}]}。weight 可写数字常量或引用 state/derived/更早模型，运行时按 0–1000 截断并给出警告；filters 的 min/max 可写数字常量或表达式；先按 filters 过滤（缺失资料不通过），再对通过候选的现存值做 min-max 归一（同值归一为 1），按权重加权；缺失不计 0、不进分母；输出候选数/通过数/计分数/最高分/权重和/维度数；同分同名次。
 模型只读 state/derived 与更早模型，模型叶子用于在模型输入中引用已算标量；模型值在元素中通过 value/table/chart 的模型来源读取，不要手工复制计算结果。模型失败只影响自身并显示错误，不得把缺失或失败写成 0。
+sources 项（可选，最多 20 条）：{"id","label","url"?,"publisher"?,"publishedAt"?,"retrievedAt"?,"note"?}。id 以字母开头、仅字母/数字/下划线/点/短横；label 不超过 120 字。url 只写 https 链接，不要带账号密码、空白或控制字符；插件不会访问链接、不会核验内容，界面统一标为「模型引用 · 未核验」，绝不要写「已验证」或暗示插件查过资料。日期用 YYYY-MM-DD 或带时区的 ISO 时间（如 2026-01-02T10:00:00+08:00）。
+basis 项（可选，最多 200 条）：键为 "state.<状态id>"、"derived.<派生id>"、或 "element.<从0开始的元素路径>"（section 子元素继续用点号，columns 用列索引，例如 element.2.0；表格再带 ".col.<列索引>"、".row.<行索引>"，图表再带 ".item.<条目索引>"、".series.<系列索引>"）。值为 {"kind":"user|example|estimate|reference|computed|unknown","sourceId"?,"note"?,"asOf"?,"validUntil"?}：user 用户提供、example 示例数据、estimate 估算、reference 模型引用的资料（必须有 sourceId，界面标未核验）、computed 本地计算结果（derived 只能用它，且不能带 sourceId）、unknown 未标注来源。state 不能标 computed。asOf/validUntil 用同样的日期格式，validUntil 不得早于 asOf。没有把握时用 unknown 或省略该条，不要伪造依据；没有 basis 的数据会显示「未标注依据」。
 elements 项（按顺序显示）：
 - text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?}，模型值用 {"kind":"value","label","source":{"kind":"model","model":"模型id","key":"标量"},"unit"?}
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
@@ -72,15 +74,24 @@ elements 项（按顺序显示）：
 - explain {"kind":"explain","model":"模型id","title"?,"visibleIf"?}：由本地根据模型输出生成计算依据与诊断，不引入外部数据或脚本。
 visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；models 不超过 4（预算支出项 20、成本方案 10、偏好候选 30/维度 8/筛选 8）；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列离散点 2–50、总点数不超过 100、同系列 x 严格递增，函数曲线每系列采样数默认 41（上限 50）、总采样不超过 200；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8、v5 节点不超过 400；每次重算不超过 500 次运算（函数曲线采样另有每系列 5000 次的独立预算，模型计算另有 5000 次预算）。
-内容：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实；示例值要贴近场景。全局依据、来源和缺失数据在正文说明，控件相关的假设、示例标记与条件提醒放在界面 note 中，避免两处冗长重复；影响理解的必要说明必须保留。
+内容与依据：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实或来源；示例值要贴近场景。有资料出处时在 sources 声明并在 basis 用 reference 指向它，同时说明未核验；没有出处就用 example/estimate/unknown，不要借用不存在的来源。缺失的表格单元格用 null，不要用 0 代替；有时效的数据写 validUntil，过期后界面会标「已过期」。随参数变化的结论用 state/derived 或模型来源展示，不要在正文或静态 text/note 中写死当前结果；若正文引用初始结果，明确它只对应初始条件。用户修改假设后，界面会标「用户修改 · 原依据」并提示静态说明可能过时。全局依据、来源、缺失与时效说明在正文可简述，控件相关的假设、示例标记与条件提醒放在界面 note 中，避免两处冗长重复；影响理解的必要说明必须保留。导出方案与继续讨论会自动携带 sources/basis、当前状态与时间。
 能力不足时不要生成 genui，改用普通文本。不要在回答中复述这段增强说明或讨论扩展（用户主动询问除外）。
 
 示例（仅示意结构；正文可简短提示“调整收入和固定支出，查看每月剩余变化”，不再列一份相同收支明细）：
 ```genui
 {
   "type": "genui",
-  "version": 5,
+  "version": 6,
   "title": "月度预算速算",
+  "sources": [
+    { "id": "user_budget", "label": "用户描述的月收入", "publisher": "用户", "note": "对话中提供，未附外部链接" }
+  ],
+  "basis": {
+    "state.income": { "kind": "user", "sourceId": "user_budget" },
+    "state.fixed": { "kind": "example", "note": "按常见水平示意" },
+    "element.3": { "kind": "computed" },
+    "element.4": { "kind": "computed" }
+  },
   "state": [
     { "id": "income", "label": "月收入", "kind": "number", "initial": 8000, "min": 0, "max": 30000, "step": 500, "unit": "元" },
     { "id": "fixed", "label": "固定支出", "kind": "number", "initial": 3000, "min": 0, "max": 20000, "step": 100, "unit": "元" }
@@ -143,4 +154,5 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
 - **v2.4（2026-11-03）**：规格升级到协议 v5，新增语义模型 models、explain 元素、模型来源的 value/table/chart 与函数曲线系列；上限同步。
 - **v2.5（2026-11-03）**：明确预算/成本/偏好三类模型的固定标量键，允许偏好筛选阈值直接写数字常量，降低键名猜测与表达式包装错误。
 - **v2.6（2026-11-04）**：在 v2.5 基础上恢复候选表 `selectable` 说明（选中项、筛选与一致快照进入「继续讨论」），协议能力与上限不变。
+- **v2.7（2026-11-04）**：规格升级到协议 v6，新增根级 `sources` 与依据旁路表 `basis`；明确来源类别、`reference` 必须有 `sourceId` 且界面标「未核验」、`derived` 只能标 `computed`、缺失用 `null` 而非 0、带时区的 `validUntil` 按时刻判过期、用户修改与静态说明提示，以及导出方案/继续讨论携带依据。v5 的模型、函数曲线与既有字段不变。
 - **v2.6 本轮模式变体（issue7，2026-11-04）**：默认自动适配文本保持 v2.6 逐字节不变；新增「本轮生成工具」变体（仅首段表达策略不同、协议主体逐字节共享，标记头与 START 大写同款）与「普通回答」不追加说明。两者未发布、未跑真实模型对照，不预置成功率结论；对照任务集与回退策略见 `docs/issue7-baseline-tasks.md`。浮标行为与状态机由 `augment.ts`/`toggle.ts` 分层实现，模式仅轮内生效。

@@ -93,7 +93,7 @@ describe('enhanceDocument 整链路', () => {
 
   it('未知版本安全回退并记录 unsupported-version', () => {
     const doc = buildDoc(
-      assistant(codeBlock({ raw: '{"type":"genui","version":6,"elements":[{"kind":"text","value":"x"}]}' })),
+      assistant(codeBlock({ raw: '{"type":"genui","version":7,"elements":[{"kind":"text","value":"x"}]}' })),
     );
 
     expect(enhanceDocument(doc).failed).toBe(1);

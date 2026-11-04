@@ -2,6 +2,7 @@ import type { ErrorObject } from 'ajv';
 import genuiValidate from './genui-validator.generated';
 import { buildSchemaIssues, formatSchemaPath } from './diagnose';
 import { isStepAligned } from './step';
+import { isValidProvenanceDate } from './provenance';
 import {
   LIMITS,
   MODEL_SCALAR_KEYS,
@@ -19,6 +20,9 @@ import {
   type GenuiV4Element,
   type GenuiV5Document,
   type GenuiV5Element,
+  type GenuiV6Document,
+  type GenuiBasis,
+  type GenuiSource,
   type InteractiveElement,
   type ModelValueElement,
   type NumericExpression,
@@ -150,9 +154,9 @@ interface SemanticContext {
 }
 
 function createContext(
-  document: GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document,
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document | GenuiV6Document,
 ): SemanticContext {
-  const models = document.version === 5 ? document.models : [];
+  const models = 'models' in document ? document.models : [];
   return {
     stateById: new Map(document.state.map((variable) => [variable.id, variable])),
     derivedById: new Map(document.derived.map((value) => [value.id, value])),
@@ -420,7 +424,7 @@ function firstDuplicateIndex<T>(items: T[], keyOf: (item: T) => string): number 
 /** 状态定义、派生定义、表达式预算与循环依赖（v2/v3/v4 共用）。 */
 function inspectStateAndDerived(
   context: SemanticContext,
-  document: GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document,
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document | GenuiV6Document,
 ): SemanticFailure | null {
   const duplicateState = firstDuplicateIndex(document.state, (variable) => variable.id);
   if (duplicateState >= 0) {
@@ -1204,6 +1208,213 @@ function validateV4Semantics(document: GenuiV4Document): SemanticFailure | null 
   return inspectDependencyCycles(context);
 }
 
+type BasisTargetKind = 'state' | 'derived' | 'element';
+
+interface BasisTarget {
+  kind: BasisTargetKind;
+  /** 元素的具体形态；state/derived 为 undefined。 */
+  element?: GenuiV5Element;
+  suffix?: 'col' | 'row' | 'item' | 'series';
+}
+
+const BASIS_SUFFIXES = new Set(['col', 'row', 'item', 'series']);
+
+/** 解析 element.<i>[.<c>.<j>…][.row.<n>|.col.<n>|.item.<n>|.series.<n>]。 */
+function resolveElementBasisKey(
+  elements: GenuiV5Element[],
+  segments: string[],
+): BasisTarget | null {
+  if (segments.length === 0) return null;
+  let suffix: BasisTarget['suffix'];
+  let path = segments;
+  const last = segments[segments.length - 2];
+  if (segments.length >= 3 && last && BASIS_SUFFIXES.has(last)) {
+    const index = Number(segments[segments.length - 1]);
+    if (!Number.isInteger(index) || index < 0) return null;
+    suffix = last as BasisTarget['suffix'];
+    path = segments.slice(0, -2);
+  }
+  let list: GenuiV5Element[] = elements;
+  let element: GenuiV5Element | undefined;
+  for (let position = 0; position < path.length; position += 1) {
+    const segment = path[position];
+    const index = Number(segment);
+    if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
+    element = list[index];
+    if (position === path.length - 1) break;
+    if (element.kind === 'section') {
+      list = element.children;
+      continue;
+    }
+    if (element.kind === 'columns') {
+      const columnIndex = Number(path[position + 1]);
+      if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= element.columns.length) {
+        return null;
+      }
+      list = element.columns[columnIndex];
+      position += 1;
+      continue;
+    }
+    return null;
+  }
+  if (!element) return null;
+  if (suffix === 'col') {
+    if (element.kind !== 'table' || !('columns' in element)) return null;
+  } else if (suffix === 'row') {
+    if (element.kind !== 'table' || !('rows' in element)) return null;
+  } else if (suffix === 'item') {
+    if (element.kind !== 'chart' || !('items' in element)) return null;
+  } else if (suffix === 'series') {
+    if (element.kind !== 'chart' || !('series' in element)) return null;
+  }
+  return { kind: 'element', element, suffix };
+}
+
+function resolveBasisKey(document: GenuiV6Document, key: string): BasisTarget | null {
+  if (key.startsWith('state.')) {
+    const id = key.slice('state.'.length);
+    return document.state.some((variable) => variable.id === id) ? { kind: 'state' } : null;
+  }
+  if (key.startsWith('derived.')) {
+    const id = key.slice('derived.'.length);
+    return document.derived.some((value) => value.id === id) ? { kind: 'derived' } : null;
+  }
+  if (key.startsWith('element.')) {
+    return resolveElementBasisKey(document.elements, key.slice('element.'.length).split('.'));
+  }
+  return null;
+}
+
+function inspectBasisEntry(
+  document: GenuiV6Document,
+  sourcesById: Map<string, GenuiSource>,
+  key: string,
+  basis: GenuiBasis,
+): SemanticFailure | null {
+  const pointer = `/basis/${key}`;
+  const target = resolveBasisKey(document, key);
+  if (!target) {
+    return semanticFailure(
+      'invalid-reference',
+      `依据键无法解析到已声明的数据：${key}`,
+      pointer,
+      '键应为 state.<id>、derived.<id> 或 element.<path>',
+    );
+  }
+  if (basis.kind === 'reference') {
+    if (!basis.sourceId) {
+      return semanticFailure(
+        'semantic-violation',
+        `依据 ${key} 标记为模型引用但没有 sourceId`,
+        `${pointer}/sourceId`,
+        'reference 必须绑定一个已声明的来源',
+      );
+    }
+  } else if (basis.kind === 'computed') {
+    if (basis.sourceId) {
+      return semanticFailure(
+        'semantic-violation',
+        `依据 ${key} 的计算结果不能绑定来源`,
+        `${pointer}/sourceId`,
+        'computed 表示本地计算，不应再引用外部来源',
+      );
+    }
+  }
+  if (basis.sourceId && !sourcesById.has(basis.sourceId)) {
+    return semanticFailure(
+      'invalid-reference',
+      `依据 ${key} 引用了未声明的来源：${basis.sourceId}`,
+      `${pointer}/sourceId`,
+      'sourceId 必须是 sources 中已声明的 id',
+    );
+  }
+  if (target.kind === 'derived' && basis.kind !== 'computed') {
+    return semanticFailure(
+      'semantic-violation',
+      `派生结果 ${key.slice('derived.'.length)} 的依据应标为计算结果`,
+      `${pointer}/kind`,
+      'derived 只能使用 computed',
+    );
+  }
+  if (target.kind === 'state' && basis.kind === 'computed') {
+    return semanticFailure(
+      'semantic-violation',
+      `状态输入 ${key.slice('state.'.length)} 是原始输入，不能标为计算结果`,
+      `${pointer}/kind`,
+      'state 应使用 user/example/estimate/reference/unknown',
+    );
+  }
+  if (basis.asOf && !isValidProvenanceDate(basis.asOf)) {
+    return semanticFailure('semantic-violation', `依据 ${key} 的 asOf 不是有效日期`, `${pointer}/asOf`);
+  }
+  if (basis.validUntil && !isValidProvenanceDate(basis.validUntil)) {
+    return semanticFailure(
+      'semantic-violation',
+      `依据 ${key} 的 validUntil 不是有效日期`,
+      `${pointer}/validUntil`,
+    );
+  }
+  if (basis.asOf && basis.validUntil && basis.validUntil < basis.asOf) {
+    return semanticFailure(
+      'semantic-violation',
+      `依据 ${key} 的 validUntil 早于 asOf`,
+      `${pointer}/validUntil`,
+    );
+  }
+  return null;
+}
+
+function inspectV6Provenance(document: GenuiV6Document): SemanticFailure | null {
+  const sourcesById = new Map<string, GenuiSource>();
+  for (const [index, source] of (document.sources ?? []).entries()) {
+    if (sourcesById.has(source.id)) {
+      return semanticFailure(
+        'invalid-reference',
+        `来源 id 重复：${source.id}`,
+        `/sources/${index}/id`,
+        'sources 的 id 必须唯一',
+      );
+    }
+    for (const field of ['publishedAt', 'retrievedAt'] as const) {
+      const value = source[field];
+      if (value && !isValidProvenanceDate(value)) {
+        return semanticFailure(
+          'semantic-violation',
+          `来源 ${source.id} 的 ${field} 不是有效日期`,
+          `/sources/${index}/${field}`,
+        );
+      }
+    }
+    sourcesById.set(source.id, source);
+  }
+  const entries = Object.entries(document.basis ?? {});
+  if (entries.length > LIMITS.maxBasisEntries) {
+    return semanticFailure('too-complex', '依据条目超过上限', '/basis');
+  }
+  for (const [key, basis] of entries) {
+    const failure = inspectBasisEntry(document, sourcesById, key, basis);
+    if (failure) return failure;
+  }
+  return null;
+}
+
+function validateV6Semantics(document: GenuiV6Document): SemanticFailure | null {
+  const context = createContext(document);
+  const stateFailure = inspectStateAndDerived(context, document);
+  if (stateFailure) return stateFailure;
+
+  const modelFailure = inspectV5Models(context, document.models);
+  if (modelFailure) return modelFailure;
+
+  const elementFailure = inspectV5Elements(context, document.elements);
+  if (elementFailure) return elementFailure;
+
+  const provenanceFailure = inspectV6Provenance(document);
+  if (provenanceFailure) return provenanceFailure;
+
+  return inspectDependencyCycles(context);
+}
+
 function validateV5Semantics(document: GenuiV5Document): SemanticFailure | null {
   const context = createContext(document);
   const stateFailure = inspectStateAndDerived(context, document);
@@ -1286,6 +1497,9 @@ export function parseGenui(raw: string): ParseGenuiResult {
     if (failure) return failure;
   } else if (document.version === 5) {
     const failure = validateV5Semantics(document);
+    if (failure) return failure;
+  } else if (document.version === 6) {
+    const failure = validateV6Semantics(document);
     if (failure) return failure;
   }
   return { ok: true, document };

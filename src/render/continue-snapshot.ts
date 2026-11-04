@@ -41,6 +41,10 @@ export interface ContinueSnapshotOptions {
   drafts: Record<string, string>;
   fieldErrors: Record<string, string>;
   tables: Record<string, TableViewState>;
+  /** v6：用户修改过的状态 id。 */
+  editedState?: readonly string[];
+  /** v6：生成摘要时的本地日期。 */
+  today?: string;
 }
 
 export interface ContinueSnapshot {
@@ -239,6 +243,14 @@ export function createContinueSnapshot(options: ContinueSnapshotOptions): Contin
       derivedErrors: options.derivedErrors,
       tables,
       drafts,
+      ...(doc.version === 6
+        ? {
+            sources: doc.sources ?? [],
+            basis: doc.basis ?? {},
+            editedState: options.editedState,
+            today: options.today,
+          }
+        : {}),
     },
     hasSelection,
     hasAlternative,

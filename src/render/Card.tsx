@@ -7,6 +7,12 @@ import type {
   StateVariable,
   TextElement,
 } from '../protocol/types';
+import {
+  PLAN_MAX_LENGTH,
+  parsePlanImport,
+  serializePlan,
+} from '../protocol/plan';
+import { todayLocalDate } from '../protocol/provenance';
 import { isStepAligned } from '../protocol/step';
 import { hasOwn } from '../runtime/records';
 import {
@@ -40,6 +46,7 @@ import {
   type ContinueIntent,
   type ContinueSummaryInput,
 } from './summarize';
+import { ProvenancePanel } from './provenance';
 import { ScenarioPanel } from './scenario-panel';
 import { getBrandMarkUrl } from '../branding';
 
@@ -111,7 +118,7 @@ function readErrorMessage(error: unknown): string {
 }
 
 export function Card({
-  document: doc,
+  document: initialDocument,
   rawJson,
   registry,
   onToggleRaw,
@@ -125,6 +132,16 @@ export function Card({
   scenarioPort,
 }: CardProps) {
   const brandMarkUrl = getBrandMarkUrl();
+  const [doc, setDoc] = useState<GenuiDocument>(initialDocument);
+  const [today] = useState(() => todayLocalDate());
+  const [importedPlan, setImportedPlan] = useState<{
+    fileName: string;
+    exportedAt: string;
+  } | null>(null);
+  const [editedState, setEditedState] = useState<Record<string, true>>({});
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const editedIds = Object.keys(editedState).sort();
+  const hasEdits = editedIds.length > 0;
   const [showRaw, setShowRaw] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [followupFeedback, setFollowupFeedback] = useState<string | null>(null);
@@ -140,6 +157,7 @@ export function Card({
   const [tables, setTables] = useState<Record<string, TableViewState>>(initialCardState.tables);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const hasFieldErrors = Object.keys(fieldErrors).length > 0;
   // 表格的筛选/排序由外部状态驱动，重置时递增该计数器强制重新挂载表格。
   const [resetToken, setResetToken] = useState(0);
   const [savedAt, setSavedAt] = useState<number | null>(savedPlanAt ?? null);
@@ -202,6 +220,10 @@ export function Card({
   // 需要用户在预览里再点一次「填入输入框」，绝不自动发送。
   const handleContinue = () => {
     if (doc.version === 1) return;
+    if (hasFieldErrors) {
+      setFollowupFeedback('存在未确认的输入：请先修正或恢复有效值，再继续讨论。');
+      return;
+    }
     if (preview) {
       previewTextRef.current?.focus();
       return;
@@ -215,6 +237,7 @@ export function Card({
       drafts,
       fieldErrors,
       tables,
+      ...(doc.version === 6 ? { editedState: editedIds, today } : {}),
     });
     const intent: ContinueIntent =
       snapshot.hasSelection && snapshot.hasAlternative
@@ -312,6 +335,14 @@ export function Card({
     const next = { ...state, [id]: value };
     setState(next);
     writeState(next, tables);
+    setEditedState((previous) => {
+      const isEdited = value !== variable.initial;
+      if (isEdited === (previous[id] === true)) return previous;
+      const updated = { ...previous };
+      if (isEdited) updated[id] = true;
+      else delete updated[id];
+      return updated;
+    });
     clearFieldError(id);
     setDrafts((previous) => {
       if (!hasOwn(previous, id)) return previous;
@@ -353,6 +384,7 @@ export function Card({
     setFieldErrors({});
     setTables({});
     writeState(next, {});
+    setEditedState({});
     setResetToken((previous) => previous + 1);
     closePreview();
   };
@@ -414,6 +446,91 @@ export function Card({
     }
   };
 
+  const readFileText = async (file: File): Promise<string> => {
+    if (typeof file.text === 'function') return file.text();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+      reader.readAsText(file);
+    });
+  };
+
+  const handleExportPlan = () => {
+    if (doc.version === 1) return;
+    if (hasFieldErrors) {
+      setPlanFeedback('存在未确认的输入：请先修正或恢复有效值，再导出方案。');
+      return;
+    }
+    try {
+      const text = serializePlan(doc, state, new Date(), editedIds);
+      if (typeof URL.createObjectURL !== 'function') {
+        setPlanFeedback('当前环境不支持文件下载；方案未写出。');
+        return;
+      }
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement('a');
+      anchor.href = url;
+      anchor.download = `genui-plan-${today}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setPlanFeedback('方案已导出：包含界面、来源/依据与当前状态。');
+    } catch (error) {
+      setPlanFeedback(`导出失败：${readErrorMessage(error)}`);
+    }
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (file.size > PLAN_MAX_LENGTH) {
+      setPlanFeedback('导入失败：方案文件超过大小上限。');
+      return;
+    }
+    try {
+      const parsed = parsePlanImport(await readFileText(file));
+      if (!parsed.ok) {
+        setPlanFeedback(`导入失败：${parsed.detail}`);
+        return;
+      }
+      const plan = parsed.plan;
+      setDoc(plan.document);
+      setState(plan.state);
+      setDrafts({});
+      setFieldErrors({});
+      setTables({});
+      const restoredEdited = plan.editedState ?? [];
+      setEditedState(Object.fromEntries(restoredEdited.map((id) => [id, true as const])));
+      writeState(plan.state, {});
+      setResetToken((previous) => previous + 1);
+      setImportedPlan({ fileName: file.name, exportedAt: plan.exportedAt });
+      setPlanFeedback('已恢复方案与当前状态；来源、依据和适用时间随方案载入。');
+      closePreview();
+    } catch (error) {
+      setPlanFeedback(`导入失败：${readErrorMessage(error)}`);
+    }
+  };
+
+  const handleRestoreOriginal = () => {
+    setDoc(initialDocument);
+    const next = initialDocument.version === 1
+      ? {}
+      : createInitialState(initialDocument);
+    setState(next);
+    setDrafts({});
+    setFieldErrors({});
+    setTables({});
+    setEditedState({});
+    writeState(next, {});
+    setResetToken((previous) => previous + 1);
+    setImportedPlan(null);
+    setPlanFeedback(null);
+    closePreview();
+  };
+
   const renderLegacyElement = (element: TextElement | InteractiveElement, index: number) => {
     if (element.kind === 'text') {
       const Component = registry.get('text');
@@ -443,7 +560,12 @@ export function Card({
   };
 
   return (
-    <section className="genui-card" data-genui-card="" data-genui-version={doc.version}>
+    <section
+      className="genui-card"
+      data-genui-card=""
+      data-genui-version={doc.version}
+      data-plan-imported={importedPlan ? 'true' : undefined}
+    >
       <header className="genui-card-header">
         {brandMarkUrl ? (
           <img className="genui-card-logo" src={brandMarkUrl} alt="" aria-hidden="true" />
@@ -461,7 +583,50 @@ export function Card({
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
-        {doc.version === 3 || doc.version === 4 || doc.version === 5 ? (
+        {doc.version === 1 ? null : (
+          <div className="genui-plan-bar">
+            <span className="genui-plan-label">方案文件</span>
+            <button type="button" className="genui-plan-export" onClick={handleExportPlan}>
+              导出方案文件
+            </button>
+            <button
+              type="button"
+              className="genui-plan-import"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              导入方案文件
+            </button>
+            {importedPlan ? (
+              <button type="button" className="genui-plan-restore" onClick={handleRestoreOriginal}>
+                恢复原始界面
+              </button>
+            ) : null}
+            <input
+              ref={fileInputRef}
+              className="genui-plan-file"
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(event) => void handleImportFile(event)}
+            />
+            {importedPlan ? (
+              <span className="genui-plan-origin">
+                已载入 {importedPlan.fileName} · 导出于 {importedPlan.exportedAt}
+              </span>
+            ) : null}
+            {planFeedback ? (
+              <span className="genui-plan-feedback" role="status">
+                {planFeedback}
+              </span>
+            ) : null}
+          </div>
+        )}
+        {hasEdits ? (
+          <p className="genui-edit-banner">
+            输入已修改：静态文字/说明按初始条件生成，可能已过时；当前值与导出会标注「用户修改」并保留原依据。
+          </p>
+        ) : null}
+        {doc.version === 3 || doc.version === 4 || doc.version === 5 || doc.version === 6 ? (
           <CompositeElementsView
             context={{
               document: doc,
@@ -475,11 +640,32 @@ export function Card({
               resetToken,
               onValueChange: handleValueChange,
               onNumberInput: handleNumberInput,
+              ...(doc.version === 6
+                ? {
+                    sources: doc.sources ?? [],
+                    basis: doc.basis ?? {},
+                    today,
+                    editedState: editedIds,
+                    hasEdits,
+                  }
+                : {}),
             }}
           />
         ) : (
           (doc.elements as Array<TextElement | InteractiveElement>).map(renderLegacyElement)
         )}
+        {doc.version === 6 ? (
+          <ProvenancePanel
+            document={doc}
+            state={state}
+            drafts={drafts}
+            fieldErrors={fieldErrors}
+            editedState={editedIds}
+            onValueChange={handleValueChange}
+            onNumberInput={handleNumberInput}
+            today={today}
+          />
+        ) : null}
         {doc.version === 1 || !scenarioPort ? null : (
           <ScenarioPanel
             document={doc}

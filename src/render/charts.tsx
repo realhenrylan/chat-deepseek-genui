@@ -4,8 +4,15 @@ import type {
   ChartFunctionSeries,
   ChartItem,
   ChartSeries,
+  GenuiBasis,
+  GenuiSource,
   ModelChartElement,
 } from '../protocol/types';
+import {
+  basisKeyForChartItem,
+  basisKeyForChartSeries,
+  basisKeyForElement,
+} from '../protocol/provenance';
 import {
   lookupExpression,
   lookupFunctionSeries,
@@ -13,6 +20,7 @@ import {
   type CompositeEvaluation,
 } from '../runtime/evaluate';
 import { formatNumber } from './format';
+import { BasisBadge } from './provenance';
 
 /**
  * 图表视图（v3/v4/v5）：柱状、折线、饼图。
@@ -605,9 +613,13 @@ function isItemChart(element: AnyChartElement): element is ItemChart {
   return element.chartType === 'bar' || element.chartType === 'pie';
 }
 
-export function ChartElementView({ element, evaluation }: {
+export function ChartElementView({ element, evaluation, sources, basis, basisPath, today }: {
   element: AnyChartElement;
   evaluation: CompositeEvaluation;
+  sources?: readonly GenuiSource[];
+  basis?: Readonly<Record<string, GenuiBasis>>;
+  basisPath?: string;
+  today?: string;
 }) {
   const model = isModelChart(element);
   const items = model
@@ -615,6 +627,17 @@ export function ChartElementView({ element, evaluation }: {
     : isItemChart(element)
       ? evaluateItems(element, evaluation)
       : null;
+  const showBasis = basis !== undefined && basisPath !== undefined && today !== undefined;
+  const elementBasis = showBasis ? basis[basisKeyForElement(basisPath)] : undefined;
+  const itemBases = showBasis && items !== null && isItemChart(element)
+    ? element.items.map((item, index) => ({ label: item.label, basis: basis[basisKeyForChartItem(basisPath, index)] }))
+    : [];
+  const seriesBases = showBasis && items === null
+    ? (element as LineChartElement).series.map((series, index) => ({
+        label: series.label,
+        basis: basis[basisKeyForChartSeries(basisPath, index)],
+      }))
+    : [];
 
   return (
     <figure className="genui-chart">
@@ -627,6 +650,32 @@ export function ChartElementView({ element, evaluation }: {
         )
       ) : (
         <LineChart element={element as LineChartElement} evaluation={evaluation} />
+      )}
+      {elementBasis === undefined && itemBases.length === 0 && seriesBases.length === 0 ? null : (
+        <div className="genui-chart-basis">
+          {elementBasis === undefined ? null : (
+            <span className="genui-chart-basis-item">
+              <span className="genui-chart-basis-label">图表整体</span>
+              <BasisBadge basis={elementBasis} sources={sources} today={today} />
+            </span>
+          )}
+          {itemBases.map(({ label, basis: itemBasis }) =>
+            itemBasis === undefined ? null : (
+              <span className="genui-chart-basis-item" key={`item-${label}`}>
+                <span className="genui-chart-basis-label">{label}</span>
+                <BasisBadge basis={itemBasis} sources={sources} today={today} />
+              </span>
+            ),
+          )}
+          {seriesBases.map(({ label, basis: seriesBasis }) =>
+            seriesBasis === undefined ? null : (
+              <span className="genui-chart-basis-item" key={`series-${label}`}>
+                <span className="genui-chart-basis-label">{label}</span>
+                <BasisBadge basis={seriesBasis} sources={sources} today={today} />
+              </span>
+            ),
+          )}
+        </div>
       )}
     </figure>
   );

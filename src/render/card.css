@@ -1209,3 +1209,483 @@
 .genui-card-root[data-site-theme='dark'] .genui-scenario-recompute-changed {
   color: #ffbe6e;
 }
+
+/* ---------- 阶段 9：依据、假设与方案导出 ---------- */
+
+.genui-plan-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(127, 127, 127, 0.34);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.genui-plan-label {
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.genui-plan-bar button {
+  margin: 0;
+  padding: 3px 9px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.genui-plan-bar button:hover {
+  border-color: #3988ff;
+  background: rgba(57, 136, 255, 0.1);
+}
+
+.genui-plan-origin {
+  opacity: 0.7;
+}
+
+.genui-plan-feedback {
+  margin: 0;
+  flex-basis: 100%;
+  color: #3988ff;
+}
+
+.genui-control-head,
+.genui-value-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.genui-basis {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  margin-left: 6px;
+  padding: 0 7px;
+  border: 1px solid rgba(127, 127, 127, 0.34);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.75;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+.genui-basis-user {
+  border-color: rgba(31, 122, 61, 0.42);
+  background: rgba(31, 122, 61, 0.08);
+}
+
+.genui-basis-example,
+.genui-basis-estimate {
+  border-color: rgba(154, 103, 0, 0.42);
+  background: rgba(154, 103, 0, 0.09);
+}
+
+.genui-basis-reference {
+  border-color: rgba(57, 136, 255, 0.45);
+  background: rgba(57, 136, 255, 0.09);
+}
+
+.genui-basis-computed {
+  border-color: rgba(127, 127, 127, 0.34);
+}
+
+.genui-basis-unknown {
+  border-style: dashed;
+  border-color: rgba(194, 65, 58, 0.45);
+  background: rgba(194, 65, 58, 0.07);
+}
+
+.genui-basis-source,
+.genui-basis-trust,
+.genui-basis-kind-name {
+  opacity: 0.78;
+}
+
+.genui-basis-kind {
+  font-weight: 600;
+}
+
+.genui-basis-alert {
+  color: #c2413a;
+  font-weight: 700;
+}
+
+.genui-basis-edited {
+  border-color: rgba(154, 103, 0, 0.5);
+  border-style: dashed;
+  background: rgba(154, 103, 0, 0.1);
+}
+
+.genui-basis-original {
+  opacity: 0.72;
+}
+
+.genui-edit-banner {
+  margin: 10px 0 0;
+  padding: 7px 10px;
+  border-left: 3px solid #9a6700;
+  border-radius: 4px;
+  background: rgba(154, 103, 0, 0.09);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.genui-static-notice {
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border-left: 3px solid #9a6700;
+  border-radius: 3px;
+  background: rgba(154, 103, 0, 0.08);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.genui-provenance {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(127, 127, 127, 0.26);
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.05);
+  font-size: 12px;
+}
+
+.genui-provenance-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.genui-provenance-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.genui-provenance-mode {
+  margin: 0;
+  padding: 0 7px;
+  border: 1px solid rgba(154, 103, 0, 0.4);
+  border-radius: 999px;
+  color: #8a5d00;
+  background: rgba(154, 103, 0, 0.08);
+  font-size: 11px;
+}
+
+.genui-provenance-intro,
+.genui-provenance-count,
+.genui-provenance-empty,
+.genui-source-empty,
+.genui-assumption-empty {
+  margin: 6px 0 0;
+  opacity: 0.78;
+}
+
+.genui-provenance-subtitle {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.genui-source-list,
+.genui-assumption-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.genui-source,
+.genui-assumption {
+  margin: 6px 0;
+  padding: 6px 0;
+  border-top: 1px dashed rgba(127, 127, 127, 0.22);
+  line-height: 1.65;
+}
+
+.genui-source:first-child,
+.genui-assumption:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.genui-source-head,
+.genui-assumption-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.genui-source-label,
+.genui-assumption-label {
+  font-weight: 600;
+}
+
+.genui-source-trust {
+  padding: 0 6px;
+  border: 1px solid rgba(154, 103, 0, 0.4);
+  border-radius: 999px;
+  color: #8a5d00;
+  background: rgba(154, 103, 0, 0.08);
+  font-size: 11px;
+}
+
+.genui-source-publisher,
+.genui-source-dates,
+.genui-source-note,
+.genui-source-url,
+.genui-assumption-meta,
+.genui-assumption-note,
+.genui-basis-problem {
+  display: block;
+  opacity: 0.76;
+  overflow-wrap: anywhere;
+}
+
+.genui-source-url {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.genui-source-url-missing {
+  font-style: italic;
+}
+
+.genui-source-url-warning {
+  display: block;
+  margin-top: 2px;
+  color: #a8551a;
+  opacity: 1;
+}
+
+.genui-basis-problem {
+  margin: 4px 0 0;
+  color: #a8551a;
+  opacity: 1;
+}
+
+.genui-assumption-input,
+.genui-assumption-select {
+  max-width: 10em;
+  margin: 4px 0 0;
+  padding: 2px 6px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.genui-table-basis {
+  margin: 0 0 6px;
+}
+
+.genui-table-missing-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.genui-table-row-bases {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.genui-chart-basis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.genui-chart-basis-item {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.genui-chart-basis-label {
+  opacity: 0.72;
+}
+
+/* ---------- 阶段 6：站点亮暗主题跟随 ---------- */
+
+/* 颜色规范：默认值即浅色；data-site-theme="dark" 时整体切换。
+   color-scheme 同步原生控件（select 弹层/滚动条）配色。 */
+.genui-card-root[data-site-theme='light'] {
+  color-scheme: light;
+}
+
+.genui-card-root[data-site-theme='dark'] {
+  color-scheme: dark;
+  color: #e8eaf0;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(127, 127, 127, 0.1);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-badge {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-footer {
+  border-top-color: rgba(255, 255, 255, 0.14);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-toggle,
+.genui-card-root[data-site-theme='dark'] .genui-card-reset,
+.genui-card-root[data-site-theme='dark'] .genui-card-expand,
+.genui-card-root[data-site-theme='dark'] .genui-card-followup {
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-toggle:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-reset:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-expand:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-followup:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-number-input,
+.genui-card-root[data-site-theme='dark'] .genui-select,
+.genui-card-root[data-site-theme='dark'] .genui-table-filter input {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-value {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-section,
+.genui-card-root[data-site-theme='dark'] .genui-table-scroll {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-bar-track {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-chart-grid {
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-chart-axis {
+  stroke: rgba(255, 255, 255, 0.42);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-chart-data th,
+.genui-card-root[data-site-theme='dark'] .genui-chart-data td,
+.genui-card-root[data-site-theme='dark'] .genui-table th,
+.genui-card-root[data-site-theme='dark'] .genui-table td {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-table thead th {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-input-error,
+.genui-card-root[data-site-theme='dark'] .genui-runtime-error,
+.genui-card-root[data-site-theme='dark'] .genui-condition-error,
+.genui-card-root[data-site-theme='dark'] .genui-table-warning,
+.genui-card-root[data-site-theme='dark'] .genui-chart-warning {
+  color: #ff9b91;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback {
+  color: #7cb8ff;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-plan-bar,
+.genui-card-root[data-site-theme='dark'] .genui-provenance {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-plan-bar button,
+.genui-card-root[data-site-theme='dark'] .genui-basis,
+.genui-card-root[data-site-theme='dark'] .genui-assumption-input,
+.genui-card-root[data-site-theme='dark'] .genui-assumption-select {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-basis-user {
+  border-color: rgba(93, 211, 139, 0.5);
+  background: rgba(93, 211, 139, 0.12);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-basis-example,
+.genui-card-root[data-site-theme='dark'] .genui-basis-estimate {
+  border-color: rgba(255, 204, 102, 0.5);
+  background: rgba(255, 204, 102, 0.12);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-basis-reference {
+  border-color: rgba(124, 184, 255, 0.55);
+  background: rgba(124, 184, 255, 0.12);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-basis-unknown {
+  border-color: rgba(255, 155, 145, 0.55);
+  background: rgba(255, 155, 145, 0.1);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-source-trust,
+.genui-card-root[data-site-theme='dark'] .genui-provenance-mode {
+  color: #ffcf7a;
+  border-color: rgba(255, 207, 122, 0.45);
+  background: rgba(255, 207, 122, 0.1);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-plan-feedback {
+  color: #7cb8ff;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-basis-alert,
+.genui-card-root[data-site-theme='dark'] .genui-basis-problem,
+.genui-card-root[data-site-theme='dark'] .genui-source-url-warning {
+  color: #ff9b91;
+}
+
+/* v6 依据旁路表：结果与元素依据列表 */
+.genui-basis-block {
+  margin-top: 12px;
+}
+
+.genui-basis-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.genui-basis-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+
+.genui-basis-entry-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

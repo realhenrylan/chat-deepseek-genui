@@ -1,12 +1,15 @@
 import { createElement } from 'react';
 import type {
   ExplainElement,
+  GenuiBasis,
+  GenuiSource,
   GenuiV3Document,
   GenuiV3Element,
   GenuiV4Document,
   GenuiV4Element,
   GenuiV5Document,
   GenuiV5Element,
+  GenuiV6Document,
   InteractiveStateValues,
   ModelTableElement,
   NoteElement,
@@ -35,7 +38,7 @@ import { TableElementView } from './table';
 type AnyElement = GenuiV3Element | GenuiV4Element | GenuiV5Element;
 
 export interface CompositeContext {
-  document: GenuiV3Document | GenuiV4Document | GenuiV5Document;
+  document: GenuiV3Document | GenuiV4Document | GenuiV5Document | GenuiV6Document;
   evaluation: CompositeEvaluation;
   registry: ElementRegistry;
   state: InteractiveStateValues;
@@ -48,6 +51,12 @@ export interface CompositeContext {
   onTableChange: (path: string, view: TableViewState) => void;
   /** 每次卡片重置递增；表格据此重新挂载，清空筛选并恢复初始排序。 */
   resetToken: number;
+  /** v6：根级依据旁路表与来源；旧协议为 undefined。 */
+  sources?: readonly GenuiSource[];
+  basis?: Readonly<Record<string, GenuiBasis>>;
+  today?: string;
+  editedState?: readonly string[];
+  hasEdits?: boolean;
 }
 
 function ConditionError({ message }: { message: string }) {
@@ -123,14 +132,24 @@ function ExplainView({
   );
 }
 
+function StaticStaleNotice({ kind }: { kind: 'text' | 'note' }) {
+  return (
+    <p className="genui-static-notice">
+      输入已修改：这段静态{kind === 'note' ? '说明' : '文字'}按初始条件生成，可能已不对应当前结果。
+    </p>
+  );
+}
+
 function ElementContent({
   element,
   context,
   path,
+  basisPath,
 }: {
   element: AnyElement;
   context: CompositeContext;
   path: string;
+  basisPath: string;
 }) {
   switch (element.kind) {
     case 'explain':
@@ -142,6 +161,7 @@ function ElementContent({
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
+          {context.hasEdits ? <StaticStaleNotice kind="text" /> : null}
           {Component ? createElement(Component, { element }) : <UnknownElementView element={element} />}
         </>
       );
@@ -152,6 +172,7 @@ function ElementContent({
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
+          {context.hasEdits ? <StaticStaleNotice kind="note" /> : null}
           <div
             className={`genui-note genui-note-${element.tone ?? 'info'}`}
             role={element.tone === 'error' ? 'alert' : undefined}
@@ -162,7 +183,16 @@ function ElementContent({
       );
     }
     case 'chart':
-      return <ChartElementView element={element} evaluation={context.evaluation} />;
+      return (
+        <ChartElementView
+          element={element}
+          evaluation={context.evaluation}
+          sources={context.sources}
+          basis={context.basis}
+          basisPath={basisPath}
+          today={context.today}
+        />
+      );
     case 'table': {
       const gate = gatedVisible(element, context);
       if (!gate.visible) return null;
@@ -175,6 +205,10 @@ function ElementContent({
             evaluation={context.evaluation}
             view={context.tables[path]}
             onViewChange={(view) => context.onTableChange(path, view)}
+            sources={context.sources}
+            basis={context.basis}
+            basisPath={basisPath}
+            today={context.today}
           />
         </>
       );
@@ -184,7 +218,12 @@ function ElementContent({
         <section className="genui-section">
           {element.title ? <h4 className="genui-section-title">{element.title}</h4> : null}
           <div className="genui-section-body">
-            <ElementList elements={element.children} context={context} path={`${path}-section`} />
+            <ElementList
+              elements={element.children}
+              context={context}
+              path={`${path}-section`}
+              basisPath={basisPath}
+            />
           </div>
         </section>
       );
@@ -193,7 +232,12 @@ function ElementContent({
         <div className="genui-columns" data-columns={element.columns.length}>
           {element.columns.map((column, index) => (
             <div className="genui-column" key={`${path}-col-${index}`}>
-              <ElementList elements={column} context={context} path={`${path}-col-${index}`} />
+              <ElementList
+                elements={column}
+                context={context}
+                path={`${path}-col-${index}`}
+                basisPath={`${basisPath}.${index}`}
+              />
             </div>
           ))}
         </div>
@@ -210,6 +254,11 @@ function ElementContent({
           fieldErrors={context.fieldErrors}
           onValueChange={context.onValueChange}
           onNumberInput={context.onNumberInput}
+          sources={context.sources}
+          basis={context.basis}
+          basisPath={basisPath}
+          today={context.today}
+          editedState={context.editedState}
         />
       );
   }
@@ -219,16 +268,23 @@ export function ElementList({
   elements,
   context,
   path,
+  basisPath,
 }: {
   elements: AnyElement[];
   context: CompositeContext;
   path: string;
+  basisPath: string;
 }) {
   return (
     <>
       {elements.map((element, index) => (
         <ElementErrorBoundary key={`${path}-${index}-${element.kind}`}>
-          <ElementContent element={element} context={context} path={`${path}-${index}`} />
+          <ElementContent
+            element={element}
+            context={context}
+            path={`${path}-${index}`}
+            basisPath={`${basisPath}${basisPath === '' ? '' : '.'}${index}`}
+          />
         </ElementErrorBoundary>
       ))}
     </>
@@ -236,5 +292,7 @@ export function ElementList({
 }
 
 export function CompositeElementsView({ context }: { context: CompositeContext }) {
-  return <ElementList elements={context.document.elements} context={context} path="root" />;
+  return (
+    <ElementList elements={context.document.elements} context={context} path="root" basisPath="" />
+  );
 }

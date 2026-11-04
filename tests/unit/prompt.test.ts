@@ -23,7 +23,7 @@ const USER_DRAFT = '帮我算一下每月能存多少钱';
 
 describe('默认增强提示词', () => {
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe(2.6);
+    expect(GENUI_PROMPT_VERSION).toBe(2.7);
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
@@ -36,6 +36,9 @@ describe('默认增强提示词', () => {
       'state',
       'derived',
       'models',
+      'sources',
+      'basis',
+      '未核验',
       'budget',
       'cost',
       'preference',
@@ -99,14 +102,15 @@ describe('默认增强提示词', () => {
     }
   });
 
-  it('提示词中的示例是合法 v5 文档，可被本地协议直接解析', () => {
+  it('提示词中的示例是合法 v6 文档，可被本地协议直接解析', () => {
     const match = /```genui\n([\s\S]*?)\n```/.exec(GENUI_PROMPT_TEXT);
     expect(match).not.toBeNull();
     const example = parseGenui(match?.[1] ?? '');
     expect(example).toMatchObject({ ok: true });
     if (example.ok) {
-      expect(example.document.version).toBe(5);
+      expect(example.document.version).toBe(6);
       expect(example.document.elements.length).toBeGreaterThan(0);
+      if (example.document.version === 6) expect(example.document.sources?.length).toBeGreaterThan(0);
     }
   });
 });
@@ -175,8 +179,9 @@ describe('issue7 本轮模式变体', () => {
     const example = parseFirstExample(GENUI_TOOL_PROMPT_TEXT);
     expect(example).toMatchObject({ ok: true });
     if (example.ok) {
-      expect(example.document.version).toBe(5);
+      expect(example.document.version).toBe(6);
       expect(example.document.elements.length).toBeGreaterThan(0);
+      if (example.document.version === 6) expect(example.document.sources?.length).toBeGreaterThan(0);
     }
   });
 });
