@@ -11,8 +11,8 @@
  * 失败码按「守卫顺序」排列：长度 → 深度 → JSON 解析 → 结构校验 → 版本。
  */
 
-/** 最新协议版本；仍向后兼容静态 v1、交互 v2、组合 v3 与函数曲线 v4 文档。 */
-export const PROTOCOL_VERSION = 6;
+/** 最新协议版本；仍向后兼容静态 v1、交互 v2、组合 v3、函数曲线 v4 与语义模型 v5 文档。 */
+export const PROTOCOL_VERSION = 5;
 
 /** 规模限制（与 schema 保持一致，validate 的长度守卫复用同一份常量）。 */
 export const LIMITS = {
@@ -87,16 +87,6 @@ export const LIMITS = {
   /** v4 函数曲线默认采样数（奇数，含域端点）；默认定义域为 [-defaultFunctionDomainHalfWidth, +…] */
   defaultFunctionSamples: 41,
   defaultFunctionDomainHalfWidth: 10,
-  /** v6 依据（provenance）：来源数量、字段长度与依据条目上限。 */
-  maxSources: 20,
-  maxSourceLabelLength: 120,
-  maxSourceUrlLength: 2048,
-  maxSourceNoteLength: 500,
-  maxPublisherLength: 120,
-  maxBasisNoteLength: 300,
-  maxProvenanceDateLength: 40,
-  maxBasisEntries: 200,
-  maxBasisKeyLength: 160,
 } as const;
 
 /** v1 与 v2 均支持的纯文本元素；v3 允许按条件显示。 */
@@ -552,63 +542,13 @@ export interface GenuiV5Document {
   elements: GenuiV5Element[];
 }
 
-/**
- * v6：在 v5 语义模型之上附加「来源与依据」旁路数据。
- *
- * 依据不内联到每个数据节点，而是用稳定的键索引，避免复制 v5 的整棵
- * schema：
- * - `state.<id>`：状态输入的原始依据；
- * - `derived.<id>`：派生结果只能标为 computed；
- * - `element.<path>`：元素依据，path 为文档内从 0 开始的子索引，
- *   以点连接（如 `2`、`2.0.1`）；表格列/行与图表条目/系列再追加
- *   `.col.<i>`、`.row.<i>`、`.item.<i>`、`.series.<i>`。
- *
- * 缺少 basis 时按 unknown 处理；v1–v5 没有本结构，界面按旧协议渲染。
- */
-export const BASIS_KINDS = ['user', 'example', 'estimate', 'reference', 'computed', 'unknown'] as const;
-
-export type GenuiBasisKind = (typeof BASIS_KINDS)[number];
-
-export interface GenuiSource {
-  id: string;
-  label: string;
-  url?: string;
-  publisher?: string;
-  publishedAt?: string;
-  retrievedAt?: string;
-  note?: string;
-}
-
-export interface GenuiBasis {
-  kind: GenuiBasisKind;
-  sourceId?: string;
-  note?: string;
-  asOf?: string;
-  validUntil?: string;
-}
-
-export type GenuiBasisMap = Record<string, GenuiBasis>;
-
-export interface GenuiV6Document {
-  type: 'genui';
-  version: 6;
-  title?: string;
-  state: StateVariable[];
-  derived: DerivedValue[];
-  models: SemanticModel[];
-  elements: GenuiV5Element[];
-  sources?: GenuiSource[];
-  basis?: GenuiBasisMap;
-}
-
 /** 经 parseGenui 校验后可安全交给渲染器的版本化文档。 */
 export type GenuiDocument =
   | GenuiV1Document
   | GenuiV2Document
   | GenuiV3Document
   | GenuiV4Document
-  | GenuiV5Document
-  | GenuiV6Document;
+  | GenuiV5Document;
 
 export type InteractiveStateValues = Record<string, number | string>;
 

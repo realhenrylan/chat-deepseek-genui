@@ -31,7 +31,6 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 | 条件说明 | 按当前参数显示提示，例如超支警告、无候选结果或公式退化说明 |
 | 重置与收起 | 一键恢复初始参数、表格排序和筛选；收起界面时保留当前卡片状态 |
 | 状态保持 | 生成新回答、同页重新挂载时保留已调整的参数与筛选；刷新或关闭标签页后回到初始值 |
-| 依据与来源 | 界面标注用户提供、示例、估算、模型引用与本地计算结果；来源链接只作不可点击文本，统一标为「未核验」；缺失值不显示为 0 |
 | 继续讨论 | 把参数、表格筛选、排序与选中项汇总成可预览、可修改的摘要，确认后填入输入框；保留已有草稿，由你决定是否发送 |
 | 出错恢复 | 原始代码块下方区分等待、离屏补齐、需要修复或页面兼容；可展开原始内容并生成修复草稿 |
 | 主题与开关 | 跟随站点明暗主题，随时关闭增强并恢复原始代码块 |
@@ -108,11 +107,11 @@ npm run build
 
 工作流 [Build extension and prepare release draft](.github/workflows/build-release.yml) 在推送到 `main` 时，自动检查、测试、构建，并在 Actions 页面提供 ZIP 和 SHA256 校验文件（保留 30 天）。准备发布时，在 Actions 点 **Run workflow** 并填写最终插件版本号，工作流会按你填写的版本打包，只创建附带这两个文件的 **Release 草稿**。
 
-**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v2.8` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
+**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v2.9` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
 
 Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、更改、修复、移除等类别展示，并附 GitHub 自动生成的变更记录；发布前可在草稿页继续编辑。
 
-当前 main 的 0.1.1 + Unreleased 已通过完整检查（39 个测试文件、473 项单测、类型检查、lint、构建与生产包校验）及 Edge/Chrome 默认端到端测试（24 通过、6 个真实 origin 用例按模式跳过）。历史真实网页验收与本轮自动化结果分别记录在 [分层报告](docs/phase8-verification.md)。
+当前 main 的 0.1.1 + Unreleased 已通过完整检查（37 个测试文件、458 项单测、类型检查、lint、构建与生产包校验）及 Edge/Chrome 默认端到端测试（24 通过、6 个真实 origin 用例按模式跳过）。历史真实网页验收与本轮自动化结果分别记录在 [分层报告](docs/phase8-verification.md)。
 
 **卸载**：在扩展管理页移除扩展，本地开关设置随之删除；刷新或关闭已打开的 DeepSeek 标签页后，页面上的卡片、浮标和注入标记消失。
 
@@ -120,7 +119,6 @@ Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、�
 
 - 仅在 `https://chat.deepseek.com/*` 运行，只申请 `storage` 权限，用于本机保存增强开关。
 - 卡片计算在本地完成；页面内交互状态只存在于当前标签页内存，刷新或关闭标签页后消失，不写入本机存储，也不包含或上传聊天内容。
-- 依据里的来源链接仅作为纯文本展示，扩展不会访问这些链接，也不会把资料标记为「已验证」。
 - 默认说明和「继续讨论」摘要会写入可见草稿；摘要先在卡片内预览，可修改后再填入，你自行发送后由 DeepSeek 网站处理这条消息。
 - 使用本地打包的 React 渲染，不执行模型生成的 HTML、CSS 或 JavaScript，不加载远程代码。
 
@@ -144,7 +142,7 @@ npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
 
-协议支持 v1 / v2 / v3 / v4 / v5 / v6（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释；v6 新增根级 `sources` 与 `basis` 依据旁路表，区分用户提供、示例、估算、模型引用、本地计算结果与未标注，并提供用户修改标记）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)及 [v5 真实模型对比](docs/phase9-model-comparison.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)及 [v5 真实模型对比](docs/phase9-model-comparison.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

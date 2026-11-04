@@ -14,7 +14,6 @@ import {
   type GenuiV4Element,
   type GenuiV5Document,
   type GenuiV5Element,
-  type GenuiV6Document,
   type InteractiveStateValues,
   type ModelKind,
   type NumericExpression,
@@ -37,8 +36,7 @@ type StatefulDocument =
   | GenuiV2Document
   | GenuiV3Document
   | GenuiV4Document
-  | GenuiV5Document
-  | GenuiV6Document;
+  | GenuiV5Document;
 
 /** 运行时只需要状态与派生定义；v2–v5 文档都满足该结构。 */
 interface StatefulDocumentLike {
@@ -1019,7 +1017,7 @@ function expressionUsesX(expression: FunctionExpression): boolean {
  * 表达式、条件、函数系列或模型上，不阻断整张卡片。
  */
 export function evaluateComposite(
-  document: GenuiV3Document | GenuiV4Document | GenuiV5Document | GenuiV6Document,
+  document: GenuiV3Document | GenuiV4Document | GenuiV5Document,
   state: InteractiveStateValues,
 ): CompositeEvaluation {
   const engine = new EvaluationEngine(document, state);

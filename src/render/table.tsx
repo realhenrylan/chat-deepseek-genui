@@ -1,21 +1,13 @@
 import { useId, useMemo, useState } from 'react';
 import type {
-  GenuiBasis,
-  GenuiSource,
   ModelTableElement,
   TableColumn,
   TableElement,
 } from '../protocol/types';
-import {
-  basisKeyForElement,
-  basisKeyForTableColumn,
-  basisKeyForTableRow,
-} from '../protocol/provenance';
 import { lookupModel, modelTable } from '../runtime/evaluate';
 import type { CompositeEvaluation } from '../runtime/evaluate';
 import { buildTableModel, rowLabel } from './table-model';
 import type { TableViewState } from './table-model';
-import { BasisBadge } from './provenance';
 
 /**
  * 表格视图（v3/v5）：列定义/条件行，或读取 v5 模型生成的表格快照；
@@ -58,15 +50,11 @@ function resolveTableElement(
   };
 }
 
-export function TableElementView({ element, evaluation, view, onViewChange, sources, basis, basisPath, today }: {
+export function TableElementView({ element, evaluation, view, onViewChange }: {
   element: AnyTableElement;
   evaluation: CompositeEvaluation;
   view?: TableViewState;
   onViewChange?: (view: TableViewState) => void;
-  sources?: readonly GenuiSource[];
-  basis?: Readonly<Record<string, GenuiBasis>>;
-  basisPath?: string;
-  today?: string;
 }) {
   const resolved = useMemo(() => resolveTableElement(element, evaluation), [element, evaluation]);
   const table = resolved.element;
@@ -126,10 +114,6 @@ export function TableElementView({ element, evaluation, view, onViewChange, sour
   const hasMissingCell = model.rows.some((row) =>
     Object.values(row.views).some((cell) => cell.missing === true),
   );
-  const tableBasis =
-    basis !== undefined && basisPath !== undefined
-      ? basis[basisKeyForElement(basisPath)]
-      : undefined;
 
   if (resolved.error) {
     return (
@@ -153,11 +137,6 @@ export function TableElementView({ element, evaluation, view, onViewChange, sour
 
   return (
     <div className="genui-table-block">
-      {tableBasis === undefined ? null : (
-        <p className="genui-table-basis">
-          <BasisBadge basis={tableBasis} sources={sources} today={today} label="表格依据" />
-        </p>
-      )}
       {model.warnings.length > 0 ? (
         <p className="genui-table-warning" role="status">
           {model.warnings.length === 1
@@ -245,14 +224,6 @@ export function TableElementView({ element, evaluation, view, onViewChange, sour
                     ) : (
                       column.label
                     )}
-                    {basis !== undefined && basisPath !== undefined ? (
-                      <BasisBadge
-                        basis={basis[basisKeyForTableColumn(basisPath, table.columns.indexOf(column))]}
-                        sources={sources}
-                        today={today}
-                        label="列依据"
-                      />
-                    ) : null}
                   </th>
                 );
               })}
@@ -310,28 +281,6 @@ export function TableElementView({ element, evaluation, view, onViewChange, sour
           — 表示缺失值，不是 0；缺少的单元格不会参与数值比较。
         </p>
       ) : null}
-      {basis !== undefined && basisPath !== undefined
-        ? (() => {
-            const rowsWithBasis = table.rows
-              .map((row, index) => ({ row, index }))
-              .filter(({ index }) => basis[basisKeyForTableRow(basisPath, index)] !== undefined);
-            if (rowsWithBasis.length === 0) return null;
-            return (
-              <div className="genui-table-row-bases">
-                {rowsWithBasis.map(({ index }) => (
-                  <p className="genui-table-row-basis" key={index}>
-                    第 {index + 1} 行：
-                    <BasisBadge
-                      basis={basis[basisKeyForTableRow(basisPath, index)]}
-                      sources={sources}
-                      today={today}
-                    />
-                  </p>
-                ))}
-              </div>
-            );
-          })()
-        : null}
       {selectionNotice ? (
         <p className="genui-table-selection" role="status">
           {selectionNotice}

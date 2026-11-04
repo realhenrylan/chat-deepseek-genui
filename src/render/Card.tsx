@@ -7,7 +7,6 @@ import type {
   StateVariable,
   TextElement,
 } from '../protocol/types';
-import { todayLocalDate } from '../protocol/provenance';
 import { isStepAligned } from '../protocol/step';
 import { hasOwn } from '../runtime/records';
 import {
@@ -37,7 +36,6 @@ import {
   type ContinueIntent,
   type ContinueSummaryInput,
 } from './summarize';
-import { ProvenancePanel } from './provenance';
 import { getBrandMarkUrl } from '../branding';
 
 /**
@@ -104,10 +102,6 @@ export function Card({
 }: CardProps) {
   const brandMarkUrl = getBrandMarkUrl();
   const [doc] = useState<GenuiDocument>(initialDocument);
-  const [today] = useState(() => todayLocalDate());
-  const [editedState, setEditedState] = useState<Record<string, true>>({});
-  const editedIds = Object.keys(editedState).sort();
-  const hasEdits = editedIds.length > 0;
   const [showRaw, setShowRaw] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [followupFeedback, setFollowupFeedback] = useState<string | null>(null);
@@ -200,7 +194,6 @@ export function Card({
       drafts,
       fieldErrors,
       tables,
-      ...(doc.version === 6 ? { editedState: editedIds, today } : {}),
     });
     const intent: ContinueIntent =
       snapshot.hasSelection && snapshot.hasAlternative
@@ -298,14 +291,6 @@ export function Card({
     const next = { ...state, [id]: value };
     setState(next);
     writeState(next, tables);
-    setEditedState((previous) => {
-      const isEdited = value !== variable.initial;
-      if (isEdited === (previous[id] === true)) return previous;
-      const updated = { ...previous };
-      if (isEdited) updated[id] = true;
-      else delete updated[id];
-      return updated;
-    });
     clearFieldError(id);
     setDrafts((previous) => {
       if (!hasOwn(previous, id)) return previous;
@@ -347,7 +332,6 @@ export function Card({
     setFieldErrors({});
     setTables({});
     writeState(next, {});
-    setEditedState({});
     setResetToken((previous) => previous + 1);
     closePreview();
   };
@@ -404,12 +388,7 @@ export function Card({
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
-        {hasEdits ? (
-          <p className="genui-edit-banner">
-            输入已修改：静态文字/说明按初始条件生成，可能已过时；当前值会标注「用户修改」并保留原依据。
-          </p>
-        ) : null}
-        {doc.version === 3 || doc.version === 4 || doc.version === 5 || doc.version === 6 ? (
+        {doc.version === 3 || doc.version === 4 || doc.version === 5 ? (
           <CompositeElementsView
             context={{
               document: doc,
@@ -423,32 +402,11 @@ export function Card({
               resetToken,
               onValueChange: handleValueChange,
               onNumberInput: handleNumberInput,
-              ...(doc.version === 6
-                ? {
-                    sources: doc.sources ?? [],
-                    basis: doc.basis ?? {},
-                    today,
-                    editedState: editedIds,
-                    hasEdits,
-                  }
-                : {}),
             }}
           />
         ) : (
           (doc.elements as Array<TextElement | InteractiveElement>).map(renderLegacyElement)
         )}
-        {doc.version === 6 ? (
-          <ProvenancePanel
-            document={doc}
-            state={state}
-            drafts={drafts}
-            fieldErrors={fieldErrors}
-            editedState={editedIds}
-            onValueChange={handleValueChange}
-            onNumberInput={handleNumberInput}
-            today={today}
-          />
-        ) : null}
       </div>
       {preview ? (
         <section

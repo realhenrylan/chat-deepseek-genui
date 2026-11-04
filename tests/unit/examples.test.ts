@@ -28,7 +28,7 @@ function load(name: string): GenuiDocument {
 }
 
 describe('docs/examples 示例文档', () => {
-  it('目录中至少包含三个 v3 场景示例、v4 函数曲线、v5 语义模型与 v6 依据示例', () => {
+  it('目录中至少包含三个 v3 场景示例、v4 函数曲线与 v5 语义模型示例', () => {
     expect(files).toEqual(
       expect.arrayContaining([
         'parabola-v3.json',
@@ -38,7 +38,6 @@ describe('docs/examples 示例文档', () => {
         'budget-v5.json',
         'preference-v5.json',
         'cost-v5.json',
-        'budget-v6.json',
       ]),
     );
   });
@@ -46,7 +45,7 @@ describe('docs/examples 示例文档', () => {
   it.each(files)('%s 能通过完整协议校验', (name) => {
     const document = load(name);
     expect(document.type).toBe('genui');
-    expect([1, 2, 3, 4, 5, 6]).toContain(document.version);
+    expect([1, 2, 3, 4, 5]).toContain(document.version);
   });
 
   it('抛物线示例覆盖折线与退化提示', () => {
@@ -90,19 +89,6 @@ describe('docs/examples 示例文档', () => {
     );
     expect(document.elements.some((element) => element.kind === 'table')).toBe(true);
     expect(JSON.stringify(document)).toContain('预算超支');
-  });
-
-  it('预算 v6 示例把来源与依据放在根级旁路表', () => {
-    const document = load('budget-v6.json');
-    if (document.version !== 6) throw new Error('应为 v6');
-    expect(document.sources?.map((source) => source.id)).toEqual(['user_budget', 'stats']);
-    expect(document.basis?.['state.income']).toMatchObject({ kind: 'user', sourceId: 'user_budget' });
-    expect(document.basis?.['state.food']).toMatchObject({ kind: 'reference', sourceId: 'stats' });
-    expect(document.basis?.['derived.left']).toMatchObject({ kind: 'computed' });
-    expect(document.basis?.['element.4']).toMatchObject({ kind: 'computed' });
-    expect(document.basis?.['element.5.row.2']).toMatchObject({ kind: 'unknown' });
-    expect(document.models).toEqual([]);
-    expect(document.elements.some((element) => element.kind === 'table')).toBe(true);
   });
 
   it('预算 v5 示例用单一模型驱动数值、图表、表格与解释', () => {

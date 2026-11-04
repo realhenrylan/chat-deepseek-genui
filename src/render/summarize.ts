@@ -13,20 +13,9 @@
 
 import type {
   DerivedValue,
-  GenuiBasis,
-  GenuiSource,
   InteractiveStateValues,
   StateVariable,
 } from '../protocol/types';
-import {
-  basisKeyForDerived,
-  basisKeyForState,
-  basisProblem,
-  describeBasis,
-  findBasisSource,
-  formatProvenanceDate,
-  isBasisExpired,
-} from '../protocol/provenance';
 import { getOwn } from '../runtime/records';
 import { formatNumber, stateDisplay } from './format';
 
@@ -117,49 +106,6 @@ export interface ContinueSummaryInput {
   drafts?: ContinueDraft[];
   /** 讨论意图对应的请求句；缺省时使用通用结尾。 */
   request?: string;
-  /** v6 根级依据；缺省时按旧协议处理，不附加依据说明。 */
-  sources?: GenuiSource[];
-  basis?: Record<string, GenuiBasis>;
-  /** 被用户修改过的状态 id；这些值以当前值为准，原依据只作历史说明。 */
-  editedState?: readonly string[];
-  /** 生成摘要的本地日期，用于标注「依据时点」。 */
-  today?: string;
-}
-
-/** 依据后缀：只在 v6 有依据数据时生成，绝不把缺省说成已核验。 */
-function basisSuffix(
-  basis: GenuiBasis | undefined,
-  sources: readonly GenuiSource[] | undefined,
-  today: string | undefined,
-): string | undefined {
-  if (basis === undefined || today === undefined) return undefined;
-  const description = describeBasis(basis, sources);
-  const source = findBasisSource(basis, sources);
-  const parts: string[] = [description.label];
-  if (source !== undefined) parts.push(`来源《${source.label}》，未核验`);
-  if (basis.asOf !== undefined) parts.push(`依据时点 ${formatProvenanceDate(basis.asOf)}`);
-  if (basis.validUntil !== undefined) {
-    parts.push(
-      isBasisExpired(basis, today)
-        ? `已过期（有效期至 ${formatProvenanceDate(basis.validUntil)}）`
-        : `有效期至 ${formatProvenanceDate(basis.validUntil)}`,
-    );
-  }
-  if (basis.note !== undefined) parts.push(basis.note);
-  const problem = basisProblem(basis, sources, today);
-  if (problem !== undefined) parts.push(problem);
-  return parts.join('；');
-}
-
-function editedSuffix(
-  basis: GenuiBasis | undefined,
-  sources: readonly GenuiSource[] | undefined,
-  today: string | undefined,
-): string {
-  const original = basisSuffix(basis, sources, today);
-  return original === undefined
-    ? '用户修改；原依据：未标注'
-    : `用户修改；原依据：${original}`;
 }
 
 /** 摘要总长上限；超出时截断并明确标注，避免把整张卡片倒进输入框。 */
@@ -299,15 +245,7 @@ export function buildContinueSummary(input: ContinueSummaryInput): string {
       headLines.push(`- ${variable.label}：（未确认）`);
       continue;
     }
-    const key = basisKeyForState(variable.id);
-    const basis = input.basis?.[key];
-    const edited = input.editedState?.includes(variable.id) ?? false;
-    const suffix = edited
-      ? editedSuffix(basis, input.sources, input.today)
-      : basisSuffix(basis, input.sources, input.today);
-    headLines.push(
-      `- ${variable.label}：${stateDisplay(variable, value)}${suffix === undefined ? '' : `（${suffix}）`}`,
-    );
+    headLines.push(`- ${variable.label}：${stateDisplay(variable, value)}`);
   }
 
   for (const item of input.derived ?? []) {
@@ -321,25 +259,9 @@ export function buildContinueSummary(input: ContinueSummaryInput): string {
       headLines.push(`- ${item.label}：无法计算（暂无结果）`);
       continue;
     }
-    const basis = input.basis?.[basisKeyForDerived(item.id)];
-    const suffix = basisSuffix(basis, input.sources, input.today);
     headLines.push(
-      `- ${item.label}：${formatNumber(raw)}${item.unit ? ` ${item.unit}` : ''}${
-        suffix === undefined ? '' : `（${suffix}）`
-      }`,
+      `- ${item.label}：${formatNumber(raw)}${item.unit ? ` ${item.unit}` : ''}`,
     );
-  }
-
-  if (input.sources !== undefined && input.sources.length > 0) {
-    headLines.push('声明的来源（模型声称，插件未核验）：');
-    for (const source of input.sources) {
-      const details = [source.publisher, source.url, source.publishedAt
-        ? `资料时间 ${formatProvenanceDate(source.publishedAt)}`
-        : undefined,
-      source.retrievedAt ? `声称获取于 ${formatProvenanceDate(source.retrievedAt)}` : undefined]
-        .filter((part): part is string => part !== undefined && part !== '');
-      headLines.push(`- 《${source.label}》${details.length === 0 ? '' : ` · ${details.join(' · ')}`}`);
-    }
   }
 
   for (const draft of (input.drafts ?? []).slice(0, 6)) {
@@ -357,13 +279,6 @@ export function buildContinueSummary(input: ContinueSummaryInput): string {
       ? `${rawRequest.slice(0, MAX_REQUEST_LENGTH - 1)}…`
       : rawRequest;
   const requestLine = request !== '' ? request : '请基于以上当前条件与结果继续讨论。';
-  if (input.today !== undefined && input.basis !== undefined && Object.keys(input.basis).length > 0) {
-    headLines.push(
-      `依据时点：${input.today}（来源与假设由模型声明，插件未访问网络；缺失值不是 0${
-        (input.editedState?.length ?? 0) > 0 ? '；用户修改的输入以当前值为准，原依据仅作历史说明' : ''
-      }）。`,
-    );
-  }
 
   const full = [...headLines, ...tableBlocks.flat(), requestLine].join('\n');
   if (full.length <= MAX_CONTINUE_SUMMARY_LENGTH) return full;

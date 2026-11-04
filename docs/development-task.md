@@ -1,8 +1,8 @@
 # DeepSeek GenUI — MVP v0.1.1 开发任务
 
-当前分发版本：**0.1.1**（2026-11-03）。README 已加入明暗 Logo 并重写为功能介绍；项目版本、当前隐私说明、构建标记与发布 ZIP 已同步。`npm run check`（39 个测试文件、473 项单测）及默认 Edge/Chrome e2e（24 通过、6 跳过）通过，构建产物含全部 7 个运行时文件；本轮移除了手动保存方案、方案文件与方案工作台。当前校验值见 [分层报告](phase8-verification.md)；真实 origin 与真实模型会话本轮未重跑。
+当前分发版本：**0.1.1**（2026-11-03）。README 已加入明暗 Logo 并重写为功能介绍；项目版本、当前隐私说明、构建标记与发布 ZIP 已同步。`npm run check`（37 个测试文件、458 项单测）及默认 Edge/Chrome e2e（24 通过、6 跳过）通过，构建产物含全部 7 个运行时文件；本轮移除了手动保存方案、方案文件与方案工作台。当前校验值见 [分层报告](phase8-verification.md)；真实 origin 与真实模型会话本轮未重跑。
 
-更新日期：2026-11-04。阶段 0–11 已完成；Edge Add-ons 商店提交与审核未执行（原因与素材见阶段 8 记录与 [store-submission.md](store-submission.md)），发布准备不等于已上架。阶段 7 默认增强 v2 已接入运行时，并完成真实 DeepSeek 网页三场景、同类新问题、普通问答、关闭/恢复与说明面板验收；收尾修复三项 P2，并并入视口门控、版本对账标记与 browser-skill 操作手册。阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5/6 的本地示例与合成文档验证见对应阶段记录。阶段 8 完成全量复检、双浏览器版本记录、生产包与发布 ZIP、Edge Add-ons 政策逐条复核、隐私说明与分层验证报告，见 [phase8-verification.md](phase8-verification.md)。阶段 9–11 分别并入 v5 本地语义模型、issue7 本轮模式与 issue8 依据旁路表，验证记录见后文。
+更新日期：2026-11-04。阶段 0–10 已完成；Edge Add-ons 商店提交与审核未执行（原因与素材见阶段 8 记录与 [store-submission.md](store-submission.md)），发布准备不等于已上架。阶段 7 默认增强 v2 已接入运行时，并完成真实 DeepSeek 网页三场景、同类新问题、普通问答、关闭/恢复与说明面板验收；收尾修复三项 P2，并并入视口门控、版本对账标记与 browser-skill 操作手册。阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5/6 的本地示例与合成文档验证见对应阶段记录。阶段 8 完成全量复检、双浏览器版本记录、生产包与发布 ZIP、Edge Add-ons 政策逐条复核、隐私说明与分层验证报告，见 [phase8-verification.md](phase8-verification.md)。阶段 9–10 分别并入 v5 本地语义模型与 issue7 本轮模式；阶段 11（issue8 依据旁路表）已于 2026-11-04 移除，验证记录不再维护。
 
 产品目标与验收范围见[产品规格](product-spec.md)。Edge 官方资料、技术基线、权限和工程规范见[开发指南](development-guide.md)。执行前先阅读这两份文档。
 
@@ -298,30 +298,6 @@
 - **[P2] 文档口径澄清**：[issue7-baseline-tasks.md](issue7-baseline-tasks.md) 增「范围界定」（合入 v2.6 后实测自动适配 6738 / tool 6786 / plain 34 字符，tool≠精简；「每轮重发 vs 只发一次」未验证）与「当前状态」（真实对照未执行）；首轮可用率改为按「任务 1–3 parseGenui+形态 / 任务 4–5 无界面」分口径统计；[prompt.md](prompt.md) 补切换语义（尾部完整才替换、edited 不覆盖、plain 残留如实显示）。
 - 验证：42 个测试文件 517 项单测 + 3 项设计性跳过全绿，`npm run check`（typecheck、lint、校验器再生成、构建与生产包校验）再通过；真实模型对照仍待执行。
 
-## 阶段 11：依据可追溯（issue8，v6）
+## 阶段 11：依据可追溯（issue8，已移除）
 
-### 目标与范围
-
-- 为参数、派生结果与界面元素提供统一、可随文档携带的依据结构：来源类别、链接、资料时间、适用时点与有效期。
-- 区分模型声称的来源与插件实际核验；插件不访问来源链接，不标“已验证”。
-- 用户修改输入后保留原依据并标注“用户修改”，静态说明提示可能过时。
-- 缺失、错误、过期分别呈现，缺失值不显示为 0。
-- 方案导出、导入与继续讨论摘要携带依据、时间与修改标记；存在未确认输入时阻止导出与摘要。
-- 保留 v1–v5 原结构；依据以 v6 根级 `sources` 与 `basis` 旁路表表达，不改写既有元素。
-
-### 实现
-
-- [x] 协议 v6：`PROTOCOL_VERSION=6`；`sources`（id/label/url?/publisher?/publishedAt?/retrievedAt?/note?）与 `basis`（键 `state.<id>`、`derived.<id>`、`element.<路径>`，表格/图表可加 `.col`/`.row`/`.item`/`.series`；kind 六类；asOf/validUntil）；`models` 允许 0–4 个，v6 可只表达依据。
-- [x] 校验：键可解析、来源 id 唯一、引用存在；`reference` 必须有来源，`computed` 不得绑定来源，派生只能标为计算结果，state 不得标为计算结果；日期真实，有效期不早于适用时点；非 https 链接结构接受，由界面标注“链接形式不可靠”。
-- [x] 运行时：`evaluateComposite` 接受 v6；v5 模型求值保持不变。
-- [x] 渲染：v6 依据面板、控件/数值/表格列行/图表条目系列徽标、来源只读列表、缺失值与“不是 0”说明、用户修改标记、静态 text/note 过时提示、非 https 警告；v1–v5 渲染不变。
-- [x] 继续讨论：存在未确认输入时阻止；摘要携带 sources/basis/editedState/today 与来源、适用时点。
-- [x] 提示词 v2.8：输出 v6，新增 sources/basis 字段、键、类别、日期与“未核验”措辞；缺失用 null；有时效写 validUntil；保留本轮 auto/tool/plain 三种文本结构；移除方案文件导出说明。
-- [x] 文档与示例：`genui-protocol.md` 增 v6 来源与依据章节；`prompt.md` 重建 v2.8；新增 `budget-v6.json`；README、产品说明、CHANGELOG 同步。
-
-### 验证记录（2026-11-04，main）
-
-- `npm run check` 通过：typecheck、lint、39 个测试文件 473 项单测（无跳过）、校验器再生成、vite 构建与 dist 校验（`dist/content.js` 965,273 B / 162.07 kB gzip，7 个文件，仅 storage 权限，无远程脚本、CDN 或动态执行）。
-- `npm run test:e2e` 通过：Edge 与 Chrome 共 24 passed、6 skipped（`REAL_SITE=1` 的真实 origin 用例按默认跳过）。
-- 验证边界：未做真实网页人工验收与真实模型对照；非 https、凭据或私有主机链接只在界面标注，不发起请求；示例与合成文档只证明协议、运行时与渲染可用，不证明模型提供的价格等外部事实正确。
-
+2026-11-04 按产品决定移除 issue8 的来源/依据能力：协议 v6 与根级 `sources`/`basis`、依据面板与徽标、用户修改与时效标记、提示词中的来源要求全部删除；提示词回到 v2.9 与协议 v5。旧 v6 文档按不支持版本保留原始代码块。

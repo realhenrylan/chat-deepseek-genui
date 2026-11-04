@@ -1,4 +1,4 @@
-import { BASIS_KINDS, LIMITS } from './types.ts';
+import { LIMITS } from './types.ts';
 
 const idSchema = {
   type: 'string',
@@ -52,37 +52,6 @@ const conditionV5Ref = { $ref: '#/definitions/conditionV5' };
 const elementRef = { $ref: '#/definitions/element' };
 const elementV4Ref = { $ref: '#/definitions/elementV4' };
 const elementV5Ref = { $ref: '#/definitions/elementV5' };
-const sourceRef = { $ref: '#/definitions/source' };
-const basisRef = { $ref: '#/definitions/basis' };
-
-const sourceSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['id', 'label'],
-  properties: {
-    id: idSchema,
-    label: labelSchema,
-    // 链接只做结构接受；是否为可用的 HTTPS 地址由界面标注，绝不发起请求。
-    url: { type: 'string', minLength: 1, maxLength: LIMITS.maxSourceUrlLength },
-    publisher: { type: 'string', minLength: 1, maxLength: LIMITS.maxPublisherLength },
-    publishedAt: { type: 'string', minLength: 1, maxLength: LIMITS.maxProvenanceDateLength },
-    retrievedAt: { type: 'string', minLength: 1, maxLength: LIMITS.maxProvenanceDateLength },
-    note: { type: 'string', maxLength: LIMITS.maxSourceNoteLength },
-  },
-};
-
-const basisSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['kind'],
-  properties: {
-    kind: { enum: [...BASIS_KINDS] },
-    sourceId: idSchema,
-    note: { type: 'string', maxLength: LIMITS.maxBasisNoteLength },
-    asOf: { type: 'string', minLength: 1, maxLength: LIMITS.maxProvenanceDateLength },
-    validUntil: { type: 'string', minLength: 1, maxLength: LIMITS.maxProvenanceDateLength },
-  },
-};
 
 const stateVariableSchema = {
   oneOf: [
@@ -1289,72 +1258,6 @@ const v5Schema = {
 };
 
 /**
- * v6：v5 的全部能力 + 根级来源与依据旁路表。
- *
- * 依据不内联到元素里，避免复制整棵 v5 schema；键由语义校验解析：
- * `state.<id>`、`derived.<id>`、`element.<path>`（表格/图表可再带
- * `.col.<i>`/`.row.<i>`/`.item.<i>`/`.series.<i>`）。链接只接受非空字符串，
- * 界面负责标注不可用形式，插件绝不访问网络。
- */
-const v6Schema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['type', 'version', 'state', 'derived', 'models', 'elements'],
-  properties: {
-    type: { const: 'genui' },
-    version: { const: 6 },
-    title: labelSchema,
-    state: {
-      type: 'array',
-      maxItems: LIMITS.maxStateVariables,
-      items: stateVariableSchema,
-    },
-    derived: {
-      type: 'array',
-      maxItems: LIMITS.maxDerivedValues,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['id', 'label', 'expression'],
-        properties: {
-          id: idSchema,
-          label: labelSchema,
-          unit: unitSchema,
-          expression: expressionRef,
-        },
-      },
-    },
-    models: {
-      type: 'array',
-      maxItems: LIMITS.maxModels,
-      items: semanticModelSchema,
-    },
-    elements: {
-      type: 'array',
-      minItems: 1,
-      maxItems: LIMITS.maxElementsV3,
-      items: elementV5Ref,
-    },
-    sources: {
-      type: 'array',
-      maxItems: LIMITS.maxSources,
-      items: sourceRef,
-    },
-    basis: {
-      type: 'object',
-      maxProperties: LIMITS.maxBasisEntries,
-      propertyNames: {
-        type: 'string',
-        minLength: 1,
-        maxLength: LIMITS.maxBasisKeyLength,
-        pattern: '^[A-Za-z][A-Za-z0-9_.-]*$',
-      },
-      additionalProperties: basisRef,
-    },
-  },
-};
-
-/**
  * Versioned genui JSON Schema.
  *
  * v1 remains available for existing static cards. v2 adds bounded state,
@@ -1371,7 +1274,7 @@ const v6Schema = {
  * validation in validate.ts.
  */
 export const genuiSchema = {
-  oneOf: [v1Schema, v2Schema, v3Schema, v4Schema, v5Schema, v6Schema],
+  oneOf: [v1Schema, v2Schema, v3Schema, v4Schema, v5Schema],
   definitions: {
     expression: expressionDefinitions.expression,
     expressionV5: expressionDefinitions.expressionV5,
@@ -1381,7 +1284,5 @@ export const genuiSchema = {
     element: elementDefinition,
     elementV4: elementDefinitionV4,
     elementV5: elementDefinitionV5,
-    source: sourceSchema,
-    basis: basisSchema,
   },
 };
