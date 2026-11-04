@@ -268,3 +268,11 @@
 - e2e 窄集（阶段 1 注入、阶段 4 控件/隔离/面板宽度）：Edge/Chrome 4 通过、2 为 `REAL_SITE=1` 默认跳过。
 - 真实模型对照未执行：按 [issue7-baseline-tasks.md](issue7-baseline-tasks.md) 由用户在真实会话中跑 auto/tool 各 3 遍固定任务集并记录指标后再决定保留或回退。
 
+### 核验修复（2026-11-04，`50d1928` 评审 → `59d659f`）
+
+- **[P1] 编辑原文后切模式仍发旧说明**：新增 `describeGenuiDraftPrompt` 识别「草稿末尾逐字完整」的说明尾部（有切换记录或无记录但完整均可），auto↔tool 整段替换（连同分隔空行）、→普通回答连分隔一并移除，恢复到追加前原文；不再要求 `value === appendedValue`。
+- **[P1] 改过说明时面板掩盖残留**：新增 `AugmentStatus` 的 `edited` 与 `GENUI_PLAIN_RESIDUAL_NOTE`；说明被用户修改时扩展不覆盖：切 auto/tool 显示「说明已被你修改」，切「普通回答」面板如实显示残留提示，草稿内容原样保留。
+- **[P2] 移除说明丢光标/选区**：替换与恢复统一走同一写回函数，选区按恢复后文本长度夹取、scrollTop 保留。
+- **[P2] 文档口径澄清**：[issue7-baseline-tasks.md](issue7-baseline-tasks.md) 增「范围界定」（实测自动适配 4189 / tool 4237 / plain 34 字符，tool≠精简；「每轮重发 vs 只发一次」未验证）与「当前状态」（真实对照未执行）；首轮可用率改为按「任务 1–3 parseGenui+形态 / 任务 4–5 无界面」分口径统计；[prompt.md](prompt.md) 补切换语义（尾部完整才替换、edited 不覆盖、plain 残留如实显示）。
+- 验证：26 个测试文件 284 项单测 + 3 项设计性跳过全绿，`npm run check`（typecheck、lint、校验器再生成、构建与生产包校验）再通过；真实模型对照仍待执行。
+
