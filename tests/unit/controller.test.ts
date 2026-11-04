@@ -97,6 +97,57 @@ describe('页面生命周期控制器', () => {
     lifecycle.dispose();
   });
 
+  it('新回答生成期间保留未变化的历史卡片与已调整的值', async () => {
+    const sliderDoc = JSON.stringify({
+      type: 'genui',
+      version: 2,
+      title: '预算',
+      state: [
+        { id: 'budget', label: '预算', kind: 'number', initial: 5000, min: 0, max: 10000, step: 100, unit: '元' },
+      ],
+      derived: [],
+      elements: [
+        { kind: 'slider', bind: 'budget' },
+        { kind: 'value', label: '当前预算', source: { kind: 'state', id: 'budget' } },
+      ],
+    });
+    const doc = buildDoc(assistant('history', sliderDoc));
+    const lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 40,
+    });
+    await lifecycle.start();
+    await advance(60);
+
+    const host = doc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+    const slider = host?.shadowRoot?.querySelector<HTMLInputElement>('input[type="range"]');
+    expect(slider).not.toBeNull();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(slider, '7000');
+    slider!.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await advance(20);
+    expect(host?.shadowRoot?.textContent).toContain('7000');
+
+    doc.body.insertAdjacentHTML('beforeend', stopControl());
+    doc.body.insertAdjacentHTML('beforeend', assistant('streaming', '{"type":"genui",'));
+    await advance(200);
+
+    expect(isGenerationActive(doc)).toBe(true);
+    expect(host?.isConnected).toBe(true);
+    const kept = doc.querySelector<HTMLElement>('.genui-card-host');
+    expect(kept).toBe(host);
+    expect(kept?.shadowRoot?.textContent).toContain('7000');
+
+    doc.querySelector('#stop')?.remove();
+    await advance(120);
+    expect(host?.isConnected).toBe(true);
+    expect(host?.shadowRoot?.textContent).toContain('7000');
+
+    lifecycle.dispose();
+  });
+
   it('回复改写与会话节点替换会卸载旧卡片并只挂载当前节点', async () => {
     const doc = buildDoc(assistant('session-a', VALID('第一版')));
     const lifecycle = createPageLifecycle(doc, {

@@ -15,6 +15,14 @@ import {
   evaluateComposite,
   type CompositeEvaluation,
 } from '../runtime/evaluate';
+import {
+  createCardUiState,
+  type CardUiState,
+  type PlanClearResult,
+  type PlanSaveResult,
+  type TableViewState,
+} from '../runtime/card-state';
+import type { CardStateStore } from '../runtime/card-state-store';
 import { ElementErrorBoundary } from './boundaries';
 import { CompositeElementsView } from './composite';
 import { UnknownElementView } from './elements';
@@ -53,23 +61,71 @@ export interface CardProps {
    * 「未接入」反馈，且绝不自动发送。
    */
   onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
+  /**
+   * 稳定卡片身份与页面内状态仓库（issue #2）。两者缺省时退化为组件内部
+   * 状态，保持既有单测/独立挂载行为不变。
+   */
+  cardKey?: string;
+  stateStore?: CardStateStore;
+  /** 首次挂载的已校验状态（来自保存方案恢复或上层预置）。 */
+  initialState?: CardUiState;
+  /** 已保存到本机的方案时间；null 表示当前没有可恢复方案。 */
+  savedPlanAt?: number | null;
+  /** 用户主动「保存方案」；未接线时不显示入口，也绝不自动保存。 */
+  onSavePlan?: (state: CardUiState) => Promise<PlanSaveResult>;
+  /** 清除本机保存的方案。 */
+  onClearPlan?: () => Promise<PlanClearResult>;
 }
 
 const EMPTY_CALCULATION: DerivedCalculation = { values: {}, errors: {}, operations: 0 };
 
-export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue }: CardProps) {
+function readErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function Card({
+  document: doc,
+  rawJson,
+  registry,
+  onToggleRaw,
+  onContinue,
+  cardKey,
+  stateStore,
+  initialState,
+  savedPlanAt,
+  onSavePlan,
+  onClearPlan,
+}: CardProps) {
   const brandMarkUrl = getBrandMarkUrl();
   const [showRaw, setShowRaw] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [followupFeedback, setFollowupFeedback] = useState<string | null>(null);
-  const [state, setState] = useState<InteractiveStateValues>(() =>
-    doc.version === 1 ? {} : createInitialState(doc),
-  );
+  // 首次挂载优先读取页面内仓库：同一文档的节点替换/重新挂载沿用已调整值。
+  const [initialCardState] = useState<CardUiState>(() => {
+    if (stateStore && cardKey) {
+      const stored = stateStore.get(cardKey);
+      if (stored) return stored;
+    }
+    return initialState ?? createCardUiState(doc);
+  });
+  const [state, setState] = useState<InteractiveStateValues>(initialCardState.values);
+  const [tables, setTables] = useState<Record<string, TableViewState>>(initialCardState.tables);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  // 表格的筛选/排序是视图本地状态，重置时通过该计数器强制重新挂载。
+  // 表格的筛选/排序由外部状态驱动，重置时递增该计数器强制重新挂载表格。
   const [resetToken, setResetToken] = useState(0);
+  const [savedAt, setSavedAt] = useState<number | null>(savedPlanAt ?? null);
+  const [planFeedback, setPlanFeedback] = useState<string | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
   const bodyId = useId();
+
+  /** 每次业务状态变化同步写入页面内仓库；绝不在此路径写本机存储。 */
+  const writeState = (
+    values: InteractiveStateValues,
+    nextTables: Record<string, TableViewState>,
+  ): void => {
+    if (stateStore && cardKey) stateStore.set(cardKey, { values, tables: nextTables });
+  };
 
   const evaluation = useMemo<CompositeEvaluation | null>(
     () => (doc.version === 3 || doc.version === 4 ? evaluateComposite(doc, state) : null),
@@ -146,7 +202,9 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
       return;
     }
 
-    setState((previous) => ({ ...previous, [id]: value }));
+    const next = { ...state, [id]: value };
+    setState(next);
+    writeState(next, tables);
     clearFieldError(id);
     setDrafts((previous) => {
       if (!hasOwn(previous, id)) return previous;
@@ -180,10 +238,63 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
 
   const handleReset = () => {
     if (doc.version === 1) return;
-    setState(createInitialState(doc));
+    const next = createInitialState(doc);
+    setState(next);
     setDrafts({});
     setFieldErrors({});
+    setTables({});
+    writeState(next, {});
     setResetToken((previous) => previous + 1);
+  };
+
+  /** 表格筛选/排序随卡片一起保存在页面内仓库，重新挂载时恢复。 */
+  const handleTableChange = (path: string, view: TableViewState) => {
+    const next = { ...tables, [path]: view };
+    setTables(next);
+    writeState(state, next);
+  };
+
+  // 「保存方案」只在用户显式点击时写入本机；交互本身绝不自动持久化。
+  const handleSavePlan = async () => {
+    if (!onSavePlan || planBusy) return;
+    setPlanBusy(true);
+    setPlanFeedback(null);
+    try {
+      const result = await onSavePlan({ values: state, tables });
+      if (result.ok) {
+        setSavedAt(result.savedAt);
+        setPlanFeedback(
+          result.evicted > 0
+            ? `已保存到本机，刷新后可恢复；超出容量上限，已清理最早 ${result.evicted} 条保存。`
+            : '已保存到本机，刷新后可恢复。',
+        );
+      } else {
+        setPlanFeedback(result.message);
+      }
+    } catch (error) {
+      setPlanFeedback(`保存失败：${readErrorMessage(error)}`);
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
+  const handleClearPlan = async () => {
+    if (!onClearPlan || planBusy) return;
+    setPlanBusy(true);
+    setPlanFeedback(null);
+    try {
+      const result = await onClearPlan();
+      if (result.ok) {
+        setSavedAt(null);
+        setPlanFeedback('已清除本机保存的方案。');
+      } else {
+        setPlanFeedback(result.message);
+      }
+    } catch (error) {
+      setPlanFeedback(`清除失败：${readErrorMessage(error)}`);
+    } finally {
+      setPlanBusy(false);
+    }
   };
 
   const renderLegacyElement = (element: TextElement | InteractiveElement, index: number) => {
@@ -245,6 +356,8 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
               resetToken,
               onValueChange: handleValueChange,
               onNumberInput: handleNumberInput,
+              tables,
+              onTableChange: handleTableChange,
             }}
           />
         ) : (
@@ -262,12 +375,37 @@ export function Card({ document: doc, rawJson, registry, onToggleRaw, onContinue
             继续讨论
           </button>
         )}
+        {doc.version === 1 || !onSavePlan ? null : (
+          <button
+            type="button"
+            className="genui-card-save"
+            disabled={planBusy}
+            onClick={() => void handleSavePlan()}
+          >
+            {savedAt !== null ? '更新保存的方案' : '保存方案'}
+          </button>
+        )}
+        {savedAt !== null && onClearPlan ? (
+          <button
+            type="button"
+            className="genui-card-clear-plan"
+            disabled={planBusy}
+            onClick={() => void handleClearPlan()}
+          >
+            清除保存
+          </button>
+        ) : null}
         <button type="button" className="genui-card-toggle" onClick={handleToggle}>
           {showRaw ? '收起原始 JSON' : '查看原始 JSON'}
         </button>
         {followupFeedback ? (
           <p className="genui-card-followup-feedback" role="status">
             {followupFeedback}
+          </p>
+        ) : null}
+        {planFeedback ? (
+          <p className="genui-card-plan-feedback" role="status">
+            {planFeedback}
           </p>
         ) : null}
         <span className="genui-card-note">

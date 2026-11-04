@@ -634,6 +634,42 @@
   font-size: 12px;
 }
 
+.genui-card-save,
+.genui-card-clear-plan {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(127, 127, 127, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 3px 10px;
+}
+
+.genui-card-save:hover,
+.genui-card-clear-plan:hover {
+  background: rgba(127, 127, 127, 0.12);
+}
+
+.genui-card-save:disabled,
+.genui-card-clear-plan:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.genui-card-save:focus-visible,
+.genui-card-clear-plan:focus-visible {
+  outline: 2px solid #3988ff;
+  outline-offset: 2px;
+}
+
+.genui-card-plan-feedback {
+  margin: 0;
+  flex-basis: 100%;
+  color: #3988ff;
+  font-size: 12px;
+}
+
 /* ---------- 阶段 6：站点亮暗主题跟随 ---------- */
 
 /* 颜色规范：默认值即浅色；data-site-theme="dark" 时整体切换。
@@ -663,6 +699,8 @@
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand,
+.genui-card-root[data-site-theme='dark'] .genui-card-save,
+.genui-card-root[data-site-theme='dark'] .genui-card-clear-plan,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup {
   border-color: rgba(255, 255, 255, 0.26);
 }
@@ -670,6 +708,8 @@
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-save:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-clear-plan:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup:hover {
   background: rgba(255, 255, 255, 0.1);
 }
@@ -721,6 +761,7 @@
   color: #ff9b91;
 }
 
-.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback {
+.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback,
+.genui-card-root[data-site-theme='dark'] .genui-card-plan-feedback {
   color: #7cb8ff;
 }

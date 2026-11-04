@@ -3,6 +3,7 @@ import { fireEvent } from '@testing-library/react';
 import type { GenuiDocument } from '../../src/protocol/types';
 import { ElementRegistry } from '../../src/render/registry';
 import { mountCard, type MountedCard } from '../../src/render/mount';
+import { createCardStateStore } from '../../src/runtime/card-state-store';
 
 /**
  * 阶段 2：Card 渲染与 Shadow DOM 样式隔离（Red → Green）。
@@ -584,4 +585,61 @@ describe('回归：大步数步长校验（Phase 4 P2）', () => {
     expect(input.value).toBe('1000000000000');
     expect(derived()).toBeUndefined();
   });
+});
+
+it('表格筛选与排序通过状态仓库在重新挂载后保留', async () => {
+  const TABLE_DOC: GenuiDocument = {
+    type: 'genui',
+    version: 3,
+    title: '支出明细',
+    state: [],
+    derived: [],
+    elements: [
+      {
+        kind: 'table',
+        title: '支出',
+        sortable: true,
+        columns: [
+          { key: 'name', label: '项目' },
+          { key: 'amount', label: '金额', numeric: true, unit: '元' },
+        ],
+        rows: [
+          { cells: { name: '房租', amount: 3000 } },
+          { cells: { name: '餐饮', amount: 1200 } },
+        ],
+      },
+    ],
+  };
+  const stateStore = createCardStateStore();
+  const cardKey = 'card|1|test-session|vl:msg|0|hash';
+
+  const firstHost = globalThis.document.createElement('div');
+  globalThis.document.body.appendChild(firstHost);
+  const first = mountCard(firstHost, {
+    document: TABLE_DOC,
+    rawJson: JSON.stringify(TABLE_DOC),
+    cardKey,
+    stateStore,
+  });
+  const firstFilter = firstHost.shadowRoot?.querySelector<HTMLInputElement>('input[type="search"]');
+  expect(firstFilter).not.toBeNull();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(firstFilter, '房租');
+  firstFilter!.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  await flushUi();
+  expect(firstHost.shadowRoot?.textContent).toContain('显示 1 / 2 行');
+  first.unmount();
+
+  const secondHost = globalThis.document.createElement('div');
+  globalThis.document.body.appendChild(secondHost);
+  const second = mountCard(secondHost, {
+    document: TABLE_DOC,
+    rawJson: JSON.stringify(TABLE_DOC),
+    cardKey,
+    stateStore,
+  });
+  const restoredFilter =
+    secondHost.shadowRoot?.querySelector<HTMLInputElement>('input[type="search"]');
+  expect(restoredFilter?.value).toBe('房租');
+  expect(secondHost.shadowRoot?.textContent).toContain('显示 1 / 2 行');
+  second.unmount();
 });

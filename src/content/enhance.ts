@@ -1,9 +1,25 @@
 import { LOG_PREFIX } from './lifecycle';
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
+import { computeCardIdentities, readSessionId, type CardIdentity } from './identity';
 import { parseGenui } from '../protocol/validate';
-import type { GenuiFailureCode } from '../protocol/types';
+import type { GenuiDocument, GenuiFailureCode } from '../protocol/types';
+import {
+  CARD_STATE_VERSION,
+  createCardUiState,
+  documentStateSignature,
+  isCompatibleSavedPlan,
+  restoreCardUiState,
+  sanitizeCardValues,
+  sanitizeTableViews,
+  type CardUiState,
+  type PlanClearResult,
+  type PlanSaveResult,
+  type SavedCardPlan,
+} from '../runtime/card-state';
+import { createCardStateStore, type CardStateStore } from '../runtime/card-state-store';
 import { mountCard, type MountedCard } from '../render/mount';
 import type { ElementRegistry } from '../render/registry';
+import type { PlanStore } from './plan-store';
 
 /**
  * 识别 → 解析 → 挂载的单块链路，以及供页面生命周期控制器使用的可清理管理器。
@@ -37,6 +53,18 @@ export interface EnhanceOptions {
    * 等可验证后的重新扫描再判定；生产接线 content/viewport-gate。
    */
   isBlockUnverifiable?: (block: HTMLElement) => boolean;
+  /** 当前会话 id；生产由控制器注入，缺省从 document.location 推导。 */
+  sessionId?: string;
+  /** 账号标记覆盖（测试注入）；缺省读取页面稳定标记，缺失时禁止本机保存。 */
+  accountId?: string;
+  /** 本机「保存方案」存储；null/缺省表示不提供持久化入口。 */
+  planStore?: PlanStore | null;
+  /** 页面内状态仓库覆盖（测试注入）；缺省新建且有上限。 */
+  stateStore?: CardStateStore;
+  /** 测试直接注入已加载的保存方案；与 planStore 结果合并时以此为准。 */
+  savedPlans?: Record<string, SavedCardPlan>;
+  /** 保存时间源（测试可控）。 */
+  now?: () => number;
 }
 
 export interface EnhanceResult {
@@ -60,6 +88,8 @@ interface MountedRecord {
   signature: string;
   originalDisplay: string;
   mountedCard: MountedCard;
+  /** 稳定卡片身份键；节点被改写时据此丢弃旧文档的页面内状态。 */
+  key: string;
 }
 
 function markFailed(block: Element, reason: EnhanceFailureReason): void {
@@ -88,11 +118,38 @@ export class EnhancementManager {
   private readonly mounted = new Map<HTMLElement, MountedRecord>();
   private readonly failed = new Map<HTMLElement, FailedRecord>();
   private enabled = true;
+  private readonly stateStore: CardStateStore;
+  private readonly now: () => number;
+  /** 已加载到内存的保存方案；键与卡片身份一致。 */
+  private savedPlans: Record<string, SavedCardPlan>;
+  private plansLoaded = false;
 
   constructor(
     private readonly doc: Document,
     private readonly options: EnhanceOptions = {},
-  ) {}
+  ) {
+    this.stateStore = options.stateStore ?? createCardStateStore();
+    this.savedPlans = options.savedPlans ? { ...options.savedPlans } : {};
+    this.now = options.now ?? Date.now;
+  }
+
+  /**
+   * 预载本机保存方案。控制器在首次扫描前等待，保证恢复先于挂载；
+   * 存储不可用或读取失败时只记录日志，页面内恢复仍然有效。
+   */
+  async loadSavedPlans(): Promise<void> {
+    if (this.plansLoaded) return;
+    this.plansLoaded = true;
+    const store = this.options.planStore;
+    if (!store) return;
+    try {
+      const saved = await store.loadAll();
+      // 测试注入的记录优先，避免异步读取覆盖预期夹具。
+      this.savedPlans = { ...saved, ...this.savedPlans };
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} failed to load saved plans`, error);
+    }
+  }
 
   /**
    * 对当前 DOM 做一次协调。allowMount=false 只清理已失效/已变化的挂载，
@@ -105,9 +162,14 @@ export class EnhancementManager {
 
     for (const [block, record] of this.mounted) {
       const candidate = byBlock.get(block);
-      const changed = !candidate || candidateSignature(candidate) !== record.signature;
+      const removed = !candidate;
+      // 只有「仍在页面上、但原始文本被改写」才丢弃旧状态；节点被移除或
+      // 虚拟列表回收时保留，同一身份重新挂载仍可恢复。
+      const changedText =
+        candidate !== undefined && candidateSignature(candidate) !== record.signature;
       const hostLost = !record.host.isConnected;
-      if (!block.isConnected || changed || hostLost) {
+      if (!block.isConnected || removed || changedText || hostLost) {
+        if (changedText) this.stateStore.delete(record.key);
         disposeMounted(record, true);
         this.mounted.delete(block);
       }
@@ -123,9 +185,22 @@ export class EnhancementManager {
 
     if (!this.enabled || !allowMount) return result;
 
+    // 身份只在真正要挂载时计算；会话 id 每轮重读，兼容 SPA 内切换会话。
+    const identities = computeCardIdentities(candidates, {
+      sessionId: this.options.sessionId ?? readSessionId(this.doc),
+      accountId: this.options.accountId,
+      document: this.doc,
+    });
+
     for (const candidate of candidates) {
       const { block } = candidate;
       if (this.mounted.has(block)) {
+        result.skipped += 1;
+        continue;
+      }
+
+      const identity = identities.get(block);
+      if (!identity) {
         result.skipped += 1;
         continue;
       }
@@ -151,7 +226,7 @@ export class EnhancementManager {
       // A stale marker can remain after external code removes our host. Clear it
       // before retrying so the block never becomes stuck in a hidden state.
       removeState(block);
-      const outcome = this.mountCandidate(candidate, signature);
+      const outcome = this.mountCandidate(candidate, signature, identity);
       if (outcome === 'mounted') result.mounted += 1;
       // deferred（视口门控）与 failed 都不算数：前者等待可验证性，后者已被
       // markFailed 记入 Map，下一轮扫描靠签名比对决定是否重试。
@@ -166,12 +241,6 @@ export class EnhancementManager {
     if (this.enabled === enabled) return;
     this.enabled = enabled;
     if (!enabled) this.restoreAll();
-  }
-
-  /** 流式重新生成期间先撤下旧卡片，完成后由稳定扫描重新挂载。 */
-  suspendMounted(): void {
-    for (const record of this.mounted.values()) disposeMounted(record, true);
-    this.mounted.clear();
   }
 
   /** Idempotent cleanup for pagehide and controller disposal. */
@@ -189,9 +258,88 @@ export class EnhancementManager {
     for (const host of this.doc.querySelectorAll(`[data-genui-host]`)) host.remove();
   }
 
+  /**
+   * 首次挂载状态优先级：页面内仓库 > 兼容的保存方案 > 文档初始值。
+   * 保存记录只在身份可持久化（账号、会话可验证且无歧义）时读取，
+   * 避免在账号切换或消息身份不清时串用别人的方案。
+   */
+  private resolveInitialState(
+    identity: CardIdentity,
+    doc: GenuiDocument,
+  ): { state: CardUiState; savedPlanAt: number | null } {
+    const existing = this.stateStore.get(identity.key);
+    const plan = identity.persistable ? this.savedPlans[identity.key] : undefined;
+    const compatible =
+      plan && isCompatibleSavedPlan(plan, doc, identity.documentHash) ? plan : null;
+
+    if (existing) {
+      return { state: existing, savedPlanAt: compatible?.savedAt ?? null };
+    }
+    if (compatible) {
+      const restored = restoreCardUiState(doc, compatible);
+      this.stateStore.set(identity.key, restored.state);
+      return { state: restored.state, savedPlanAt: compatible.savedAt };
+    }
+    const fresh = createCardUiState(doc);
+    this.stateStore.set(identity.key, fresh);
+    return { state: fresh, savedPlanAt: null };
+  }
+
+  /** 显式保存：仅在用户点击时调用；身份不可靠时拒绝写入本机。 */
+  private async savePlan(
+    identity: CardIdentity,
+    doc: GenuiDocument,
+    state: CardUiState,
+  ): Promise<PlanSaveResult> {
+    const store = this.options.planStore;
+    if (!store) {
+      return { ok: false, message: '保存失败：当前环境不支持本机存储。' };
+    }
+    if (!identity.persistable) {
+      return {
+        ok: false,
+        message: '保存失败：当前会话或消息身份无法可靠确认，未保存到本机。',
+      };
+    }
+
+    const plan: SavedCardPlan = {
+      stateVersion: CARD_STATE_VERSION,
+      documentHash: identity.documentHash,
+      stateSignature: documentStateSignature(doc),
+      accountId: identity.accountId,
+      sessionId: identity.sessionId,
+      messageKey: identity.messageKey,
+      duplicateIndex: identity.duplicateIndex,
+      savedAt: this.now(),
+      values: sanitizeCardValues(doc, state.values).values,
+      tables: sanitizeTableViews(state.tables),
+    };
+    const previous = this.savedPlans[identity.key];
+    this.savedPlans[identity.key] = plan;
+    const result = await store.save(identity.key, plan);
+    if (!result.ok) {
+      if (previous) this.savedPlans[identity.key] = previous;
+      else delete this.savedPlans[identity.key];
+    }
+    return result;
+  }
+
+  private async clearPlan(identity: CardIdentity): Promise<PlanClearResult> {
+    const store = this.options.planStore;
+    if (!store) {
+      return { ok: false, message: '清除失败：当前环境不支持本机存储。' };
+    }
+    const previous = this.savedPlans[identity.key];
+    delete this.savedPlans[identity.key];
+    const result = await store.remove(identity.key);
+    if (!result.ok && previous) this.savedPlans[identity.key] = previous;
+    return result;
+  }
+
   private mountCandidate(
     candidate: GenuiBlockCandidate,
     signature: string,
+    identity: CardIdentity,
   ): 'mounted' | 'failed' | 'deferred' {
     const { block } = candidate;
 
@@ -200,8 +348,13 @@ export class EnhancementManager {
     host.className = HOST_CLASS;
     host.setAttribute('data-genui-host', '');
 
+    const raw = candidate.pre?.textContent ?? '';
+
     /** 统一失败出口：视口门控命中时不判失败，等可验证后的重新扫描。 */
-    const reject = (reason: EnhanceFailureReason, detail?: string): 'failed' | 'deferred' => {
+    const reject = (
+      reason: EnhanceFailureReason,
+      detail?: string,
+    ): 'failed' | 'deferred' => {
       block.style.display = originalDisplay;
       host.remove();
       const suffix = detail ? `: ${detail}` : '';
@@ -226,12 +379,12 @@ export class EnhancementManager {
       return reject('missing-pre', '结构异常，无 pre 内容');
     }
 
-    const raw = candidate.pre.textContent ?? '';
     const parsed = parseGenui(raw);
     if (!parsed.ok) {
       return reject(parsed.code, parsed.detail);
     }
 
+    const resolved = this.resolveInitialState(identity, parsed.document);
     block.before(host);
     let mountedCard: MountedCard;
     let fatalDuringInitialRender = false;
@@ -243,6 +396,14 @@ export class EnhancementManager {
         rawJson: raw,
         registry: this.options.registry,
         onContinue: this.options.onContinue,
+        cardKey: identity.key,
+        stateStore: this.stateStore,
+        initialState: resolved.state,
+        savedPlanAt: resolved.savedPlanAt,
+        onSavePlan: this.options.planStore
+          ? (state) => this.savePlan(identity, parsed.document, state)
+          : undefined,
+        onClearPlan: this.options.planStore ? () => this.clearPlan(identity) : undefined,
         onToggleRaw: (showRaw) => {
           // 卡片保持可见，否则「收起原始 JSON」将没有可点的入口。
           block.style.display = showRaw ? originalDisplay : 'none';
@@ -275,7 +436,7 @@ export class EnhancementManager {
       return 'failed';
     }
 
-    record = { block, host, raw, signature, originalDisplay, mountedCard };
+    record = { block, host, raw, signature, originalDisplay, mountedCard, key: identity.key };
     block.style.display = 'none';
     block.setAttribute(STATE_ATTR, 'mounted');
     this.mounted.set(block, record);

@@ -8,6 +8,7 @@ import type {
 } from '../protocol/types';
 import { lookupCondition, lookupExpression } from '../runtime/evaluate';
 import type { CompositeEvaluation } from '../runtime/evaluate';
+import type { TableViewState } from '../runtime/card-state';
 import { formatNumber } from './format';
 
 /**
@@ -72,12 +73,21 @@ function compareRows(
   return direction === 'asc' ? result : -result;
 }
 
-export function TableElementView({ element, evaluation }: {
+export function TableElementView({ element, evaluation, view, onViewChange }: {
   element: TableElement;
   evaluation: CompositeEvaluation;
+  /** 卡片级表格视图状态；提供 onViewChange 时受控（筛选/排序跨挂载保留）。 */
+  view?: TableViewState;
+  onViewChange?: (view: TableViewState) => void;
 }) {
-  const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<SortState | null>(element.initialSort ?? null);
+  const controlled = onViewChange !== undefined;
+  const [localFilter, setLocalFilter] = useState('');
+  const [localSort, setLocalSort] = useState<SortState | null>(element.initialSort ?? null);
+  const filter = controlled ? (view?.filter ?? '') : localFilter;
+  // 没有表格视图记录时回退文档的 initialSort，保持首次渲染与重置后的行为。
+  const rawSort = controlled ? (view?.sort ?? element.initialSort ?? null) : localSort;
+  const sort =
+    rawSort && element.columns.some((column) => column.key === rawSort.key) ? rawSort : null;
 
   const rendered = useMemo(() => {
     const conditionErrors: string[] = [];
@@ -125,12 +135,22 @@ export function TableElementView({ element, evaluation }: {
   const columnCount = element.columns.length;
   const emptyText = element.emptyText ?? (rendered.rows.length === 0 ? '没有可显示的数据' : '没有符合筛选条件的数据');
 
+  const changeFilter = (value: string) => {
+    if (!controlled) {
+      setLocalFilter(value);
+      return;
+    }
+    onViewChange({ filter: value, sort });
+  };
+
   const toggleSort = (column: TableColumn) => {
     if (!element.sortable) return;
-    setSort((previous) => {
-      if (previous?.key !== column.key) return { key: column.key, dir: 'asc' };
-      return { key: column.key, dir: previous.dir === 'asc' ? 'desc' : 'asc' };
-    });
+    const next: SortState =
+      sort?.key !== column.key
+        ? { key: column.key, dir: 'asc' }
+        : { key: column.key, dir: sort.dir === 'asc' ? 'desc' : 'asc' };
+    if (controlled) onViewChange({ filter, sort: next });
+    else setLocalSort(next);
   };
 
   return (
@@ -148,7 +168,7 @@ export function TableElementView({ element, evaluation }: {
               type="search"
               value={filter}
               placeholder="筛选…"
-              onChange={(event) => setFilter(event.currentTarget.value)}
+              onChange={(event) => changeFilter(event.currentTarget.value)}
             />
           </label>
           {element.sortable ? <span className="genui-table-hint">点击列标题排序</span> : null}
