@@ -276,6 +276,7 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
       window: win,
       onStatus: (status) => control?.setAugmentStatus(status),
       onModeChange: (mode) => control?.setAugmentMode(mode),
+      onPlainNote: (note) => control?.setAugmentPlainNote(note),
     });
     unsubscribe = store?.subscribe(handleStorageChange) ?? null;
 

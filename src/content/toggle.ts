@@ -13,6 +13,7 @@ export const AUGMENT_STATUS_LABELS: Record<AugmentStatus, string> = {
   disabled: '增强已关闭，不会追加',
   'no-input': '未找到聊天输入框',
   plain: '普通回答：本轮不追加增强说明',
+  edited: '说明已被你修改：扩展不会自动替换或重复追加',
 };
 
 /** 本轮模式在浮标上的展示标签；AUGMENT_MODE_ORDER 即循环切换顺序。 */
@@ -29,6 +30,8 @@ export interface ToggleControl {
   setAugmentStatus(status: AugmentStatus | null): void;
   /** 本轮增强模式变化（用户选择或内部重置）；驱动按钮文案与面板文本。 */
   setAugmentMode(mode: GenuiPromptMode): void;
+  /** plain 模式的面板说明文本；null 恢复默认短说明，非 null 为草稿残留提示。 */
+  setAugmentPlainNote(note: string | null): void;
   dispose(): void;
 }
 
@@ -239,7 +242,7 @@ export function createToggleControl(
 
   const modeHint = doc.createElement('p');
   modeHint.textContent =
-    '「本轮」按钮只影响这一轮草稿会追加的内容（自动适配 / 明确生成工具 / 普通回答），不改变持久设置；发送、清空草稿或重开会话后会回到自动适配。';
+    '「本轮」按钮只影响这一轮草稿会追加的内容（自动适配 / 明确生成工具 / 普通回答），不改变持久设置；发送、清空草稿或重开会话后会回到自动适配。只有说明仍在草稿末尾且与你逐字未改时，切换才会替换或移除它；修改过的说明不会被自动覆盖，plain 模式中面板会如实显示残留内容。';
 
   const statusLine = doc.createElement('p');
   statusLine.className = 'status';
@@ -265,6 +268,8 @@ export function createToggleControl(
   let enabled = initialEnabled;
   let augmentStatus: AugmentStatus | null = options.initialStatus ?? null;
   let augmentMode: GenuiPromptMode = options.initialMode ?? 'auto';
+  /** plain 模式的临时面板说明（残留提示）；null 表示默认短说明。 */
+  let plainNote: string | null = null;
   const modeTexts: Record<GenuiPromptMode, string> = {
     auto: options.promptText ?? '',
     tool: options.promptTexts?.tool ?? '',
@@ -291,12 +296,12 @@ export function createToggleControl(
     statusLine.setAttribute('data-status', augmentStatus ?? 'loading');
   }
 
-  /** 模式按钮文案与面板逐字文本跟随当前本轮模式；plain 展示简短说明。 */
+  /** 模式按钮文案与面板逐字文本跟随当前本轮模式；plain 展示残留提示或默认短说明。 */
   function renderMode(): void {
     modeButton.textContent = `本轮：${AUGMENT_MODE_LABELS[augmentMode]}`;
     modeButton.title = '切换本轮增强模式（自动适配 / 明确生成工具 / 普通回答）';
     modeButton.setAttribute('aria-label', `本轮模式：${AUGMENT_MODE_LABELS[augmentMode]}，点击切换为下一模式`);
-    prompt.textContent = modeTexts[augmentMode];
+    prompt.textContent = augmentMode === 'plain' ? plainNote ?? modeTexts.plain : modeTexts[augmentMode];
   }
 
   function handleModeClick(event: MouseEvent): void {
@@ -488,6 +493,11 @@ export function createToggleControl(
       if (augmentMode === mode) return;
       augmentMode = mode;
       renderMode();
+    },
+    setAugmentPlainNote(note) {
+      if (plainNote === note) return;
+      plainNote = note;
+      if (augmentMode === 'plain') renderMode();
     },
     dispose() {
       button.removeEventListener('click', handleClick);

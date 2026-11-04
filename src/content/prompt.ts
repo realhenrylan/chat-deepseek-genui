@@ -120,3 +120,32 @@ export function appendGenuiPrompt(value: string, mode: GenuiPromptMode = 'auto')
 export function hasGenuiPrompt(value: string): boolean {
   return value.includes(GENUI_PROMPT_START) || value.includes(GENUI_PROMPT_TOOL_START);
 }
+
+/** 草稿尾部说明的识别结果。 */
+export interface GenuiDraftPromptInfo {
+  /** none：草稿没有任何说明；intact：末尾是某一份完整逐字说明；edited：径有说明痕迹但已不完整。 */
+  kind: 'none' | 'intact' | 'edited';
+  /** kind 为 intact 时给出末尾完整说明的逐字内容。 */
+  suffix?: string;
+  /** kind 非 none 时给出说明使用的起始标记。 */
+  start?: string;
+}
+
+/** 识别草稿末尾的增强说明：完整、被修改、还是不存在；用于模式切换不得覆盖用户内容。 */
+export function describeGenuiDraftPrompt(value: string): GenuiDraftPromptInfo {
+  const startIndex = Math.max(
+    value.lastIndexOf(GENUI_PROMPT_START),
+    value.lastIndexOf(GENUI_PROMPT_TOOL_START),
+  );
+  if (startIndex < 0) return { kind: 'none' };
+  if (value.endsWith(GENUI_PROMPT_TEXT) && startIndex === value.length - GENUI_PROMPT_TEXT.length) {
+    return { kind: 'intact', suffix: GENUI_PROMPT_TEXT, start: GENUI_PROMPT_START };
+  }
+  if (value.endsWith(GENUI_TOOL_PROMPT_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_TEXT.length) {
+    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_TEXT, start: GENUI_PROMPT_TOOL_START };
+  }
+  return {
+    kind: 'edited',
+    start: value.includes(GENUI_PROMPT_TOOL_START) ? GENUI_PROMPT_TOOL_START : GENUI_PROMPT_START,
+  };
+}

@@ -8,6 +8,7 @@ import {
   GENUI_PROMPT_VERSION,
   GENUI_TOOL_PROMPT_TEXT,
   appendGenuiPrompt,
+  describeGenuiDraftPrompt,
   getGenuiPromptTextForMode,
   hasGenuiPrompt,
 } from '../../src/content/prompt';
@@ -167,5 +168,37 @@ describe('issue7 本轮模式变体', () => {
       expect(example.document.version).toBe(3);
       expect(example.document.elements.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('issue7 草稿说明识别', () => {
+  const NL = String.fromCharCode(10);
+  const SEP = NL + NL;
+
+  it('无标记时报 none', () => {
+    expect(describeGenuiDraftPrompt('随便写的内容')).toEqual({ kind: 'none' });
+    expect(describeGenuiDraftPrompt('')).toEqual({ kind: 'none' });
+  });
+
+  it('末尾是完整 auto/tool 文本时报 intact，并给出尾部内容', () => {
+    const auto = describeGenuiDraftPrompt(`草稿${SEP}${GENUI_PROMPT_TEXT}`);
+    expect(auto.kind).toBe('intact');
+    expect(auto.suffix).toBe(GENUI_PROMPT_TEXT);
+    expect(auto.start).toBe(GENUI_PROMPT_START);
+
+    const tool = describeGenuiDraftPrompt(`草稿${SEP}${GENUI_TOOL_PROMPT_TEXT}`);
+    expect(tool.kind).toBe('intact');
+    expect(tool.suffix).toBe(GENUI_TOOL_PROMPT_TEXT);
+    expect(tool.start).toBe(GENUI_PROMPT_TOOL_START);
+  });
+
+  it('说明在中间但不完整时报 edited', () => {
+    const edited = describeGenuiDraftPrompt(`草稿${SEP}${GENUI_PROMPT_TEXT.slice(0, 80)}`);
+    expect(edited.kind).toBe('edited');
+    expect(edited.start).toBe(GENUI_PROMPT_START);
+
+    const toolEdited = describeGenuiDraftPrompt(`草稿${SEP}${GENUI_TOOL_PROMPT_TEXT}尾注`);
+    expect(toolEdited.kind).toBe('edited');
+    expect(toolEdited.start).toBe(GENUI_PROMPT_TOOL_START);
   });
 });

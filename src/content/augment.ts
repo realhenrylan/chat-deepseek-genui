@@ -13,13 +13,18 @@
  * - auto（默认）：沿用 v2.2 完整文本；tool：本轮明确生成工具；plain：本轮不追加任何文本；
  * - 用户在浮标中显式切换模式会清除 dismissed 并重新调度；内部重置（发送/清空、
  *   草稿被外部替换、stop/start、总开关切换）回到 auto 且不改变 dismissed；
- * - 已追加且草稿未被编辑时切换模式：auto↔tool 原地替换说明文本，光标夹取到
- *   用户原内容长度之内；plain 移除说明（restoreDraft）并把状态报为 plain。
+ * - 草稿末尾仍是完整的扩展说明（包括用户在说明前编辑过原文）时切换模式：
+ *   auto↔tool 只替换尾部说明文本，plain 只移除尾部说明，两者都不会覆盖
+ *   说明之外的用户内容，光标/选区按新用户内容长度夹取保留；
+ * - 说明本身被用户修改/删除后一律不自动替换：auto/tool 报 'edited'
+ *   （浮标如实告知切换未生效），plain 报 'plain' 并通过 onPlainNote
+ *   把残留提示交给面板逐字展示，绝不抹掉用户内容。
  */
 
 import { findChatInput, setNativeValue } from './followup';
 import {
   appendGenuiPrompt,
+  describeGenuiDraftPrompt,
   hasGenuiPrompt,
   type GenuiPromptMode,
 } from './prompt';
@@ -31,7 +36,12 @@ export type AugmentStatus =
   | 'dismissed'
   | 'disabled'
   | 'no-input'
-  | 'plain';
+  | 'plain'
+  | 'edited';
+
+/** 草稿中的说明被用户修改后，选择 plain 时面板要如实展示的残留提示。 */
+export const GENUI_PLAIN_RESIDUAL_NOTE =
+  '本草稿中的增强说明已被你修改：扩展不会自动恢复或删除；本轮为「普通回答」，不会追加新的增强文本。';
 
 export interface DraftAugmentOptions {
   /** 与总开关同步的初始状态。 */
@@ -42,6 +52,8 @@ export interface DraftAugmentOptions {
   onStatus?: (status: AugmentStatus) => void;
   /** 用户在浮标中显式切换本轮模式时回调（不含内部重置）。 */
   onModeChange?: (mode: GenuiPromptMode) => void;
+  /** plain 模式下面板说明文本变化；null 表示使用默认短说明，非 null 为残留提示。 */
+  onPlainNote?: (note: string | null) => void;
 }
 
 export interface DraftAugmenter {
@@ -96,6 +108,8 @@ export function createDraftAugmenter(
   let writing = false;
   /** 本轮增强模式；plain 表示本轮不追加任何文本。 */
   let mode: GenuiPromptMode = 'auto';
+  /** plain 模式最近一次输出的面板说明；避免逐键重复派发同一文本。 */
+  let lastPlainNote: string | null | undefined = undefined;
   /** IME 组合期间用户切换模式时推迟到 compositionend 再应用。 */
   let deferredModeApply = false;
 
@@ -104,6 +118,76 @@ export function createDraftAugmenter(
     status = next;
     options.onStatus?.(next);
     for (const listener of listeners) listener(next);
+  }
+
+  /** plain 状态统一入口：把面板应显示的说明文本（残留提示或默认）交给 UI。 */
+  function setPlainStatus(note: string | null): void {
+    if (lastPlainNote !== note) {
+      lastPlainNote = note;
+      options.onPlainNote?.(note);
+    }
+    setStatus('plain');
+  }
+
+  /** 模式离开 plain 或草稿清空后，把 plain 面板说明重置回默认。 */
+  function clearPlainNote(): void {
+    if (lastPlainNote === null) {
+      lastPlainNote = null;
+      return;
+    }
+    lastPlainNote = null;
+    options.onPlainNote?.(null);
+  }
+
+  /** plain 模式下草稿的面板说明：无说明/完整说明（会被移除）用默认，修改过的说明如实提示。 */
+  function plainNoteForValue(value: string): string | null {
+    const info = describeGenuiDraftPrompt(value);
+    if (info.kind === 'edited') return GENUI_PLAIN_RESIDUAL_NOTE;
+    return null;
+  }
+
+  /** 识别可以安全替换/移除的尾部说明（解引用 resolveRecord / 完整标准尾部）。 */
+  function findReplaceableTail(state: DraftState, value: string): string | null {
+    if (state.appendedValue !== null && state.originalValue !== null) {
+      const suffix = state.appendedValue.slice(state.originalValue.length);
+      if (suffix !== '' && value.endsWith(suffix)) return suffix;
+    }
+    const info = describeGenuiDraftPrompt(value);
+    if (info.kind === 'intact' && info.suffix !== undefined) {
+      // 无记录的整份尾部：连同追加时的分隔空行一起移除，恢复到追加前的原文。
+      let index = value.length - info.suffix.length;
+      for (let i = 0; i < 2 && index > 0 && value[index - 1] === String.fromCharCode(10); i++) {
+        index--;
+      }
+      return value.slice(index);
+    }
+    return null;
+  }
+
+  /** 写回草稿并把选区夹取到 limit 之内；scrollTop 只在 selection 可用时一并恢复。 */
+  function writeInputValue(
+    input: HTMLTextAreaElement,
+    nextValue: string,
+    limit: number,
+  ): void {
+    const selectionStart = input.selectionStart ?? nextValue.length;
+    const selectionEnd = input.selectionEnd ?? nextValue.length;
+    const scrollTop = input.scrollTop;
+    writing = true;
+    try {
+      setNativeValue(input, nextValue);
+    } finally {
+      writing = false;
+    }
+    try {
+      input.setSelectionRange(
+        Math.min(selectionStart, limit),
+        Math.min(selectionEnd, limit),
+      );
+      input.scrollTop = scrollTop;
+    } catch {
+      // 某些嵌入环境不支持 selection API，不影响文本本身。
+    }
   }
 
   function clearTimer(): void {
@@ -141,9 +225,8 @@ export function createDraftAugmenter(
     if (!enabled) return 'disabled';
     const input = findChatInput(doc);
     if (!input) return 'no-input';
-    if (mode === 'plain') {
-      return hasGenuiPrompt(input.value) ? 'appended' : 'plain';
-    }
+    // plain 是唯一的本轮不追加模式；状态恒为 plain，残留说明由面板提示如实交代。
+    if (mode === 'plain') return 'plain';
     if (hasGenuiPrompt(input.value)) return 'appended';
     if (draft?.input === input && draft.dismissed) return 'dismissed';
     return 'idle';
@@ -164,7 +247,8 @@ export function createDraftAugmenter(
       return;
     }
     if (mode === 'plain') {
-      setStatus('plain');
+      // plain：不追加；草稿里的说明状态由面板提示如实交代。
+      setPlainStatus(plainNoteForValue(value));
       return;
     }
     if (hasGenuiPrompt(value)) {
@@ -247,64 +331,55 @@ export function createDraftAugmenter(
     const state = stateFor(input);
     const value = input.value;
     if (value.trim() === '') {
-      setStatus(mode === 'plain' ? 'plain' : 'idle');
-      return;
-    }
-    if (mode === 'plain') {
-      if (state.originalValue !== null && state.appendedValue !== null) {
-        restoreDraft();
-        setStatus('plain');
+      if (mode === 'plain') {
+        state.originalValue = null;
+        state.appendedValue = null;
+        setPlainStatus(null);
       } else {
-        setStatus(statusForCurrentDraft());
+        setStatus('idle');
       }
       return;
     }
-    if (
-      state.originalValue !== null &&
-      state.appendedValue !== null &&
-      input.value === state.appendedValue
-    ) {
-      // 说明未被编辑：换用当前模式的文本，光标仍停在用户内容之前。
-      swapAppendedText(state, input);
-      setStatus('appended');
+    // 尾部仍是完整扩展说明（未被编辑、编辑过原文但尾完整、或无记录的整份文本）时才能安全替换。
+    const tail = findReplaceableTail(state, value);
+    if (mode === 'plain') {
+      if (tail !== null) {
+        // 只移除末尾说明；说明之外的用户内容（含说明前的编辑）一律保留。
+        writeInputValue(input, value.slice(0, value.length - tail.length), value.length - tail.length);
+        state.originalValue = null;
+        state.appendedValue = null;
+        state.lastValue = input.value;
+        setPlainStatus(null);
+      } else {
+        setPlainStatus(plainNoteForValue(value));
+      }
       return;
     }
     if (clearDismissed) state.dismissed = false;
+    if (tail !== null) {
+      const base = value.slice(0, value.length - tail.length);
+      const result = appendGenuiPrompt(base, mode);
+      if (result.inserted) {
+        // 只替换末尾说明；记录指向最新的用户内容，后续关闭增强仍可安全恢复。
+        state.originalValue = base;
+        state.appendedValue = result.value;
+        state.lastValue = result.value;
+        state.dismissed = false;
+        writeInputValue(input, result.value, base.length);
+        setStatus('appended');
+        return;
+      }
+    }
     if (state.dismissed) {
       setStatus('dismissed');
       return;
     }
+    if (describeGenuiDraftPrompt(value).kind === 'edited') {
+      // 说明被用户改过：绝不覆盖；如实告知本轮切换没有改写说明。
+      setStatus('edited');
+      return;
+    }
     schedule();
-  }
-
-  /** 草稿未被编辑时，把已追加的说明整段换成当前模式文本。 */
-  function swapAppendedText(state: DraftState, input: HTMLTextAreaElement): void {
-    if (state.originalValue === null) return;
-    const result = appendGenuiPrompt(state.originalValue, mode === 'auto' ? 'auto' : mode);
-    if (!result.inserted) return;
-    const selectionStart = input.selectionStart ?? 0;
-    const selectionEnd = input.selectionEnd ?? 0;
-    const scrollTop = input.scrollTop;
-
-    state.appendedValue = result.value;
-    state.lastValue = result.value;
-    state.dismissed = false;
-
-    writing = true;
-    try {
-      setNativeValue(input, result.value);
-    } finally {
-      writing = false;
-    }
-    try {
-      input.setSelectionRange(
-        Math.min(selectionStart, result.userLength),
-        Math.min(selectionEnd, result.userLength),
-      );
-      input.scrollTop = scrollTop;
-    } catch {
-      // 同 appendNow：selection API 不可用时不影响文本本身。
-    }
   }
 
   /** 用户显式选择模式：记住选择、通知 UI，并立即对当前草稿生效。 */
@@ -345,6 +420,9 @@ export function createDraftAugmenter(
     }
     if (restored === null) return;
 
+    const prevStart = input.selectionStart ?? restored.length;
+    const prevEnd = input.selectionEnd ?? restored.length;
+
     state.originalValue = null;
     state.appendedValue = null;
     state.lastValue = restored;
@@ -357,7 +435,11 @@ export function createDraftAugmenter(
       writing = false;
     }
     try {
-      input.setSelectionRange(restored.length, restored.length);
+      // 选区若落在移除的说明范围内则夹取到恢复后的末尾；原文范围内的位置保留。
+      input.setSelectionRange(
+        Math.min(prevStart, restored.length),
+        Math.min(prevEnd, restored.length),
+      );
     } catch {
       // 同上。
     }
@@ -394,6 +476,7 @@ export function createDraftAugmenter(
       state.originalValue = null;
       state.appendedValue = null;
       resetModeToAuto();
+      clearPlainNote();
       clearTimer();
       setStatus(enabled ? 'idle' : 'disabled');
       return;
@@ -409,10 +492,9 @@ export function createDraftAugmenter(
       return;
     }
     if (mode === 'plain') {
-      // 本轮选择普通回答：不再追加；若页面上仍有说明文本，状态如实报 appended。
+      // 本轮选择普通回答：状态恒为 plain；残留说明由面板提示如实交代。
       clearTimer();
-      if (hasGenuiPrompt(value)) setStatus('appended');
-      else setStatus('plain');
+      setPlainStatus(plainNoteForValue(value));
       return;
     }
     if (hasGenuiPrompt(value)) {
@@ -475,6 +557,7 @@ export function createDraftAugmenter(
       return;
     }
     resetModeToAuto();
+    clearPlainNote();
     if (draft) draft.dismissed = false;
     const input = findChatInput(doc);
     if (!input) {
