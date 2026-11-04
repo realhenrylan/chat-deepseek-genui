@@ -4,22 +4,24 @@ import type {
   ChartFunctionSeries,
   ChartItem,
   ChartSeries,
+  ModelChartElement,
 } from '../protocol/types';
 import {
   lookupExpression,
   lookupFunctionSeries,
+  lookupModel,
   type CompositeEvaluation,
 } from '../runtime/evaluate';
 import { formatNumber } from './format';
 
 /**
- * 图表视图（v3/v4）：柱状、折线、饼图。
+ * 图表视图（v3/v4/v5）：柱状、折线、饼图。
  *
- * 只消费运行时预先求值的结果（lookupExpression / lookupFunctionSeries），
- * 渲染阶段不做计算；图形同时提供「查看数据」表格，保证数值不依赖颜色或
- * 视觉位置可读。v4 折线新增函数曲线系列：曲线由采样点 Hermite 平滑连接，
- * 不绘制样本点圆标（离散系列保持原样）。坐标轴在零点位于视口内时画在
- * 数据坐标 x=0 / y=0，视口不含零点时退回绘图区边缘。
+ * 只消费运行时预先求值的结果（lookupExpression / lookupFunctionSeries /
+ * 模型快照），渲染阶段不做计算；图形同时提供「查看数据」表格，保证数值
+ * 不依赖颜色或视觉位置可读。v4 折线新增函数曲线系列：曲线由采样点
+ * Hermite 平滑连接，不绘制样本点圆标（离散系列保持原样）。v5 柱状/饼图
+ * 可直接读取语义模型生成的 chartItems。
  */
 
 const PALETTE = [
@@ -39,7 +41,7 @@ function seriesColor(color: string | undefined, index: number): string {
   return color && HEX_COLOR.test(color) ? color : PALETTE[index % PALETTE.length]!;
 }
 
-export type AnyChartElement = ChartElement | ChartElementV4;
+export type AnyChartElement = ChartElement | ChartElementV4 | ModelChartElement;
 
 interface EvaluatedItem {
   label: string;
@@ -48,8 +50,8 @@ interface EvaluatedItem {
   color: string;
 }
 
-type ItemChart = Extract<AnyChartElement, { items: ChartItem[] }>;
-type LineChartElement = Extract<AnyChartElement, { chartType: 'line' }>;
+type ItemChart = Extract<ChartElement | ChartElementV4, { items: ChartItem[] }>;
+type LineChartElement = Extract<ChartElement | ChartElementV4, { chartType: 'line' }>;
 type LineSeries = ChartSeries | ChartFunctionSeries;
 
 function evaluateItems(element: ItemChart, evaluation: CompositeEvaluation): EvaluatedItem[] {
@@ -59,6 +61,28 @@ function evaluateItems(element: ItemChart, evaluation: CompositeEvaluation): Eva
       ? { label: item.label, value: result.value, color: seriesColor(undefined, index) }
       : { label: item.label, error: result.error, color: seriesColor(undefined, index) };
   });
+}
+
+function evaluateModelItems(
+  element: ModelChartElement,
+  evaluation: CompositeEvaluation,
+): EvaluatedItem[] {
+  const model = lookupModel(evaluation, element.source.model);
+  if (!model) {
+    return [{ label: '数据', error: '模型未求值', color: seriesColor(undefined, 0) }];
+  }
+  if (!model.ok) {
+    return [{ label: '数据', error: model.error ?? '模型计算失败', color: seriesColor(undefined, 0) }];
+  }
+  return model.chartItems.map((item, index) => ({
+    label: item.label,
+    value: item.value,
+    color: seriesColor(undefined, index),
+  }));
+}
+
+function isModelChart(element: AnyChartElement): element is ModelChartElement {
+  return 'source' in element;
 }
 
 function WarningList({ messages }: { messages: string[] }) {
@@ -92,11 +116,10 @@ function DataTable({ head, rows }: { head: string[]; rows: Array<Array<string>> 
   );
 }
 
-function BarChart({ element, evaluation }: {
-  element: ItemChart;
-  evaluation: CompositeEvaluation;
+function BarChart({ element, items }: {
+  element: { title?: string; legend?: boolean };
+  items: EvaluatedItem[];
 }) {
-  const items = evaluateItems(element, evaluation);
   const values = items.flatMap((item) => (item.value === undefined ? [] : [Math.abs(item.value)]));
   const max = values.length > 0 ? Math.max(...values) : 0;
   const warnings = items
@@ -496,11 +519,10 @@ function arcPath(cx: number, cy: number, radius: number, start: number, end: num
   return `M ${cx} ${cy} L ${from.x} ${from.y} A ${radius} ${radius} 0 ${largeArc} 1 ${to.x} ${to.y} Z`;
 }
 
-function PieChart({ element, evaluation }: {
-  element: ItemChart;
-  evaluation: CompositeEvaluation;
+function PieChart({ element, items }: {
+  element: { title?: string };
+  items: EvaluatedItem[];
 }) {
-  const items = evaluateItems(element, evaluation);
   const warnings = items
     .filter((item) => item.error !== undefined)
     .map((item) => `${item.label}：${item.error}`);
@@ -587,17 +609,24 @@ export function ChartElementView({ element, evaluation }: {
   element: AnyChartElement;
   evaluation: CompositeEvaluation;
 }) {
+  const model = isModelChart(element);
+  const items = model
+    ? evaluateModelItems(element, evaluation)
+    : isItemChart(element)
+      ? evaluateItems(element, evaluation)
+      : null;
+
   return (
     <figure className="genui-chart">
       {element.title ? <figcaption className="genui-chart-title">{element.title}</figcaption> : null}
-      {isItemChart(element) ? (
+      {items !== null ? (
         element.chartType === 'bar' ? (
-          <BarChart element={element} evaluation={evaluation} />
+          <BarChart element={element} items={items} />
         ) : (
-          <PieChart element={element} evaluation={evaluation} />
+          <PieChart element={element} items={items} />
         )
       ) : (
-        <LineChart element={element} evaluation={evaluation} />
+        <LineChart element={element as LineChartElement} evaluation={evaluation} />
       )}
     </figure>
   );

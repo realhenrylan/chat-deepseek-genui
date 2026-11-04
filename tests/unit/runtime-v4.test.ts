@@ -23,8 +23,8 @@ import type {
  */
 
 const X: FunctionExpression = { op: 'x' };
-const C = (value: number): NumericExpression => ({ op: 'const', value });
-const S = (id: string): NumericExpression => ({ op: 'state', id });
+const C = (value: number): FunctionExpression & NumericExpression => ({ op: 'const', value });
+const S = (id: string): FunctionExpression & NumericExpression => ({ op: 'state', id });
 const ADD = (l: FunctionExpression, r: FunctionExpression): FunctionExpression => ({ op: 'add', left: l, right: r });
 const SUB = (l: FunctionExpression, r: FunctionExpression): FunctionExpression => ({ op: 'subtract', left: l, right: r });
 const MUL = (l: FunctionExpression, r: FunctionExpression): FunctionExpression => ({ op: 'multiply', left: l, right: r });

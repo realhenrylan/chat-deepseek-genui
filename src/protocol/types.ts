@@ -11,8 +11,8 @@
  * 失败码按「守卫顺序」排列：长度 → 深度 → JSON 解析 → 结构校验 → 版本。
  */
 
-/** 最新协议版本；仍向后兼容静态 v1、交互 v2 与组合 v3 文档。 */
-export const PROTOCOL_VERSION = 4;
+/** 最新协议版本；仍向后兼容静态 v1、交互 v2、组合 v3 与函数曲线 v4 文档。 */
+export const PROTOCOL_VERSION = 5;
 
 /** 规模限制（与 schema 保持一致，validate 的长度守卫复用同一份常量）。 */
 export const LIMITS = {
@@ -62,6 +62,21 @@ export const LIMITS = {
   maxConditionDepth: 5,
   /** v3 文档内所有数值表达式（派生 + 图表/表格/条件内联）共享的节点预算。 */
   maxExpressionNodesV3: 300,
+  /** v5 语义模型：模型数、预算支出项、成本方案、偏好候选/维度/筛选上限。 */
+  maxModels: 4,
+  maxBudgetExpenses: 20,
+  maxCostPlans: 10,
+  maxPreferenceCandidates: 30,
+  maxPreferenceDimensions: 8,
+  maxPreferenceFilters: 8,
+  /** v5 文档内所有数值表达式共享的节点预算（比 v3 略宽，容纳模型输入）。 */
+  maxExpressionNodesV5: 400,
+  /** v5 模型输入的金额上限（按主单位计），保证精度换算后的整数运算安全。 */
+  maxModelAmount: 1_000_000_000,
+  /** 单个偏好维度的权重上限。 */
+  maxPreferenceWeight: 1_000,
+  /** 单次更新内所有模型计算允许的额外运算量（模型内部循环/归一化等）。 */
+  maxModelWork: 5_000,
   /** v4 函数曲线：单系列采样点数与全文档采样点总数上限。 */
   maxFunctionSamples: 50,
   maxFunctionSamplesTotal: 200,
@@ -115,6 +130,7 @@ export type NumericExpression =
   | { op: 'const'; value: number }
   | { op: 'state'; id: string }
   | { op: 'derived'; id: string }
+  | { op: 'model'; model: string; key: string }
   | { op: 'negate' | 'abs' | 'round' | 'floor' | 'ceil'; value: NumericExpression }
   | {
       op: 'add' | 'subtract' | 'multiply' | 'divide' | 'min' | 'max';
@@ -263,6 +279,187 @@ export interface TableElement {
   visibleIf?: Condition;
 }
 
+/** v5 语义模型精度：金额/得分保留的小数位数。 */
+export type ModelPrecision = 0 | 1 | 2 | 3 | 4;
+
+export type ModelKind = 'budget' | 'cost' | 'preference';
+
+/** 偏好维度方向：数值越大越好，或越小越好。 */
+export type ModelDirection = 'higher' | 'lower';
+
+export interface BudgetExpense {
+  label: string;
+  amount: NumericExpression;
+}
+
+/** 预算模型：收入、支出项、余额、支出占比与超支判断。 */
+export interface BudgetModel {
+  kind: 'budget';
+  id: string;
+  label?: string;
+  /** 金额单位（如「元」），仅用于展示。 */
+  unit?: string;
+  /** 金额精度（小数位），默认 DEFAULT_MODEL_PRECISION。 */
+  precision?: ModelPrecision;
+  income: NumericExpression;
+  expenses: BudgetExpense[];
+}
+
+export interface CostPlan {
+  label: string;
+  /** 每份的固定费用。 */
+  fee: NumericExpression;
+  /** 每份覆盖的周期数，必须大于 0。 */
+  coverage: number;
+  /** 每个周期的使用次数。 */
+  usesPerPeriod: NumericExpression;
+}
+
+/** 成本比较模型：固定费用、覆盖周期、购买份数、总成本与单次成本。 */
+export interface CostModel {
+  kind: 'cost';
+  id: string;
+  label?: string;
+  /** 金额单位（如「元」）。 */
+  unit?: string;
+  /** 使用次数单位（如「次」）。 */
+  useUnit?: string;
+  precision?: ModelPrecision;
+  /** 需要覆盖的周期数；0 表示不购买。 */
+  horizon: NumericExpression;
+  plans: CostPlan[];
+}
+
+export interface PreferenceDimension {
+  id: string;
+  label: string;
+  /** 权重；可直接写数字，也可引用 state/derived/更早模型以便交互调整。 */
+  weight: NumericExpression | number;
+  direction: ModelDirection;
+}
+
+export interface PreferenceCandidate {
+  label: string;
+  /** 维度 id → 数值；缺失键或 null 表示资料缺失，不按 0 计。 */
+  values: Record<string, number | null>;
+}
+
+export interface PreferenceFilter {
+  dimension: string;
+  /** 下限；常量可直接写数字，也可写表达式。 */
+  min?: NumericExpression | number;
+  /** 上限；常量可直接写数字，也可写表达式。 */
+  max?: NumericExpression | number;
+}
+
+/** 偏好比较模型：候选、维度权重、筛选、归一化得分分解与排名。 */
+export interface PreferenceModel {
+  kind: 'preference';
+  id: string;
+  label?: string;
+  /** 得分保留的小数位，默认 1。 */
+  precision?: ModelPrecision;
+  candidates: PreferenceCandidate[];
+  dimensions: PreferenceDimension[];
+  filters?: PreferenceFilter[];
+}
+
+export type SemanticModel = BudgetModel | CostModel | PreferenceModel;
+
+/** 每个模型可被表达式引用的标量键（也用于语义校验与解释）。 */
+export const MODEL_SCALAR_KEYS = {
+  budget: ['income', 'expenses', 'balance', 'overspend', 'usage', 'itemCount'],
+  cost: ['horizon', 'planCount', 'lowestTotalCost', 'lowestUnitCost'],
+  preference: [
+    'candidateCount',
+    'eligibleCount',
+    'rankedCount',
+    'topScore',
+    'weightTotal',
+    'dimensionCount',
+  ],
+} as const;
+
+export type ModelScalarKey = (typeof MODEL_SCALAR_KEYS)[ModelKind][number];
+
+/** 每个模型内置的表格视图。 */
+export const MODEL_TABLE_VIEWS = {
+  budget: ['summary', 'items'],
+  cost: ['plans'],
+  preference: ['ranking', 'breakdown'],
+} as const;
+
+export const DEFAULT_MODEL_VIEW = {
+  budget: 'summary',
+  cost: 'plans',
+  preference: 'ranking',
+} as const;
+
+export const DEFAULT_MODEL_PRECISION = 2;
+
+/** 表格按模型快照展示；view 省略时使用该模型的默认视图。 */
+export interface ModelTableSource {
+  /** 可选标记，便于与 state/derived 的 source 形状保持一致。 */
+  kind?: 'model';
+  model: string;
+  view?: string;
+}
+
+/** 柱/饼图按模型快照展示。 */
+export interface ModelChartSource {
+  /** 可选标记，便于与 state/derived 的 source 形状保持一致。 */
+  kind?: 'model';
+  model: string;
+}
+
+export interface ModelTableElement {
+  kind: 'table';
+  title?: string;
+  source: ModelTableSource;
+  sortable?: boolean;
+  selectable?: boolean;
+  initialSort?: { key: string; dir: 'asc' | 'desc' };
+  emptyText?: string;
+  visibleIf?: Condition;
+}
+
+export interface ModelChartElement {
+  kind: 'chart';
+  chartType: 'bar' | 'pie';
+  title?: string;
+  legend?: boolean;
+  source: ModelChartSource;
+}
+
+/** 数值展示直接读取模型标量；null 显示为不可用，而不是 0。 */
+export interface ModelValueElement {
+  kind: 'value';
+  label: string;
+  source: { kind: 'model'; model: string; key: string };
+  unit?: string;
+}
+
+/** 本地生成的计算依据/诊断说明，不引入任何脚本能力。 */
+export interface ExplainElement {
+  kind: 'explain';
+  model: string;
+  title?: string;
+  visibleIf?: Condition;
+}
+
+/** v5 组合元素：v4 元素 + 模型表格/图表/数值 + 本地解释。 */
+export type GenuiV5Element =
+  | InteractiveElement
+  | ModelValueElement
+  | NoteElement
+  | ChartElementV4
+  | ModelChartElement
+  | TableElement
+  | ModelTableElement
+  | ExplainElement
+  | SectionElement<GenuiV5Element>
+  | ColumnsElement<GenuiV5Element>;
+
 export interface SectionElement<C = GenuiV3Element> {
   kind: 'section';
   title?: string;
@@ -334,12 +531,24 @@ export interface GenuiV4Document {
   elements: GenuiV4Element[];
 }
 
+/** v5 组合文档：v4 全部能力 + 本地受测的预算/成本/偏好语义模型。 */
+export interface GenuiV5Document {
+  type: 'genui';
+  version: 5;
+  title?: string;
+  state: StateVariable[];
+  derived: DerivedValue[];
+  models: SemanticModel[];
+  elements: GenuiV5Element[];
+}
+
 /** 经 parseGenui 校验后可安全交给渲染器的版本化文档。 */
 export type GenuiDocument =
   | GenuiV1Document
   | GenuiV2Document
   | GenuiV3Document
-  | GenuiV4Document;
+  | GenuiV4Document
+  | GenuiV5Document;
 
 export type InteractiveStateValues = Record<string, number | string>;
 

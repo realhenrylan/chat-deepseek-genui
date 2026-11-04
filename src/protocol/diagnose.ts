@@ -284,6 +284,12 @@ const SUPPORTED_KINDS: Record<number, readonly string[]> = {
   ],
 };
 
+/**
+ * v3 元素 variant 的下标对应 kind。v4/v5 分支共用 `#/oneOf/<n>` 的 schemaPath，
+ * 只看下标会把 v3 table（8）与 v5 explain（8）的 kind 错误混在一起。
+ */
+const V3_VARIANT_KINDS: readonly string[] = SUPPORTED_KINDS[3]!;
+
 function supportedKinds(version: number | null): readonly string[] {
   return version === null ? SUPPORTED_KINDS[3]! : (SUPPORTED_KINDS[version] ?? []);
 }
@@ -334,6 +340,13 @@ function isVersionNoise(error: ErrorObject, version: number | null): boolean {
     version >= 2 &&
     error.keyword === 'additionalProperties' &&
     (property === 'state' || property === 'derived')
+  ) {
+    return true;
+  }
+  if (
+    version < 5 &&
+    error.keyword === 'required' &&
+    missing === 'models'
   ) {
     return true;
   }
@@ -389,12 +402,16 @@ export function buildSchemaIssues(errors: ErrorObject[], data: unknown): GenuiSc
     );
     const mismatched = new Set<number>();
     for (const index of indexes) {
-      const hasKindMismatch = group.some(
-        (error) =>
-          error.keyword === 'const' &&
-          error.instancePath === `${elementPath}/kind` &&
-          elementVariantOf(error) === index,
-      );
+      const expectedKind = version === 3 ? V3_VARIANT_KINDS[index] : undefined;
+      const hasKindMismatch =
+        expectedKind !== undefined
+          ? kind !== expectedKind
+          : group.some(
+              (error) =>
+                error.keyword === 'const' &&
+                error.instancePath === `${elementPath}/kind` &&
+                elementVariantOf(error) === index,
+            );
       if (hasKindMismatch) mismatched.add(index);
     }
     const matches = [...indexes].filter((index) => !mismatched.has(index));

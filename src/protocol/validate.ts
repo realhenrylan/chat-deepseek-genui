@@ -4,6 +4,8 @@ import { buildSchemaIssues, formatSchemaPath } from './diagnose';
 import { isStepAligned } from './step';
 import {
   LIMITS,
+  MODEL_SCALAR_KEYS,
+  MODEL_TABLE_VIEWS,
   PROTOCOL_VERSION,
   type ChartFunctionSeries,
   type Condition,
@@ -15,9 +17,13 @@ import {
   type GenuiV3Element,
   type GenuiV4Document,
   type GenuiV4Element,
+  type GenuiV5Document,
+  type GenuiV5Element,
   type InteractiveElement,
+  type ModelValueElement,
   type NumericExpression,
   type ParseGenuiResult,
+  type SemanticModel,
   type StateVariable,
 } from './types';
 
@@ -133,6 +139,8 @@ interface SemanticContext {
   stateById: Map<string, StateVariable>;
   derivedById: Map<string, DerivedValue>;
   derivedIndexById: Map<string, number>;
+  modelsById: Map<string, SemanticModel>;
+  modelOrder: string[];
   dependencies: Map<string, Set<string>>;
   expressionNodes: number;
   expressionBudget: number;
@@ -142,16 +150,23 @@ interface SemanticContext {
 }
 
 function createContext(
-  document: GenuiV2Document | GenuiV3Document | GenuiV4Document,
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document,
 ): SemanticContext {
+  const models = document.version === 5 ? document.models : [];
   return {
     stateById: new Map(document.state.map((variable) => [variable.id, variable])),
     derivedById: new Map(document.derived.map((value) => [value.id, value])),
     derivedIndexById: new Map(document.derived.map((value, index) => [value.id, index])),
+    modelsById: new Map(models.map((model) => [model.id, model])),
+    modelOrder: models.map((model) => model.id),
     dependencies: new Map(),
     expressionNodes: 0,
     expressionBudget:
-      document.version >= 3 ? LIMITS.maxExpressionNodesV3 : LIMITS.maxExpressionNodes,
+      document.version >= 5
+        ? LIMITS.maxExpressionNodesV5
+        : document.version >= 3
+          ? LIMITS.maxExpressionNodesV3
+          : LIMITS.maxExpressionNodes,
     conditionNodes: 0,
     functionSamples: 0,
   };
@@ -167,10 +182,11 @@ function hasExactKeys(record: Record<string, unknown>, ...keys: string[]): boole
 /** 检查一条数值表达式的白名单字段、引用与规模，并记录派生依赖。 */
 function inspectExpression(
   context: SemanticContext,
-  expression: FunctionExpression,
+  expression: NumericExpression | FunctionExpression,
   depth: number,
   pointer?: string,
   allowX = false,
+  allowedModels?: ReadonlySet<string>,
 ): SemanticFailure | null {
   context.expressionNodes += 1;
   if (context.expressionNodes > context.expressionBudget || depth > LIMITS.maxExpressionDepth) {
@@ -220,6 +236,33 @@ function inspectExpression(
       }
       return null;
     }
+    case 'model': {
+      if (
+        !hasExactKeys(record, 'op', 'model', 'key') ||
+        typeof record.model !== 'string' ||
+        typeof record.key !== 'string'
+      ) {
+        return semanticFailure('semantic-violation', 'model 引用的字段无效');
+      }
+      if (!allowedModels || !allowedModels.has(expression.model)) {
+        return semanticFailure(
+          'invalid-reference',
+          `模型引用必须指向已声明且更早的模型：${expression.model}`,
+        );
+      }
+      const model = context.modelsById.get(expression.model);
+      if (!model) {
+        return semanticFailure('invalid-reference', `引用了不存在的模型：${expression.model}`);
+      }
+      const keys = MODEL_SCALAR_KEYS[model.kind] as readonly string[];
+      if (!keys.includes(expression.key)) {
+        return semanticFailure(
+          'invalid-reference',
+          `模型 ${expression.model} 没有标量 ${expression.key}`,
+        );
+      }
+      return null;
+    }
     case 'x': {
       if (!allowX) {
         return semanticFailure('semantic-violation', '变量 x 仅允许用于函数曲线的表达式', pointer);
@@ -243,6 +286,7 @@ function inspectExpression(
         depth + 1,
         at(pointer, 'value'),
         allowX,
+        allowedModels,
       );
     }
     case 'add':
@@ -264,6 +308,7 @@ function inspectExpression(
         depth + 1,
         at(pointer, 'left'),
         allowX,
+        allowedModels,
       );
       if (leftFailure) return leftFailure;
       return inspectExpression(
@@ -272,6 +317,7 @@ function inspectExpression(
         depth + 1,
         at(pointer, 'right'),
         allowX,
+        allowedModels,
       );
     }
     default: {
@@ -287,6 +333,7 @@ function inspectCondition(
   condition: Condition,
   depth: number,
   pointer?: string,
+  allowedModels?: ReadonlySet<string>,
 ): SemanticFailure | null {
   context.conditionNodes += 1;
   if (context.conditionNodes > LIMITS.maxConditionNodes || depth > LIMITS.maxConditionDepth) {
@@ -321,6 +368,7 @@ function inspectCondition(
         child,
         depth + 1,
         pointer ? `${pointer}/conditions/${index}` : undefined,
+        allowedModels,
       );
       if (failure) return failure;
     }
@@ -328,15 +376,35 @@ function inspectCondition(
   }
 
   if (condition.op === 'not') {
-    return inspectCondition(context, condition.condition, depth + 1, at(pointer, 'condition'));
+    return inspectCondition(
+      context,
+      condition.condition,
+      depth + 1,
+      at(pointer, 'condition'),
+      allowedModels,
+    );
   }
 
   if (!('left' in condition) || !('right' in condition)) {
     return semanticFailure('semantic-violation', `不支持的条件运算：${String(condition.op)}`, pointer);
   }
-  const leftFailure = inspectExpression(context, condition.left, 1, at(pointer, 'left'));
+  const leftFailure = inspectExpression(
+    context,
+    condition.left,
+    1,
+    at(pointer, 'left'),
+    false,
+    allowedModels,
+  );
   if (leftFailure) return leftFailure;
-  return inspectExpression(context, condition.right, 1, at(pointer, 'right'));
+  return inspectExpression(
+    context,
+    condition.right,
+    1,
+    at(pointer, 'right'),
+    false,
+    allowedModels,
+  );
 }
 
 function firstDuplicateIndex<T>(items: T[], keyOf: (item: T) => string): number {
@@ -352,7 +420,7 @@ function firstDuplicateIndex<T>(items: T[], keyOf: (item: T) => string): number 
 /** 状态定义、派生定义、表达式预算与循环依赖（v2/v3/v4 共用）。 */
 function inspectStateAndDerived(
   context: SemanticContext,
-  document: GenuiV2Document | GenuiV3Document | GenuiV4Document,
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document | GenuiV5Document,
 ): SemanticFailure | null {
   const duplicateState = firstDuplicateIndex(document.state, (variable) => variable.id);
   if (duplicateState >= 0) {
@@ -514,8 +582,9 @@ function inspectLeafElement(
   context: SemanticContext,
   element:
     | Exclude<GenuiV2Document['elements'][number], { kind: 'text' }>
-    | InteractiveElement,
-  pointer: string,
+    | InteractiveElement
+    | ModelValueElement,
+  pointer?: string,
 ): SemanticFailure | null {
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = context.stateById.get(element.bind);
@@ -531,6 +600,23 @@ function inspectLeafElement(
     return null;
   }
   if (element.kind === 'value') {
+    if (element.source.kind === 'model') {
+      const model = context.modelsById.get(element.source.model);
+      if (!model) {
+        return semanticFailure(
+          'invalid-reference',
+          `结果引用了不存在的模型：${element.source.model}`,
+        );
+      }
+      const keys = MODEL_SCALAR_KEYS[model.kind] as readonly string[];
+      if (!keys.includes(element.source.key)) {
+        return semanticFailure(
+          'invalid-reference',
+          `模型 ${element.source.model} 没有标量 ${element.source.key}`,
+        );
+      }
+      return null;
+    }
     const exists = element.source.kind === 'state'
       ? context.stateById.has(element.source.id)
       : context.derivedById.has(element.source.id);
@@ -573,7 +659,7 @@ function inspectFunctionSeries(
   if (!allowed) {
     return semanticFailure(
       'semantic-violation',
-      `函数曲线系列需要协议版本 ${PROTOCOL_VERSION}`,
+      '函数曲线系列至少需要协议版本 4',
     );
   }
   const seriesRecord = series as unknown as Record<string, unknown>;
@@ -670,7 +756,7 @@ function inspectElements(
             let points = 0;
             for (const [seriesIndex, series] of element.series.entries()) {
               if ('function' in series) {
-                const failure = inspectFunctionSeries(context, series, version === PROTOCOL_VERSION);
+                const failure = inspectFunctionSeries(context, series, version >= 4);
                 if (failure) return failure;
                 context.functionSamples += series.function.samples ?? LIMITS.defaultFunctionSamples;
                 continue;
@@ -793,6 +879,309 @@ function inspectElements(
   return walk(elements, 1, '/elements');
 }
 
+function inspectV5Models(
+  context: SemanticContext,
+  models: SemanticModel[],
+): SemanticFailure | null {
+  if (context.modelsById.size !== models.length) {
+    return semanticFailure('invalid-reference', 'models 中存在重复 id');
+  }
+
+  const earlier = new Set<string>();
+  for (const model of models) {
+    const modelFailure =
+      model.kind === 'budget'
+        ? inspectBudgetModel(context, model, earlier)
+        : model.kind === 'cost'
+          ? inspectCostModel(context, model, earlier)
+          : inspectPreferenceModel(context, model, earlier);
+    if (modelFailure) return modelFailure;
+    earlier.add(model.id);
+  }
+  return null;
+}
+
+function inspectBudgetModel(
+  context: SemanticContext,
+  model: Extract<SemanticModel, { kind: 'budget' }>,
+  earlier: ReadonlySet<string>,
+): SemanticFailure | null {
+  const incomeFailure = inspectExpression(context, model.income, 1, undefined, false, earlier);
+  if (incomeFailure) return incomeFailure;
+  for (const expense of model.expenses) {
+    const failure = inspectExpression(context, expense.amount, 1, undefined, false, earlier);
+    if (failure) return failure;
+  }
+  return null;
+}
+
+function inspectCostModel(
+  context: SemanticContext,
+  model: Extract<SemanticModel, { kind: 'cost' }>,
+  earlier: ReadonlySet<string>,
+): SemanticFailure | null {
+  const horizonFailure = inspectExpression(context, model.horizon, 1, undefined, false, earlier);
+  if (horizonFailure) return horizonFailure;
+  for (const plan of model.plans) {
+    const feeFailure = inspectExpression(context, plan.fee, 1, undefined, false, earlier);
+    if (feeFailure) return feeFailure;
+    const usesFailure = inspectExpression(context, plan.usesPerPeriod, 1, undefined, false, earlier);
+    if (usesFailure) return usesFailure;
+  }
+  return null;
+}
+
+function inspectPreferenceModel(
+  context: SemanticContext,
+  model: Extract<SemanticModel, { kind: 'preference' }>,
+  earlier: ReadonlySet<string>,
+): SemanticFailure | null {
+  const dimensionIds = new Set<string>();
+  let positiveNumericWeight = false;
+  let hasWeightExpression = false;
+  for (const dimension of model.dimensions) {
+    if (dimensionIds.has(dimension.id)) {
+      return semanticFailure(
+        'semantic-violation',
+        `偏好维度 id 重复：${dimension.id}`,
+      );
+    }
+    if (typeof dimension.weight === 'number') {
+      if (
+        !Number.isFinite(dimension.weight) ||
+        dimension.weight < 0 ||
+        dimension.weight > LIMITS.maxPreferenceWeight
+      ) {
+        return semanticFailure('semantic-violation', `偏好维度 ${dimension.id} 的权重无效`);
+      }
+      if (dimension.weight > 0) positiveNumericWeight = true;
+    } else {
+      hasWeightExpression = true;
+      const failure = inspectExpression(context, dimension.weight, 1, undefined, false, earlier);
+      if (failure) return failure;
+    }
+    dimensionIds.add(dimension.id);
+  }
+  if (!positiveNumericWeight && !hasWeightExpression) {
+    return semanticFailure('semantic-violation', '偏好比较至少需要一个大于 0 的权重');
+  }
+
+  for (const candidate of model.candidates) {
+    for (const key of Object.keys(candidate.values)) {
+      if (!dimensionIds.has(key)) {
+        return semanticFailure(
+          'invalid-reference',
+          `偏好候选 ${candidate.label} 引用了未声明的维度：${key}`,
+        );
+      }
+    }
+  }
+
+  const filterDimensions = new Set<string>();
+  for (const filter of model.filters ?? []) {
+    if (!dimensionIds.has(filter.dimension)) {
+      return semanticFailure(
+        'invalid-reference',
+        `偏好筛选引用了未声明的维度：${filter.dimension}`,
+      );
+    }
+    if (filterDimensions.has(filter.dimension)) {
+      return semanticFailure(
+        'semantic-violation',
+        `偏好筛选维度重复：${filter.dimension}`,
+      );
+    }
+    filterDimensions.add(filter.dimension);
+    if (filter.min === undefined && filter.max === undefined) {
+      return semanticFailure(
+        'semantic-violation',
+        `偏好筛选 ${filter.dimension} 至少需要 min 或 max`,
+      );
+    }
+    if (filter.min !== undefined && typeof filter.min !== 'number') {
+      const failure = inspectExpression(context, filter.min, 1, undefined, false, earlier);
+      if (failure) return failure;
+    }
+    if (filter.max !== undefined && typeof filter.max !== 'number') {
+      const failure = inspectExpression(context, filter.max, 1, undefined, false, earlier);
+      if (failure) return failure;
+    }
+    for (const bound of [filter.min, filter.max]) {
+      if (typeof bound === 'number' && !Number.isFinite(bound)) {
+        return semanticFailure(
+          'semantic-violation',
+          `偏好筛选 ${filter.dimension} 的阈值不是有限数字`,
+        );
+      }
+    }
+  }
+  return null;
+}
+
+/** 展平后的 v5 元素总数、布局深度、模型来源与表达式引用。 */
+function inspectV5Elements(
+  context: SemanticContext,
+  elements: GenuiV5Element[],
+): SemanticFailure | null {
+  let elementCount = 0;
+  const allModels = new Set(context.modelOrder);
+
+  const walk = (list: GenuiV5Element[], depth: number): SemanticFailure | null => {
+    for (const element of list) {
+      if (depth > LIMITS.maxNestingDepth) {
+        return semanticFailure('too-complex', '组合布局嵌套超过上限');
+      }
+      elementCount += 1;
+      if (elementCount > LIMITS.maxElementsV3) {
+        return semanticFailure('too-complex', '元素总数超过上限');
+      }
+
+      switch (element.kind) {
+        case 'text':
+        case 'note': {
+          if (element.visibleIf) {
+            const failure = inspectCondition(context, element.visibleIf, 1, undefined, allModels);
+            if (failure) return failure;
+          }
+          break;
+        }
+        case 'chart': {
+          if ('source' in element) {
+            if (!context.modelsById.has(element.source.model)) {
+              return semanticFailure(
+                'invalid-reference',
+                `图表引用了不存在的模型：${element.source.model}`,
+              );
+            }
+            break;
+          }
+          if (element.chartType === 'line') {
+            let points = 0;
+            let functionSamples = 0;
+            for (const series of element.series) {
+              if ('function' in series) {
+                const failure = inspectFunctionSeries(context, series, true);
+                if (failure) return failure;
+                functionSamples += series.function.samples ?? LIMITS.defaultFunctionSamples;
+                continue;
+              }
+              let previousX = Number.NEGATIVE_INFINITY;
+              for (const point of series.points) {
+                if (point.x <= previousX) {
+                  return semanticFailure('semantic-violation', '折线图数据点的 x 必须严格递增');
+                }
+                previousX = point.x;
+                points += 1;
+                const failure = inspectExpression(context, point.y, 1, undefined, false, allModels);
+                if (failure) return failure;
+              }
+            }
+            if (points > LIMITS.maxChartPointsTotal) {
+              return semanticFailure('too-complex', '折线图数据点总数超过上限');
+            }
+            if (functionSamples > LIMITS.maxFunctionSamplesTotal) {
+              return semanticFailure('too-complex', '函数曲线采样总数超过上限');
+            }
+          } else {
+            for (const item of element.items) {
+              const failure = inspectExpression(context, item.value, 1, undefined, false, allModels);
+              if (failure) return failure;
+            }
+          }
+          break;
+        }
+        case 'table': {
+          if ('source' in element) {
+            const model = context.modelsById.get(element.source.model);
+            if (!model) {
+              return semanticFailure(
+                'invalid-reference',
+                `表格引用了不存在的模型：${element.source.model}`,
+              );
+            }
+            if (element.source.view !== undefined) {
+              const views = MODEL_TABLE_VIEWS[model.kind] as readonly string[];
+              if (!views.includes(element.source.view)) {
+                return semanticFailure(
+                  'invalid-reference',
+                  `模型 ${model.id} 不支持表格视图：${element.source.view}`,
+                );
+              }
+            }
+            break;
+          }
+          if (element.visibleIf) {
+            const failure = inspectCondition(context, element.visibleIf, 1, undefined, allModels);
+            if (failure) return failure;
+          }
+          const keys = new Set<string>();
+          for (const column of element.columns) {
+            if (keys.has(column.key)) {
+              return semanticFailure('semantic-violation', `表格列 key 重复：${column.key}`);
+            }
+            keys.add(column.key);
+          }
+          if (element.initialSort && !keys.has(element.initialSort.key)) {
+            return semanticFailure(
+              'invalid-reference',
+              `表格初始排序引用了不存在的列：${element.initialSort.key}`,
+            );
+          }
+          for (const row of element.rows) {
+            if (row.visibleIf) {
+              const failure = inspectCondition(context, row.visibleIf, 1, undefined, allModels);
+              if (failure) return failure;
+            }
+            for (const [key, cell] of Object.entries(row.cells)) {
+              if (!keys.has(key)) {
+                return semanticFailure('invalid-reference', `表格行包含未定义的列：${key}`);
+              }
+              if (typeof cell === 'object' && cell !== null) {
+                const failure = inspectExpression(context, cell, 1, undefined, false, allModels);
+                if (failure) return failure;
+              }
+            }
+          }
+          break;
+        }
+        case 'explain': {
+          if (!context.modelsById.has(element.model)) {
+            return semanticFailure(
+              'invalid-reference',
+              `解释元素引用了不存在的模型：${element.model}`,
+            );
+          }
+          if (element.visibleIf) {
+            const failure = inspectCondition(context, element.visibleIf, 1, undefined, allModels);
+            if (failure) return failure;
+          }
+          break;
+        }
+        case 'section': {
+          const failure = walk(element.children, depth + 1);
+          if (failure) return failure;
+          break;
+        }
+        case 'columns': {
+          for (const column of element.columns) {
+            const failure = walk(column, depth + 1);
+            if (failure) return failure;
+          }
+          break;
+        }
+        default: {
+          const failure = inspectLeafElement(context, element);
+          if (failure) return failure;
+          break;
+        }
+      }
+    }
+    return null;
+  };
+
+  return walk(elements, 1);
+}
+
 function validateV3Semantics(document: GenuiV3Document): SemanticFailure | null {
   const context = createContext(document);
   const stateFailure = inspectStateAndDerived(context, document);
@@ -810,6 +1199,20 @@ function validateV4Semantics(document: GenuiV4Document): SemanticFailure | null 
   if (stateFailure) return stateFailure;
 
   const elementFailure = inspectElements(context, document.elements, document.version);
+  if (elementFailure) return elementFailure;
+
+  return inspectDependencyCycles(context);
+}
+
+function validateV5Semantics(document: GenuiV5Document): SemanticFailure | null {
+  const context = createContext(document);
+  const stateFailure = inspectStateAndDerived(context, document);
+  if (stateFailure) return stateFailure;
+
+  const modelFailure = inspectV5Models(context, document.models);
+  if (modelFailure) return modelFailure;
+
+  const elementFailure = inspectV5Elements(context, document.elements);
   if (elementFailure) return elementFailure;
 
   return inspectDependencyCycles(context);
@@ -880,6 +1283,9 @@ export function parseGenui(raw: string): ParseGenuiResult {
     if (failure) return failure;
   } else if (document.version === 4) {
     const failure = validateV4Semantics(document);
+    if (failure) return failure;
+  } else if (document.version === 5) {
+    const failure = validateV5Semantics(document);
     if (failure) return failure;
   }
   return { ok: true, document };

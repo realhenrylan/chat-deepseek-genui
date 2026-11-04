@@ -19,7 +19,7 @@ import type {
  */
 
 const X: FunctionExpression = { op: 'x' };
-const C = (value: number): NumericExpression => ({ op: 'const', value });
+const C = (value: number): FunctionExpression & NumericExpression => ({ op: 'const', value });
 /** y = x + 2（平移示例曲线）。 */
 const ADD_SHIFT: FunctionExpression = { op: 'add', left: X, right: C(2) };
 /** y = x² + 1（无实根，触底而不穿过 x 轴）。 */

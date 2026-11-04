@@ -251,6 +251,70 @@
   background: rgba(194, 65, 58, 0.12);
 }
 
+/* ---------- v5 语义模型：计算依据 ---------- */
+
+.genui-explain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-left: 3px solid #3988ff;
+  border-radius: 8px;
+  background: rgba(57, 136, 255, 0.06);
+}
+
+.genui-explain-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.genui-explain-formula {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.78;
+}
+
+.genui-explain-basis {
+  display: grid;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.genui-explain-basis-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.genui-explain-basis dt {
+  opacity: 0.72;
+}
+
+.genui-explain-basis dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.genui-explain-diagnostics {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.genui-explain-diagnostic-warn {
+  color: #b45309;
+}
+
+.genui-explain-error {
+  margin: 0;
+  color: #c2413a;
+  font-size: 12px;
+}
+
 .genui-condition-error,
 .genui-table-warning,
 .genui-chart-warning {

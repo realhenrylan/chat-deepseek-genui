@@ -4,22 +4,26 @@ import type {
   DerivedValue,
   InteractiveElement,
   InteractiveStateValues,
+  ModelValueElement,
   StateVariable,
   TextElement,
 } from '../protocol/types';
+import type { ModelResult } from '../runtime/evaluate';
 import { getOwn } from '../runtime/records';
 import { UnknownElementView } from './elements';
 import { formatNumber, stateDisplay } from './format';
 
 /**
- * v2/v3 共用的交互叶元素视图：数值输入、滑块、下拉选择与结果展示。
- * 文档参数只要求 state/derived 列表，因此 v2 文档与 v3 组合文档都可传入。
+ * v2/v3/v4/v5 共用的交互叶元素视图：数值输入、滑块、下拉选择与结果展示。
+ * 文档参数只要求 state/derived 列表，因此各版本文档都可传入。
  */
 export interface InteractiveElementProps {
   document: { state: StateVariable[]; derived: DerivedValue[] };
-  element: Exclude<InteractiveElement, TextElement>;
+  element: Exclude<InteractiveElement, TextElement> | ModelValueElement;
   state: InteractiveStateValues;
   calculation: DerivedCalculation;
+  /** v5 语义模型结果；value 元素可读取模型标量。 */
+  models?: Map<string, ModelResult>;
   drafts: Record<string, string>;
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
@@ -31,6 +35,7 @@ export function InteractiveElementView({
   element,
   state,
   calculation,
+  models,
   drafts,
   fieldErrors,
   onValueChange,
@@ -133,6 +138,30 @@ export function InteractiveElementView({
         ) : (
           <output className="genui-value-output" aria-label={element.label}>
             {formatNumber(value ?? Number.NaN)}{unit ? ` ${unit}` : ''}
+          </output>
+        )}
+      </div>
+    );
+  }
+
+  if (source.kind === 'model') {
+    const model = models?.get(source.model);
+    const value = model?.ok ? model.scalars[source.key] : null;
+    const error = !model
+      ? '模型未求值'
+      : !model.ok
+        ? (model.error ?? '模型计算失败')
+        : value === null || value === undefined
+          ? '该模型值在当前数据下不可用'
+          : null;
+    return (
+      <div className="genui-value">
+        <span className="genui-value-label">{element.label}</span>
+        {error ? (
+          <span className="genui-runtime-error" role="status">无法计算：{error}</span>
+        ) : (
+          <output className="genui-value-output" aria-label={element.label}>
+            {formatNumber(value as number)}{element.unit ? ` ${element.unit}` : ''}
           </output>
         )}
       </div>

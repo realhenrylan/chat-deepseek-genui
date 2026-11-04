@@ -128,12 +128,17 @@ export function Card({
   };
 
   const evaluation = useMemo<CompositeEvaluation | null>(
-    () => (doc.version === 3 || doc.version === 4 ? evaluateComposite(doc, state) : null),
+    () =>
+      doc.version === 3 || doc.version === 4 || doc.version === 5
+        ? evaluateComposite(doc, state)
+        : null,
     [doc, state],
   );
   const calculation = useMemo<DerivedCalculation>(() => {
     if (doc.version === 2) return calculateDerived(doc, state);
-    if (doc.version === 3 || doc.version === 4) return evaluation?.derived ?? EMPTY_CALCULATION;
+    if (doc.version === 3 || doc.version === 4 || doc.version === 5) {
+      return evaluation?.derived ?? EMPTY_CALCULATION;
+    }
     return EMPTY_CALCULATION;
   }, [doc, state, evaluation]);
 
@@ -344,7 +349,7 @@ export function Card({
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
-        {doc.version === 3 || doc.version === 4 ? (
+        {doc.version === 3 || doc.version === 4 || doc.version === 5 ? (
           <CompositeElementsView
             context={{
               document: doc,
