@@ -93,7 +93,7 @@ describe('enhanceDocument 整链路', () => {
 
   it('未知版本安全回退并记录 unsupported-version', () => {
     const doc = buildDoc(
-      assistant(codeBlock({ raw: '{"type":"genui","version":4,"elements":[{"kind":"text","value":"x"}]}' })),
+      assistant(codeBlock({ raw: '{"type":"genui","version":6,"elements":[{"kind":"text","value":"x"}]}' })),
     );
 
     expect(enhanceDocument(doc).failed).toBe(1);
@@ -211,7 +211,7 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
     elements: [{ kind: 'value', label: '当前预算', source: { kind: 'state', id: 'budget' } }],
   });
 
-  it('点击继续讨论按钮：摘要交给 onContinue，反馈提及已填入输入框', async () => {
+  it('点击继续讨论：先打开可编辑预览，点「填入输入框」才交给 onContinue', async () => {
     const doc = buildDoc(assistant(codeBlock({ raw: V2_JSON })));
     const summaries: string[] = [];
     const flushUi = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -232,6 +232,15 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
     expect(button).not.toBeNull();
     await flushUi();
     button?.click();
+    await flushUi();
+
+    // 点击只打开预览，发送仍由用户决定。
+    expect(summaries).toHaveLength(0);
+    expect(host?.shadowRoot?.querySelector('.genui-followup-text')).not.toBeNull();
+
+    const apply = host?.shadowRoot?.querySelector<HTMLButtonElement>('.genui-followup-apply');
+    expect(apply).not.toBeNull();
+    apply?.click();
     await flushUi();
 
     expect(summaries).toHaveLength(1);
@@ -261,6 +270,7 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
 
 describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () => {
   const SESSION = '/a/chat/s/session-1';
+  const ACCOUNT = 'user-1';
 
   const BUDGET_V2 = JSON.stringify({
     type: 'genui',
@@ -500,7 +510,7 @@ describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () 
     const area = new MemoryArea();
     const planStore = createPlanStore(area);
     const doc = budgetDoc();
-    enhanceDocument(doc, { planStore, sessionId: SESSION });
+    enhanceDocument(doc, { planStore, sessionId: SESSION, accountId: ACCOUNT });
 
     const host = doc.querySelector<HTMLElement>('.genui-card-host');
     expect(host).not.toBeNull();
@@ -557,12 +567,94 @@ describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () 
     );
   });
 
+  it('账号标记缺失时仍按会话作用域保存，并在刷新后恢复', async () => {
+    const area = new MemoryArea();
+    const firstDoc = budgetDoc();
+    const first = createEnhancementManager(firstDoc, {
+      planStore: createPlanStore(area),
+      sessionId: SESSION,
+    });
+    await first.loadSavedPlans();
+    first.reconcile(true);
+
+    const host = firstDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+    if (!host) return;
+    setInputValue(sliderOf(host), '7000');
+    await flushUi();
+    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save')?.click();
+    await flushUi();
+
+    expect(area.items.size).toBe(1);
+    const [savedKey] = [...area.items.keys()];
+    expect(savedKey).toContain('acct-unknown');
+    expect(host.shadowRoot?.querySelector('.genui-card-plan-feedback')?.textContent).toContain(
+      '已保存到本机',
+    );
+    first.dispose();
+
+    const secondDoc = budgetDoc();
+    const second = createEnhancementManager(secondDoc, {
+      planStore: createPlanStore(area),
+      sessionId: SESSION,
+    });
+    await second.loadSavedPlans();
+    second.reconcile(true);
+
+    const restored = secondDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(restored).not.toBeNull();
+    if (!restored) return;
+    expect(sliderOf(restored).value).toBe('7000');
+    second.dispose();
+  });
+
+  it('账号作用域不同的保存记录不会被读取', async () => {
+    const area = new MemoryArea();
+    const firstDoc = budgetDoc();
+    enhanceDocument(firstDoc, {
+      planStore: createPlanStore(area),
+      sessionId: SESSION,
+      accountId: ACCOUNT,
+    });
+
+    const firstHost = firstDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(firstHost).not.toBeNull();
+    if (!firstHost) return;
+    setInputValue(sliderOf(firstHost), '7000');
+    await flushUi();
+    firstHost.shadowRoot
+      ?.querySelector<HTMLButtonElement>('button.genui-card-save')
+      ?.click();
+    await flushUi();
+    expect(area.items.size).toBe(1);
+
+    const secondDoc = budgetDoc();
+    const second = createEnhancementManager(secondDoc, {
+      planStore: createPlanStore(area),
+      sessionId: SESSION,
+      accountId: 'user-2',
+    });
+    await second.loadSavedPlans();
+    second.reconcile(true);
+
+    const restored = secondDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(restored).not.toBeNull();
+    if (!restored) return;
+    expect(sliderOf(restored).value).toBe('5000');
+    expect(
+      restored.shadowRoot?.querySelector('button.genui-card-save')?.textContent,
+    ).toBe('保存方案');
+
+    second.dispose();
+  });
+
   it('刷新后由新管理器加载保存记录并恢复方案', async () => {
     const area = new MemoryArea();
     const firstDoc = budgetDoc();
     const first = createEnhancementManager(firstDoc, {
       planStore: createPlanStore(area),
       sessionId: SESSION,
+      accountId: ACCOUNT,
     });
     await first.loadSavedPlans();
     first.reconcile(true);
@@ -581,6 +673,7 @@ describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () 
     const second = createEnhancementManager(secondDoc, {
       planStore: createPlanStore(area),
       sessionId: SESSION,
+      accountId: ACCOUNT,
     });
     await second.loadSavedPlans();
     second.reconcile(true);

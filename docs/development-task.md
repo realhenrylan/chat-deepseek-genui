@@ -244,3 +244,26 @@
 - 检查未执行与原因：①Edge Add-ons 商店提交未执行——无 Partner Center 账号，属用户侧动作，政策复核与素材已备妥；②真实页面 URL 级网络抓包未执行——需独立取证环境，「无未声明网络行为」结论由源码静态不变量、manifest 权限、构建扫描与模拟页零请求断言四条独立证据支撑，口径沿用阶段 6 收紧措辞；③Logo 接入发生在本次全量复核之后：manifest `icons`、受限页面图形资源与 UI 标记已加入源码，尚未全量复核或重出包，因此保留旧 ZIP 和 SHA256 作为历史验收基线。
 - 交付物状态：源码、可加载 `dist/`、发布 ZIP、README/CHANGELOG、隐私说明、安装与卸载说明、分层验证报告齐备；商店提交与审核状态单独报告——发布准备不等于已上架。
 - 发布前复审修正三处文档口径（2026-11-03 第二轮）：①store-submission 的 1.3.1/1.3.2 由「不需要测试账号 / N-A」改为登录与站点在线服务依赖的如实披露，给出无法提供站点账号的原因（账号受站点服务条款约束、非本项目所有）与不登录的替代复核路径（e2e 模拟页、协议文档与示例 JSON），审核者自有账号不再作为豁免依据；②privacy/README 卸载说明改为「已打开页面注入效果需刷新或关闭标签页后消失」，privacy「第三方」区分本地打包库（React/react-dom）、数据共享（无）与站点自身在线服务；③store-submission 状态行改为「商店素材尚未全部就绪」，Logo 规格按官方提交说明改为 300×300 推荐、最低 128×128、截图可选。
+
+## 阶段 9：可组合语义能力（issue #4）
+
+### 目标
+
+把预算、成本比较、偏好比较三类规则明确的业务计算下沉到本地受测实现；模型只描述数据、约束与呈现方式。所有显示读取同一次输入与计算快照，并能解释主要依据。保留 v1–v4，不增加任意脚本、属性访问或网络能力。
+
+### 交付物与通过条件
+
+- 协议 v5：`models` 数组与三类模型、模型标量表达式叶子、模型来源的 value/table/chart、本地 explain。
+- 运行时按 derived → models → 元素顺序求值，模型失败隔离；金额使用整数最小单位与精度，缺失不按 0。
+- 覆盖零预算、超支、零周期、零次数、并列、空候选、筛选与权重 0 等边界；集合与计算资源上限可审查。
+- 至少两种布局/任务的示例；参数、数值、图表、表格结果一致；文档说明解释范围与内置规则。
+- 全量 typecheck/lint/test/build/check 通过；真实模型输出对比如实记录。
+
+### 阶段 9 本地实现记录（2026-11-03）
+
+- 协议与校验：`PROTOCOL_VERSION=5`，新增 `maxModels`、`maxBudgetExpenses`、`maxCostPlans`、`maxPreferenceCandidates`、`maxPreferenceDimensions`、`maxPreferenceFilters`、`maxExpressionNodesV5`、`maxModelAmount`、`maxPreferenceWeight`、`maxModelWork`；v5 schema 保留 v1–v4 原样，新增模型、模型来源与 explain；语义校验限制模型顺序、标量键、视图匹配、维度/筛选唯一性与权重。
+- 运行时：新增 `ModelResult` 与 `CompositeEvaluation.models`；预算按整数最小单位求和并给占比/超支诊断，明细与合计使用同一 precision 舍入值；成本按 `ceil(horizon/coverage)` 购买（十进制输入允许相对 `1e-9` 浮点容差）、以 `usesPerPeriod × horizon` 计算总次数与单次成本；偏好先筛选（阈值可为数字或表达式）、再对现存值 min-max 归一、按有效权重加权，权重可为数字或表达式（运行时 0–1000 截断、合计为 0 时不可用），缺失不计 0/不进分母，同分同名次。`lookupModel`/`lookupModelScalar`/`modelTable` 只读快照；每个模型使用独立 5000 次运算预算，失败只影响自身。
+- 渲染：模型来源的 value/bar/pie/table 与 explain 接入组合渲染；模型表格复用排序/筛选/空状态；失败显示局部错误。提示词升级 v2.5，示例新增 `budget-v5.json`、`preference-v5.json`、`cost-v5.json`。
+- 自动化：新增 `protocol-v5.test.ts`（24 例）、`runtime-v5.test.ts`（27 例）、`render-v5.test.tsx`（5 例）与 `model-samples.test.ts`（2 例最终样本），并补充筛选阈值数字常量、可选 `kind:"model"` 来源、成本浮点容差、权重表达式、预算明细精度与模型独立预算等回归用例。`npm run check` 通过（33 个文件 348 passed、3 skipped；typecheck、lint、构建与生产包校验均通过）；默认 Edge/Chrome e2e 通过（22 passed、6 skipped，3 个真实 origin 用例跳过）。
+- 真实模型对比：见 [`phase9-model-comparison.md`](phase9-model-comparison.md)。9 份真实模型输出显示 v5 的 JSON 长度约为 v4 的 38%，derived 为 0、运算 0–7 次（v4 为 5–18 个 derived、46–174 次运算）；v5 的缺失值与并列规则由运行时统一，v4 两份样本对缺失续航给出不同处理。首轮失败集中在固定标量键、筛选阈值写法与 source 形状，已分别用固定键清单、数字常量和可选 `kind:"model"` 修正。复核后另用最终 v2.5 提示词采样预算/偏好各 1 份，原始文件在 `docs/phase9-samples/`，并由 `tests/unit/model-samples.test.ts` 解析求值。
+- 验证边界：示例与合成文档只证明协议、运行时、渲染与规则可用，不证明模型提供的价格等事实正确；对比样本量小、非生产 API，结论只用于方向判断。

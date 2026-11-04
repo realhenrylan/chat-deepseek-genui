@@ -159,10 +159,10 @@ describe('genui 协议解析与验证', () => {
 
     it('未来版本返回 unsupported-version 并在 detail 中给出版本号', () => {
       const detail = expectFailure(
-        parseGenui('{"type":"genui","version":4,"elements":[{"kind":"text","value":"x"}]}'),
+        parseGenui('{"type":"genui","version":6,"elements":[{"kind":"text","value":"x"}]}'),
         'unsupported-version',
       );
-      expect(detail).toContain('4');
+      expect(detail).toContain('6');
       expect(detail).toContain(String(PROTOCOL_VERSION));
     });
   });

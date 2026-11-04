@@ -52,6 +52,7 @@ function savedPlan(savedAt: number, overrides: Partial<SavedCardPlan> = {}): Sav
     stateVersion: CARD_STATE_VERSION,
     documentHash: 'doc-hash',
     stateSignature: 'sig',
+    accountId: 'acct-user',
     sessionId: '/a/chat/s/session',
     messageKey: 'vl:1',
     duplicateIndex: 0,
@@ -142,6 +143,21 @@ describe('保存方案存储：容量与淘汰', () => {
 });
 
 describe('保存方案存储：失败反馈', () => {
+  it('清理旧记录失败不影响新记录保存结果', async () => {
+    const area = new FakeArea();
+    const store = createPlanStore(area, 2);
+    await store.save('oldest', savedPlan(100));
+    await store.save('middle', savedPlan(200));
+
+    area.failRemove = new Error('permission denied');
+    const result = await store.save('newest', savedPlan(300));
+
+    expect(result).toEqual({ ok: true, savedAt: 300, evicted: 0 });
+    expect(area.items.has(`${SAVED_PLAN_KEY_PREFIX}newest`)).toBe(true);
+    // 清理失败时旧记录仍在，下次保存会再次尝试淘汰。
+    expect(area.items.has(`${SAVED_PLAN_KEY_PREFIX}oldest`)).toBe(true);
+  });
+
   it('写入配额不足时给出容量提示', async () => {
     const area = new FakeArea();
     area.failSet = new Error('QUOTA_BYTES quota exceeded');

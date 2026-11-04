@@ -251,6 +251,70 @@
   background: rgba(194, 65, 58, 0.12);
 }
 
+/* ---------- v5 语义模型：计算依据 ---------- */
+
+.genui-explain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-left: 3px solid #3988ff;
+  border-radius: 8px;
+  background: rgba(57, 136, 255, 0.06);
+}
+
+.genui-explain-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.genui-explain-formula {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.78;
+}
+
+.genui-explain-basis {
+  display: grid;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.genui-explain-basis-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.genui-explain-basis dt {
+  opacity: 0.72;
+}
+
+.genui-explain-basis dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.genui-explain-diagnostics {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.genui-explain-diagnostic-warn {
+  color: #b45309;
+}
+
+.genui-explain-error {
+  margin: 0;
+  color: #c2413a;
+  font-size: 12px;
+}
+
 .genui-condition-error,
 .genui-table-warning,
 .genui-chart-warning {
@@ -558,6 +622,54 @@
   opacity: 0.68;
 }
 
+/* 候选列：单选圆点放在行首，选中行用浅色底提示。 */
+.genui-table-select {
+  width: 34px;
+  text-align: center !important;
+}
+
+.genui-table-select-input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: #3988ff;
+}
+
+.genui-table-selected td {
+  background: rgba(57, 136, 255, 0.1);
+}
+
+.genui-table-compare-row td {
+  background: rgba(57, 136, 255, 0.04);
+}
+
+.genui-table-compare select {
+  font: inherit;
+  font-size: 12px;
+  max-width: 190px;
+  border: 1px solid rgba(127, 127, 127, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 3px 6px;
+}
+
+.genui-table-clear-selection {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(127, 127, 127, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 2px 9px;
+}
+
+.genui-table-selection {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 .genui-visually-hidden {
   position: absolute;
   width: 1px;
@@ -668,6 +780,109 @@
   flex-basis: 100%;
   color: #3988ff;
   font-size: 12px;
+/* issue #5：继续讨论预览面板（快照摘要可编辑，用户再点一次才填入输入框）。 */
+.genui-followup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(127, 127, 127, 0.25);
+  background: rgba(127, 127, 127, 0.06);
+}
+
+.genui-followup[hidden] {
+  display: none;
+}
+
+.genui-followup-intents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.genui-followup-intent {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 10px;
+  border: 1px solid rgba(127, 127, 127, 0.45);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.genui-followup-intent[aria-pressed='true'] {
+  border-color: rgba(57, 136, 255, 0.6);
+  background: rgba(57, 136, 255, 0.16);
+}
+
+.genui-followup-intent:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.genui-followup-label {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.genui-followup-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid rgba(127, 127, 127, 0.45);
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.genui-followup-count {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.6;
+  text-align: right;
+}
+
+.genui-followup-hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.genui-followup-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.genui-followup-apply,
+.genui-followup-cancel {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.genui-followup-apply {
+  border: 1px solid rgba(57, 136, 255, 0.6);
+  background: rgba(57, 136, 255, 0.16);
+  color: inherit;
+}
+
+.genui-followup-apply:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.genui-followup-cancel {
+  border: 1px solid rgba(127, 127, 127, 0.45);
+  background: transparent;
+  color: inherit;
 }
 
 /* ---------- 阶段 6：站点亮暗主题跟随 ---------- */
@@ -694,6 +909,16 @@
 
 .genui-card-root[data-site-theme='dark'] .genui-card-footer {
   border-top-color: rgba(255, 255, 255, 0.14);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-followup {
+  border-top-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-followup-text {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle,

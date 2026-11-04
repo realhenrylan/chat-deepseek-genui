@@ -4,7 +4,8 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', '.tmp/**', 'test-results/**', 'playwright-report/**'],
+    // .agents/** 是其他 agent 会话的嵌套工作树（含各自的配置根），不参与本仓库的 lint。
+    ignores: ['dist/**', 'node_modules/**', '.tmp/**', 'test-results/**', 'playwright-report/**', '.agents/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

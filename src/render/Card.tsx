@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import type {
   DerivedCalculation,
   GenuiDocument,
@@ -27,18 +27,26 @@ import type { CardStateStore } from '../runtime/card-state-store';
 import type { ScenarioPort } from '../runtime/scenario';
 import { ElementErrorBoundary } from './boundaries';
 import { CompositeElementsView } from './composite';
+import { createContinueSnapshot } from './continue-snapshot';
 import { UnknownElementView } from './elements';
 import { formatNumber } from './format';
 import { InteractiveElementView } from './interactive';
 import type { ElementRegistry } from './registry';
-import { buildContinueSummary } from './summarize';
+import {
+  buildContinueSummary,
+  CONTINUE_INTENTS,
+  getContinueIntent,
+  MAX_CONTINUE_SUMMARY_LENGTH,
+  type ContinueIntent,
+  type ContinueSummaryInput,
+} from './summarize';
 import { ScenarioPanel } from './scenario-panel';
 import { getBrandMarkUrl } from '../branding';
 
 /**
  * 一个 GenUI 文档的样式隔离卡片。v1 渲染静态内容；v2 的状态、控件与派生
- * 计算留在组件树内；v3 在 v2 基础上增加布局、条件说明、图表与表格，
- * 全部组合元素共享同一份状态与求值快照。
+ * 计算留在组件树内；v3 在 v2 基础上增加布局、条件说明、图表与表格；
+ * v4 在 v3 基础上增加函数曲线系列（采样在求值快照内完成）。
  */
 /** 「继续讨论」填充结果 → 卡片反馈文案（固定子串供测试与一致性依赖）。 */
 const CONTINUE_FEEDBACK: Record<
@@ -50,6 +58,17 @@ const CONTINUE_FEEDBACK: Record<
   'no-input': '未找到聊天输入框，未能带入当前条件。',
   unavailable: '继续讨论目标未接入，未能带入当前条件。',
 };
+
+/** 点击「继续讨论」时冻结的预览：摘要文本与生成它的同一份快照。 */
+interface FollowupPreview {
+  input: ContinueSummaryInput;
+  text: string;
+  /** 最近一次按意图生成的原文；text 与它不同即表示用户改过摘要。 */
+  generated: string;
+  intent: ContinueIntent;
+  hasSelection: boolean;
+  hasAlternative: boolean;
+}
 
 export interface CardProps {
   document: GenuiDocument;
@@ -126,7 +145,12 @@ export function Card({
   const [savedAt, setSavedAt] = useState<number | null>(savedPlanAt ?? null);
   const [planFeedback, setPlanFeedback] = useState<string | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
+  const [preview, setPreview] = useState<FollowupPreview | null>(null);
+  const previewTextRef = useRef<HTMLTextAreaElement | null>(null);
   const bodyId = useId();
+  const followupPanelId = useId();
+  const followupTextId = useId();
+  const followupCountId = useId();
 
   /** 每次业务状态变化同步写入页面内仓库；绝不在此路径写本机存储。 */
   const writeState = (
@@ -137,12 +161,17 @@ export function Card({
   };
 
   const evaluation = useMemo<CompositeEvaluation | null>(
-    () => (doc.version === 3 ? evaluateComposite(doc, state) : null),
+    () =>
+      doc.version === 3 || doc.version === 4 || doc.version === 5
+        ? evaluateComposite(doc, state)
+        : null,
     [doc, state],
   );
   const calculation = useMemo<DerivedCalculation>(() => {
     if (doc.version === 2) return calculateDerived(doc, state);
-    if (doc.version === 3) return evaluation?.derived ?? EMPTY_CALCULATION;
+    if (doc.version === 3 || doc.version === 4 || doc.version === 5) {
+      return evaluation?.derived ?? EMPTY_CALCULATION;
+    }
     return EMPTY_CALCULATION;
   }, [doc, state, evaluation]);
 
@@ -158,23 +187,92 @@ export function Card({
   // 阶段 6：展开/收起只切 visibility（hidden 属性），React 树不卸载，
   // 控件值、草稿、错误与重置计数全部保留；重置不改动展开状态。
   const handleExpand = () => {
-    setExpanded((previous) => !previous);
-    // 收起视图不提供继续讨论入口；重新展开时保持既有反馈文本即可。
+    const next = !expanded;
+    setExpanded(next);
+    // 收起视图时不保留过期预览：重新展开后应基于当时的条件重新生成。
+    if (!next) setPreview(null);
   };
 
-  // 阶段 6：用户主动触发「继续讨论」——只生成摘要并交给挂载方，
-  // 绝不自动发送；未接线时也给出如实反馈。
+  const closePreview = () => {
+    setPreview(null);
+    setFollowupFeedback(null);
+  };
+
+  // issue #5：点击先在本地冻结快照并展示可编辑摘要；真正填入输入框
+  // 需要用户在预览里再点一次「填入输入框」，绝不自动发送。
   const handleContinue = () => {
     if (doc.version === 1) return;
-    const summary = buildContinueSummary({
-      title: doc.title,
-      state: doc.state,
-      derived: doc.derived,
+    if (preview) {
+      previewTextRef.current?.focus();
+      return;
+    }
+    const snapshot = createContinueSnapshot({
+      document: doc,
+      evaluation,
       stateValues: state,
       derivedValues: calculation.values,
       derivedErrors: calculation.errors,
+      drafts,
+      fieldErrors,
+      tables,
     });
-    setFollowupFeedback(CONTINUE_FEEDBACK[onContinue?.(summary) ?? 'unavailable']);
+    const intent: ContinueIntent =
+      snapshot.hasSelection && snapshot.hasAlternative
+        ? 'compare'
+        : snapshot.hasSelection
+          ? 'selected'
+          : 'explain';
+    const request = getContinueIntent(intent).request;
+    const text = buildContinueSummary({ ...snapshot.input, request });
+    setPreview({
+      input: snapshot.input,
+      text,
+      generated: text,
+      intent,
+      hasSelection: snapshot.hasSelection,
+      hasAlternative: snapshot.hasAlternative,
+    });
+    setFollowupFeedback(null);
+  };
+
+  const handleIntentChange = (intent: ContinueIntent) => {
+    // 用户手动改过摘要时不能整段重生成：只替换结尾请求句，其余编辑逐字保留。
+    const edited = preview !== null && preview.text !== preview.generated;
+    const request = getContinueIntent(intent).request;
+    setPreview((previous) => {
+      if (!previous) return previous;
+      const regenerated = buildContinueSummary({ ...previous.input, request });
+      if (previous.text === previous.generated) {
+        return { ...previous, intent, generated: regenerated, text: regenerated };
+      }
+      const known = [
+        ...CONTINUE_INTENTS.map((item) => item.request),
+        '请基于以上当前条件与结果继续讨论。',
+      ];
+      const suffix = known.find((item) => previous.text.endsWith(item));
+      const text = suffix
+        ? `${previous.text.slice(0, -suffix.length)}${request}`
+        : `${previous.text.trimEnd()}\n${request}`;
+      return { ...previous, intent, generated: regenerated, text };
+    });
+    if (edited) setFollowupFeedback('已保留你的修改，只替换结尾请求。');
+  };
+
+  const handleApplyPreview = () => {
+    if (!preview || preview.text.trim() === '') return;
+    const result = onContinue?.(preview.text) ?? 'unavailable';
+    setFollowupFeedback(CONTINUE_FEEDBACK[result]);
+    // 成功带入后关闭预览；找不到输入框/未接线时保留文本，用户可继续修改或复制。
+    if (result === 'filled' || result === 'appended') setPreview(null);
+  };
+
+  const handleTableChange = (path: string, view: TableViewState) => {
+    const next = { ...tables, [path]: view };
+    setTables(next);
+    // 视图状态随卡片一起写入页面内仓库，节点替换后仍能恢复。
+    writeState(state, next);
+    // 界面条件已变，旧快照不能继续代表当前结果。
+    closePreview();
   };
 
   const clearFieldError = (id: string) => {
@@ -221,6 +319,8 @@ export function Card({
       delete next[id];
       return next;
     });
+    // 已提交参数变化后，旧预览里的数值会与新界面不一致，直接关闭。
+    closePreview();
   };
 
   const handleNumberInput = (id: string, raw: string) => {
@@ -254,6 +354,7 @@ export function Card({
     setTables({});
     writeState(next, {});
     setResetToken((previous) => previous + 1);
+    closePreview();
   };
 
   /** 应用已保存方案：参数与表格视图经文档清洗后整体替换当前状态。 */
@@ -266,13 +367,8 @@ export function Card({
     setTables(restored.state.tables);
     writeState(restored.state.values, restored.state.tables);
     setResetToken((previous) => previous + 1);
-  };
-
-  /** 表格筛选/排序随卡片一起保存在页面内仓库，重新挂载时恢复。 */
-  const handleTableChange = (path: string, view: TableViewState) => {
-    const next = { ...tables, [path]: view };
-    setTables(next);
-    writeState(state, next);
+    // 参数整体替换后，旧预览快照不再代表当前结果。
+    closePreview();
   };
 
   // 「保存方案」只在用户显式点击时写入本机；交互本身绝不自动持久化。
@@ -365,7 +461,7 @@ export function Card({
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
-        {doc.version === 3 ? (
+        {doc.version === 3 || doc.version === 4 || doc.version === 5 ? (
           <CompositeElementsView
             context={{
               document: doc,
@@ -374,15 +470,15 @@ export function Card({
               state,
               drafts,
               fieldErrors,
+              tables,
+              onTableChange: handleTableChange,
               resetToken,
               onValueChange: handleValueChange,
               onNumberInput: handleNumberInput,
-              tables,
-              onTableChange: handleTableChange,
             }}
           />
         ) : (
-          doc.elements.map(renderLegacyElement)
+          (doc.elements as Array<TextElement | InteractiveElement>).map(renderLegacyElement)
         )}
         {doc.version === 1 || !scenarioPort ? null : (
           <ScenarioPanel
@@ -396,6 +492,70 @@ export function Card({
           />
         )}
       </div>
+      {preview ? (
+        <section
+          className="genui-followup"
+          id={followupPanelId}
+          role="region"
+          aria-label="继续讨论摘要"
+          hidden={!expanded}
+        >
+          <div className="genui-followup-intents" role="group" aria-label="讨论意图">
+            {CONTINUE_INTENTS.map((item) => {
+              const disabled =
+                (item.id === 'selected' && !preview.hasSelection) ||
+                (item.id === 'compare' && !preview.hasAlternative);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="genui-followup-intent"
+                  aria-pressed={preview.intent === item.id}
+                  disabled={disabled}
+                  onClick={() => handleIntentChange(item.id)}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          <label className="genui-followup-label" htmlFor={followupTextId}>
+            继续讨论摘要（可修改）
+          </label>
+          <textarea
+            id={followupTextId}
+            ref={previewTextRef}
+            className="genui-followup-text"
+            value={preview.text}
+            maxLength={MAX_CONTINUE_SUMMARY_LENGTH}
+            aria-describedby={followupCountId}
+            onChange={(event) => {
+              // 先取出输入值：事件对象的 currentTarget 在状态更新回调执行前会被清空。
+              const text = event.currentTarget.value;
+              setPreview((previous) => (previous ? { ...previous, text } : previous));
+            }}
+          />
+          <p className="genui-followup-count" id={followupCountId}>
+            {preview.text.length} / {MAX_CONTINUE_SUMMARY_LENGTH}
+          </p>
+          <p className="genui-followup-hint">
+            摘要来自点击时的同一份快照；修改只影响这次请求，发送仍由你完成。
+          </p>
+          <div className="genui-followup-actions">
+            <button
+              type="button"
+              className="genui-followup-apply"
+              disabled={preview.text.trim() === ''}
+              onClick={handleApplyPreview}
+            >
+              填入输入框
+            </button>
+            <button type="button" className="genui-followup-cancel" onClick={closePreview}>
+              取消
+            </button>
+          </div>
+        </section>
+      ) : null}
       <footer className="genui-card-footer" hidden={!expanded}>
         {doc.version === 1 ? null : (
           <button type="button" className="genui-card-reset" onClick={handleReset}>
@@ -403,7 +563,13 @@ export function Card({
           </button>
         )}
         {doc.version === 1 ? null : (
-          <button type="button" className="genui-card-followup" onClick={handleContinue}>
+          <button
+            type="button"
+            className="genui-card-followup"
+            aria-expanded={preview !== null}
+            aria-controls={followupPanelId}
+            onClick={handleContinue}
+          >
             继续讨论
           </button>
         )}

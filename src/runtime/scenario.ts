@@ -13,8 +13,13 @@ import type {
   DerivedCalculation,
   GenuiDocument,
   GenuiV3Element,
+  GenuiV4Element,
+  GenuiV5Element,
   InteractiveStateValues,
 } from '../protocol/types';
+
+/** v3/v4/v5 组合元素（表格与布局容器同构，按渲染路径规则遍历）。 */
+type AnyScenarioElement = GenuiV3Element | GenuiV4Element | GenuiV5Element;
 import { calculateDerived, evaluateComposite } from './evaluate';
 import { documentStateSignature, sanitizeCardValues, type TableViewState } from './card-state';
 import { getOwn } from './records';
@@ -287,16 +292,20 @@ export function checkScenarioDocument(
 }
 
 /** 按渲染路径规则递归收集文档里所有表格元素的路径 → 列 key 集合。 */
-function collectTablePaths(document: GenuiDocument): Map<string, Set<string>> {
-  const tables = new Map<string, Set<string>>();
-  if (document.version !== 3) return tables;
-  const walk = (elements: GenuiV3Element[], path: string): void => {
+function collectTablePaths(document: GenuiDocument): Map<string, Set<string> | null> {
+  const tables = new Map<string, Set<string> | null>();
+  if (document.version === 1 || document.version === 2) return tables;
+  const walk = (elements: readonly AnyScenarioElement[], path: string): void => {
     elements.forEach((element, index) => {
       const elementPath = `${path}-${index}`;
       if (element.kind === 'table') {
+        // v5 模型表格的列由模型视图动态给出，静态只能确认路径存在；
+        // 排序字段是否属于该表无法静态判定，返回 null 表示跳过该检查。
         tables.set(
           elementPath,
-          new Set(element.columns.map((column) => column.key)),
+          'source' in element
+            ? null
+            : new Set(element.columns.map((column) => column.key)),
         );
       } else if (element.kind === 'section') {
         walk(element.children, `${elementPath}-section`);
@@ -362,7 +371,7 @@ export function validateScenarioReferences(
       ) {
         return { ok: false, message: `表格视图（${path}）的排序设置无效，未导入。` };
       }
-      if (!columns.has(sort['key'])) {
+      if (columns && !columns.has(sort['key'])) {
         return {
           ok: false,
           message: `表格视图（${path}）的排序字段不存在于当前表格，未导入。`,

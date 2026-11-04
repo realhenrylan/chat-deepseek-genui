@@ -16,11 +16,16 @@
 import type {
   GenuiDocument,
   GenuiV3Element,
+  GenuiV4Element,
+  GenuiV5Element,
   TableCell,
   TableColumn,
   TableElement,
 } from '../protocol/types';
-import { evaluateComposite, lookupCondition, lookupExpression } from './evaluate';
+
+/** v3/v4/v5 组合元素（表格、章节与分栏布局同构）。 */
+type AnyElement = GenuiV3Element | GenuiV4Element | GenuiV5Element;
+import { evaluateComposite, lookupCondition, lookupExpression, lookupModel, modelTable } from './evaluate';
 import type { CompositeEvaluation } from './evaluate';
 
 /** UTF-8 BOM：让 Excel 等软件正确识别中文 CSV。 */
@@ -83,7 +88,7 @@ function headerText(column: TableColumn): string {
 
 /** 元素级 visibleIf：求值失败保持可见（与 composite.tsx 口径一致）。 */
 function isElementVisible(
-  element: GenuiV3Element,
+  element: AnyElement,
   evaluation: CompositeEvaluation,
 ): boolean {
   if (!('visibleIf' in element) || !element.visibleIf) return true;
@@ -91,16 +96,40 @@ function isElementVisible(
   return result.ok ? result.value : true;
 }
 
+/**
+ * v5 模型表格归一成经典列/行（与 table.tsx 的 resolveTableElement 同口径）。
+ * 模型未求值/视图不可用时返回 null：CSV 不导出无数据的空壳表。
+ */
+function resolveTable(element: AnyElement, evaluation: CompositeEvaluation): TableElement | null {
+  if (element.kind !== 'table') return null;
+  if (!('source' in element)) return element;
+  const model = lookupModel(evaluation, element.source.model);
+  if (!model || !model.ok) return null;
+  const view = modelTable(model, element.source.view);
+  if (!view) return null;
+  return {
+    kind: 'table',
+    title: element.title,
+    columns: view.columns,
+    rows: view.rows.map((cells) => ({ cells })),
+    sortable: element.sortable,
+    initialSort: element.initialSort,
+    emptyText: view.emptyText ?? element.emptyText,
+    visibleIf: element.visibleIf,
+  };
+}
+
 /** 按文档顺序收集全部可见表格（section/columns 递归，隐藏子树整棵跳过）。 */
 function collectTables(
-  elements: GenuiV3Element[],
+  elements: AnyElement[],
   evaluation: CompositeEvaluation,
 ): TableElement[] {
   const tables: TableElement[] = [];
   for (const element of elements) {
     if (!isElementVisible(element, evaluation)) continue;
     if (element.kind === 'table') {
-      tables.push(element);
+      const table = resolveTable(element, evaluation);
+      if (table) tables.push(table);
     } else if (element.kind === 'section') {
       tables.push(...collectTables(element.children, evaluation));
     } else if (element.kind === 'columns') {
@@ -121,7 +150,7 @@ export function buildTablesCsv(
   document: GenuiDocument,
   values: Record<string, number | string>,
 ): string | null {
-  if (document.version !== 3) return null;
+  if (document.version === 1 || document.version === 2) return null;
   const evaluation = evaluateComposite(document, values);
   const tables = collectTables(document.elements, evaluation);
   if (tables.length === 0) return null;
