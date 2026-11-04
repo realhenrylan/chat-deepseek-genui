@@ -28,6 +28,8 @@ import { TableElementView } from './table';
  *
  * 每个元素单独包错误边界，单个组合子树渲染失败不会拖垮整张卡片。
  * 条件计算失败时选择「继续显示内容并提示错误」，避免静默隐藏信息。
+ * 表格的筛选/排序/选中项由卡片持有（而不是表格本地），这样「继续讨论」
+ * 能读到与界面完全一致的视图状态。
  */
 
 type AnyElement = GenuiV3Element | GenuiV4Element | GenuiV5Element;
@@ -41,7 +43,7 @@ export interface CompositeContext {
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
-  /** 表格筛选/排序按元素路径保存，随卡片状态一起跨重新挂载保留。 */
+  /** 表格筛选/排序/选中项按元素路径保存，随卡片状态一起跨重新挂载保留。 */
   tables: Record<string, TableViewState>;
   onTableChange: (path: string, view: TableViewState) => void;
   /** 每次卡片重置递增；表格据此重新挂载，清空筛选并恢复初始排序。 */

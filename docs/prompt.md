@@ -1,4 +1,4 @@
-# GenUI 默认增强提示词（v2.5）
+# GenUI 默认增强提示词（v2.6）
 
 更新日期：2026-11-03。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
 
@@ -12,10 +12,10 @@
 
 ## 正式文本
 
-以下为 v2.5 提示词的逐字内容（随消息作为普通文本发送）：
+以下为 v2.6 提示词的逐字内容（随消息作为普通文本发送）：
 
 ````text
-〔GenUI 增强 v2.5｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
+〔GenUI 增强 v2.6｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
 你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 ```genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
 
 内容分工（生成前先确定每项信息的主要呈现位置）：
@@ -46,7 +46,7 @@ elements 项（按顺序显示）：
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
 - chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。series 两种写法可混用：离散点 {"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}（至少 2 个递增 x 采样点；实测或离散数据用这种，不要启用 smooth）；函数曲线 {"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?:["zero"]}}，expression 是只允许局部变量 {"op":"x"} 与 state/derived 的表达式 AST（如 {"op":"multiply","left":{"op":"x"},"right":{"op":"x"}}），domain 可选 {"start":表达式,"end":表达式}（如抛物线用对称轴 ±10），samples 可选 5–50（默认 41），features ["zero"] 表示曲线在视口内不过 x 轴时按需对称加倍扩展采样范围。连续函数（尤其抛物线）优先用函数曲线写法，公式只声明一次，调整参数后曲线随状态重算；样本不画圆点。柱/饼也可用模型来源 {"kind":"chart","chartType":"bar|pie","title","legend"?,"source":{"model":"模型id"}}（source 可带可选 "kind":"model"），此时不要写 items，图表读取模型同一快照。
-- table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。模型表格用 {"kind":"table","title"?,"source":{"model":"模型id","view"?},"sortable"?,"initialSort"?,"emptyText"?}（source 可带可选 "kind":"model"），不要写 columns/rows；view 必须与模型匹配（预算 summary|items，成本 plans，偏好 ranking|breakdown），省略时用默认视图。
+- table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"selectable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction；候选方案、商品或路线等需要用户拍板的对比表写 "selectable":true，用户选中一行后，筛选、排序与选中项会进入「继续讨论」摘要，普通数据表不要开启。模型表格用 {"kind":"table","title"?,"source":{"model":"模型id","view"?},"sortable"?,"initialSort"?,"emptyText"?}（source 可带可选 "kind":"model"），不要写 columns/rows；view 必须与模型匹配（预算 summary|items，成本 plans，偏好 ranking|breakdown），省略时用默认视图。
 - explain {"kind":"explain","model":"模型id","title"?,"visibleIf"?}：由本地根据模型输出生成计算依据与诊断，不引入外部数据或脚本。
 visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；models 不超过 4（预算支出项 20、成本方案 10、偏好候选 30/维度 8/筛选 8）；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列离散点 2–50、总点数不超过 100、同系列 x 严格递增，函数曲线每系列采样数默认 41（上限 50）、总采样不超过 200；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8、v5 节点不超过 400；每次重算不超过 500 次运算（函数曲线采样另有每系列 5000 次的独立预算，模型计算另有 5000 次预算）。
@@ -80,3 +80,41 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
 ```
 〔GenUI 增强说明结束〕
 ````
+
+## 设计要点
+
+- **选择性生成**：明确要求事实问答、写作、代码、闲聊直接回答，不为了展示而强行生成界面；只有可调参数、对比、规划或可视化确有帮助时才在自然衔接的位置放一个 `genui` 块。仅把正文换成静态卡片且没有额外阅读或探索价值时省略界面。
+- **协议一致性**：只描述 `src/protocol/schema.ts` 实际支持的 v3–v5 字段、元素、绑定、表达式与条件；不承诺脚本、HTML、CSS、事件或网络能力。
+- **数据诚实**：数字必须来自用户资料，或明确标为示例/估算；全局来源与缺失数据在正文说明，控件假设、示例标记和条件提醒就近放在 note 中，保留必要说明。
+- **共同完成回答**：生成前分配每项信息的主要呈现位置。正文通常用 1–3 句给出结论、关键理由或操作提示；界面呈现参数、动态结果和详细对比表，避免“完整长文 + 同内容界面 + 再总结”。必要的推导、来源、限制，以及用户明确要求的详细解释仍保留；不生成界面时正常完整回答。
+- **动态结果归位**：变化中的结果由 state/derived 展示。正文若引用数值，应标为初始条件下的结果，避免用户调整后仍看到过时的“当前结果”；静态 text/note 同样不能伪装成动态结果。
+
+## v2.2 问题依据与复测口径
+
+[用户提供的分享会话](https://chat.deepseek.com/share/rz429lo384r4vodb76) 中，正文已按定位、形态、功耗、网络、操作系统和价格逐项比较，末尾的 genui 表格又列出同样的比较维度。该会话使用 v2，其中“请先正常、完整地回答”及“界面只是辅助，正文仍需给出完整回答”在 v2.1 中仍保留，容易引导模型分别生成两份完整内容。v2.2 删除这两处要求，并在协议说明之前明确内容分工。
+
+以下是后续真实模型复测标准，不代表已通过生成验收：
+
+| 场景 | 预期内容分工 |
+| --- | --- |
+| 设备比较（与分享问题相同及一个新问题） | 简短选型结论 + 一份详细对比表；正文不逐行重述规格，界面不复制长段落；来源与限制保留 |
+| 预算或成本计算 | 正文说明关键方法或操作，界面承载参数与联动结果；示例值标明，正文中的初始结果不冒充实时结果 |
+| 函数学习 | 正文解释原理，界面探索系数变化；保留平滑曲线等现有协议要求 |
+| 用户要求详细解释或完整推导 | 正文保留所需细节，界面补充探索，不把“1–3 句”当硬性上限 |
+| 普通事实问答或协议能力不足 | 仅用普通文字完整回答，不强制生成 genui |
+
+本地类型检查、单测、构建和浏览器接线测试只能验证提示词注入、面板一致性与协议示例，不能证明模型输出的语义去重效果。需记录真实模型、提示词版本、样本数及失败例后，再报告实际重复改善程度；现有历史会话不会被此次提示词修改重写。
+
+本轮本地验证（2026-11-03）：`npm run check` 通过（25 个测试文件、253 项单测、类型检查、lint、构建及生产包校验）；定向浏览器测试 `npm run test:e2e -- --grep '阶段 7 ·|阶段 4 ·.*控件即时计算'` 共 4 项通过，覆盖 Edge/Chrome 的草稿追加、说明面板、关闭恢复和控件计算。逐字核对正式文本与实际注入常量一致，原两处完整正文要求已移除。真实模型生成未在本轮复测。
+
+## 版本历史
+
+- **v1（2026-11-03）**：首个默认增强版本。真实笔记本选购场景中，模型把表格 `initialSort` 写成 `{"key":"price","direction":"asc"}`，而协议只接受 `{"key","dir"}`，卡片因 `schema-violation` 未挂载。
+- **v2（2026-11-03）**：在 table 行明确 `initialSort` 结构为 `{key, dir}`，并写明「排序方向字段名必须是 dir，不能写 direction」。协议本身不放宽，失败被归因为提示词缺少字段形状。v2 重跑同一场景通过，详见 `docs/phase7-acceptance.md`。
+- **v2 收尾修正（2026-11-03）**：把根对象说明改为只有 `state`、`derived` 可为空，`elements` 至少 1 个元素，与 v3 Schema 的 `minItems: 1` 对齐。真实网页验收输出均包含元素，未因该文字修正重跑模型。
+- **v2.1（2026-11-03）**：折线图 series 增加可选 `smooth` 标记；明确连续函数（尤其二次函数）应提供至少 3 个递增 x 采样点并启用平滑插值，实测或离散数据保持线性连接。协议字段不变，仅为提示词修订。
+- **v2.2（2026-11-03）**：正文与界面共同完成回答，明确内容分工、有限的必要复用及动态数值的归属；取消“完整正文后再附界面”的引导，保留用户要求的详细解释。未修改 JSON 协议或对历史回答做语义删减，真实模型重复程度待复测。
+- **v2.3（2026-11-03）**：table 增加可选 `selectable` 字段说明；候选方案、商品或路线等需要用户拍板的对比表可开启，普通数据表不开启。选中项与筛选/排序会随「继续讨论」摘要进入后续对话；协议与既有生成约束不变。
+- **v2.4（2026-11-03）**：规格升级到协议 v5，新增语义模型 models、explain 元素、模型来源的 value/table/chart 与函数曲线系列；上限同步。
+- **v2.5（2026-11-03）**：明确预算/成本/偏好三类模型的固定标量键，允许偏好筛选阈值直接写数字常量，降低键名猜测与表达式包装错误。
+- **v2.6（2026-11-04）**：在 v2.5 基础上恢复候选表 `selectable` 说明（选中项、筛选与一致快照进入「继续讨论」），协议能力与上限不变。

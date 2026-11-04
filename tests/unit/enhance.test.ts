@@ -211,7 +211,7 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
     elements: [{ kind: 'value', label: '当前预算', source: { kind: 'state', id: 'budget' } }],
   });
 
-  it('点击继续讨论按钮：摘要交给 onContinue，反馈提及已填入输入框', async () => {
+  it('点击继续讨论：先打开可编辑预览，点「填入输入框」才交给 onContinue', async () => {
     const doc = buildDoc(assistant(codeBlock({ raw: V2_JSON })));
     const summaries: string[] = [];
     const flushUi = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -232,6 +232,15 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
     expect(button).not.toBeNull();
     await flushUi();
     button?.click();
+    await flushUi();
+
+    // 点击只打开预览，发送仍由用户决定。
+    expect(summaries).toHaveLength(0);
+    expect(host?.shadowRoot?.querySelector('.genui-followup-text')).not.toBeNull();
+
+    const apply = host?.shadowRoot?.querySelector<HTMLButtonElement>('.genui-followup-apply');
+    expect(apply).not.toBeNull();
+    apply?.click();
     await flushUi();
 
     expect(summaries).toHaveLength(1);

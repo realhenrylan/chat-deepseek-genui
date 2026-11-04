@@ -17,10 +17,17 @@ import { hashString } from './hash';
 /** 卡片状态结构版本；语义变化时递增，旧记录会因不匹配被丢弃。 */
 export const CARD_STATE_VERSION = 1;
 
-/** 表格的筛选与排序（视图状态，不改变文档 state）。 */
+/** 表格的筛选、排序与候选项选择（视图状态，不改变文档 state）。 */
 export interface TableViewState {
   filter: string;
   sort: { key: string; dir: 'asc' | 'desc' } | null;
+  /** 选中的候选项：文档中的原始行序号（0 基），排序/筛选不改变它。 */
+  selected?: number | null;
+  /**
+   * 显式指定的对比候选项（原始行序号）。可见行超过两行时，
+   * 用户必须自己选择对比项，不能猜测「另一行」是谁。
+   */
+  compare?: number | null;
 }
 
 export interface CardUiState {
@@ -54,6 +61,7 @@ const MAX_TABLE_VIEWS = 40;
 const MAX_TABLE_FILTER_LENGTH = 200;
 const MAX_TABLE_SORT_KEY_LENGTH = 64;
 /** 行序号上限：文档最多 30 行，这里放宽以便跨版本恢复时再按文档校验。 */
+const MAX_TABLE_ROW_INDEX = 9999;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -131,6 +139,13 @@ export function sanitizeCardValues(
   return { values, dropped };
 }
 
+/** 只接受非负整数行序号；其余（含越界、小数、字符串）一律视为未指定。 */
+function rowIndex(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+  if (value < 0 || value > MAX_TABLE_ROW_INDEX) return null;
+  return value;
+}
+
 /** 清洗表格视图状态：限制条目数、筛选文本长度与排序键形状。 */
 export function sanitizeTableViews(input: unknown): Record<string, TableViewState> {
   if (!isRecord(input)) return {};
@@ -157,7 +172,17 @@ export function sanitizeTableViews(input: unknown): Record<string, TableViewStat
         sort = { key, dir };
       }
     }
-    views[path] = { filter, sort };
+    const selected = rowIndex(raw.selected);
+    // 对比项与选中项相同时没有意义，按未指定处理。
+    const compareCandidate = rowIndex(raw.compare);
+    const compare = compareCandidate === selected ? null : compareCandidate;
+    // 未指定时省略字段，保持旧记录形状与存储体积不变。
+    views[path] = {
+      filter,
+      sort,
+      ...(selected === null ? {} : { selected }),
+      ...(compare === null ? {} : { compare }),
+    };
     count += 1;
   }
 

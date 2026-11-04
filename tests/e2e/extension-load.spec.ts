@@ -111,6 +111,34 @@ const INTERACTIVE_RAW = JSON.stringify({
     { kind: 'value', label: '当前余额', source: { kind: 'derived', id: 'balance' } },
   ],
 });
+// 阶段 6 的候选表：筛选、排序与选中项都需要进入继续讨论摘要。
+const TABLE_RAW = JSON.stringify({
+  type: 'genui',
+  version: 3,
+  title: '选购比较',
+  state: [
+    { id: 'budget', label: '预算', kind: 'number', initial: 6000, min: 0, max: 20000, step: 100, unit: '元' },
+  ],
+  derived: [],
+  elements: [
+    {
+      kind: 'table',
+      title: '候选方案',
+      sortable: true,
+      selectable: true,
+      columns: [
+        { key: 'name', label: '方案' },
+        { key: 'price', label: '价格', numeric: true, unit: '元' },
+        { key: 'weight', label: '重量', numeric: true, unit: 'kg' },
+        { key: 'status', label: '状态' },
+      ],
+      rows: [
+        { cells: { name: 'A', price: 4800, weight: 1.4, status: '在售' } },
+        { cells: { name: 'C', price: 5200, weight: 1.3, status: '在售' } },
+      ],
+    },
+  ],
+});
 const PROTOTYPE_RAW = JSON.stringify({
   type: 'genui',
   version: 2,
@@ -848,7 +876,7 @@ for (const { label, channel } of CHANNELS) {
 
       // 注入一张 v2 交互卡片（阶段 4 同款文档）与一张 v1 静态卡片，构成阶段 6 验收面。
       await page.evaluate(
-        (raws: { interactive: string; static: string }) => {
+        (raws: { interactive: string; table: string; static: string }) => {
           const container = document.createElement('div');
           container.className = 'ds-assistant-message-main-content';
           container.id = 'e2e-stage6';
@@ -865,15 +893,16 @@ for (const { label, channel } of CHANNELS) {
             container.append(block);
           };
           makeBlock(raws.interactive);
+          makeBlock(raws.table);
           makeBlock(raws.static);
           document.body.append(container);
         },
-        { interactive: INTERACTIVE_RAW, static: VALID_RAW_2 },
+        { interactive: INTERACTIVE_RAW, table: TABLE_RAW, static: VALID_RAW_2 },
       );
 
       const message = page.locator('#e2e-stage6');
       const hosts = message.locator('.genui-card-host');
-      await expect(hosts).toHaveCount(2);
+      await expect(hosts).toHaveCount(3);
       const card = hosts.nth(0);
       await expect(card).toContainText('本地预算计算');
 
@@ -919,28 +948,63 @@ for (const { label, channel } of CHANNELS) {
       await expect(slider).toHaveValue('0');
       await expect(card.locator('.genui-value-output').nth(1)).toHaveText('-40 元');
 
-      // —— 继续讨论：用户主动触发、当前条件与结果带入输入框、不自动发送。
+      // —— 表格筛选与选中：业务状态进入继续讨论摘要（issue #5 的真实流程）。
       const input = page.locator('#e2e-input');
       await expect(input).toHaveValue('');
+      const tableCard = hosts.nth(1);
+      await expect(tableCard).toContainText('选购比较');
+      await tableCard.locator('.genui-table-filter input').fill('在售');
+      await expect(tableCard.locator('.genui-table-count')).toHaveText('显示 2 / 2 行');
+      const radios = tableCard.locator('input[type="radio"]');
+      await expect(radios).toHaveCount(2);
+      await radios.nth(1).check();
+      await expect(tableCard.locator('.genui-table-selection')).toContainText('已选候选项：C');
 
+      await tableCard.locator('button.genui-card-followup').click();
+      const tablePreview = tableCard.locator('textarea.genui-followup-text');
+      await expect(tablePreview).toHaveValue(/继续讨论「选购比较」/);
+      await expect(tablePreview).toHaveValue(/筛选「在售」/);
+      await expect(tablePreview).toHaveValue(/显示 2 \/ 2 行/);
+      await expect(tablePreview).toHaveValue(/- 已选：C — 价格 5200 元；重量 1.3 kg/);
+      await expect(tablePreview).toHaveValue(/- 对比：A — 价格 4800 元；重量 1.4 kg/);
+      await expect(input).toHaveValue('');
+      await tableCard.locator('button.genui-followup-apply').click();
+      await expect(input).toHaveValue(/继续讨论「选购比较」/);
+      await expect(input).toHaveValue(/已选：C/);
+      await input.fill('');
+
+      // —— 继续讨论：先预览冻结的快照，用户确认后才写入输入框，不自动发送。
       await card.locator('button.genui-card-followup').click();
-      await expect(input).toHaveValue(/继续讨论「本地预算计算」/);
-      await expect(input).toHaveValue(/总预算：0 元/);
-      await expect(input).toHaveValue(/请基于以上当前条件与结果继续讨论/);
+      const preview = card.locator('section.genui-followup');
+      const previewText = card.locator('textarea.genui-followup-text');
+      await expect(preview).toBeVisible();
+      await expect(input).toHaveValue('');
+      await expect(previewText).toHaveValue(/继续讨论「本地预算计算」/);
+      await expect(previewText).toHaveValue(/总预算：0 元/);
+      await expect(previewText).toHaveValue(/请解释以上当前结果的含义/);
+      await expect(card.locator('button.genui-card-followup')).toHaveAttribute('aria-expanded', 'true');
 
-      // 已有草稿：追加在草稿之后，原草稿一字不动；反馈明确告知发送由用户完成。
+      // 重复点击只聚焦预览，不覆盖用户已编辑的摘要。
+      await previewText.fill('请解释一下当前结果。');
+      await card.locator('button.genui-card-followup').click();
+      await expect(previewText).toHaveValue('请解释一下当前结果。');
+
+      // 用户手动填写的草稿逐字保留；确认后才追加，发送仍由用户完成。
       await input.fill('用户手动草稿');
-      await card.locator('button.genui-card-followup').click();
-      await expect(input).toHaveValue(/^用户手动草稿\n\n继续讨论「本地预算计算」/);
+      await card.locator('button.genui-followup-apply').click();
+      await expect(input).toHaveValue('用户手动草稿\n\n请解释一下当前结果。');
       await expect(card.locator('.genui-card-followup-feedback')).toContainText('草稿已保留');
+      await expect(preview).toBeHidden();
       const withDraft = await input.inputValue();
 
-      // 重复点击不重复追加（去重）。
+      // 同样的摘要再次确认时不重复追加（去重）。
       await card.locator('button.genui-card-followup').click();
+      await card.locator('textarea.genui-followup-text').fill('请解释一下当前结果。');
+      await card.locator('button.genui-followup-apply').click();
       await expect(input).toHaveValue(withDraft);
 
       // v1 静态卡片没有「继续讨论」入口。
-      await expect(hosts.nth(1).locator('button.genui-card-followup')).toHaveCount(0);
+      await expect(hosts.nth(2).locator('button.genui-card-followup')).toHaveCount(0);
       // 输入框仍在、没有被清空，也没有发送动作可触发发送。
       await expect(input).not.toHaveValue('');
 

@@ -1,6 +1,8 @@
 /**
- * 阶段 7：默认增强提示词（v2.5）。
+ * 阶段 7：默认增强提示词（v2.6）。
  *
+ * v2.6 修订：在协议 v5 提示词中恢复候选表 selectable 说明（选中项、筛选与快照进入
+ * 「继续讨论」）；不改协议能力与上限。
  * v2.5 修订：明确三类模型的固定标量键，并允许偏好筛选阈值直接写数字常量，
  * 降低真实模型首轮输出中的键名猜测与表达式包装错误。
  * v2.4 修订：规格升级到协议 v5——新增本地语义模型 models（预算、成本、偏好），
@@ -10,6 +12,8 @@
  * 可选定义域与零点覆盖采样），上限与示例同步；其余约定沿用 v2.2。
  * v2.2 修订：正文与界面共同完成回答，按内容分工，避免完整正文后再附一份重复界面；
  * 动态结果留在界面中，正文保留结论、必要解释与来源。
+ * v2.3 修订：候选方案表可声明 selectable，让用户选中一行后把筛选、选中项与一致快照
+ * 带入「继续讨论」；提示词只增加可选字段说明，不改变既有生成约束。
  *
  * 设计约束（docs/development-task.md 阶段 7、docs/compatibility-investigation.md §6）：
  * - 提示词对用户完全可见：它作为普通文本追加在输入框草稿末尾，发送前可逐字检查，
@@ -20,11 +24,11 @@
  * - 与用户已有草稿逐字节隔离：本模块只负责纯字符串追加，绝不裁剪或覆盖原草稿。
  */
 
-export const GENUI_PROMPT_VERSION = 2.5;
+export const GENUI_PROMPT_VERSION = 2.6;
 
 /** 用于识别、去重和关闭恢复的稳定标记；修改提示词时同步升级版本号。 */
 export const GENUI_PROMPT_START =
-  '〔GenUI 增强 v2.5｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 增强 v2.6｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 
 const PROMPT_BODY = `你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 \`\`\`genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
@@ -57,7 +61,7 @@ elements 项（按顺序显示）：
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
 - chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。series 两种写法可混用：离散点 {"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}（至少 2 个递增 x 采样点；实测或离散数据用这种，不要启用 smooth）；函数曲线 {"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?:["zero"]}}，expression 是只允许局部变量 {"op":"x"} 与 state/derived 的表达式 AST（如 {"op":"multiply","left":{"op":"x"},"right":{"op":"x"}}），domain 可选 {"start":表达式,"end":表达式}（如抛物线用对称轴 ±10），samples 可选 5–50（默认 41），features ["zero"] 表示曲线在视口内不过 x 轴时按需对称加倍扩展采样范围。连续函数（尤其抛物线）优先用函数曲线写法，公式只声明一次，调整参数后曲线随状态重算；样本不画圆点。柱/饼也可用模型来源 {"kind":"chart","chartType":"bar|pie","title","legend"?,"source":{"model":"模型id"}}（source 可带可选 "kind":"model"），此时不要写 items，图表读取模型同一快照。
-- table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。模型表格用 {"kind":"table","title"?,"source":{"model":"模型id","view"?},"sortable"?,"initialSort"?,"emptyText"?}（source 可带可选 "kind":"model"），不要写 columns/rows；view 必须与模型匹配（预算 summary|items，成本 plans，偏好 ranking|breakdown），省略时用默认视图。
+- table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"selectable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction；候选方案、商品或路线等需要用户拍板的对比表写 "selectable":true，用户选中一行后，筛选、排序与选中项会进入「继续讨论」摘要，普通数据表不要开启。模型表格用 {"kind":"table","title"?,"source":{"model":"模型id","view"?},"sortable"?,"initialSort"?,"emptyText"?}（source 可带可选 "kind":"model"），不要写 columns/rows；view 必须与模型匹配（预算 summary|items，成本 plans，偏好 ranking|breakdown），省略时用默认视图。
 - explain {"kind":"explain","model":"模型id","title"?,"visibleIf"?}：由本地根据模型输出生成计算依据与诊断，不引入外部数据或脚本。
 visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；models 不超过 4（预算支出项 20、成本方案 10、偏好候选 30/维度 8/筛选 8）；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列离散点 2–50、总点数不超过 100、同系列 x 严格递增，函数曲线每系列采样数默认 41（上限 50）、总采样不超过 200；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8、v5 节点不超过 400；每次重算不超过 500 次运算（函数曲线采样另有每系列 5000 次的独立预算，模型计算另有 5000 次预算）。
