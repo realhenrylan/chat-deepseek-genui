@@ -189,6 +189,48 @@ describe('genui v4 函数曲线系列', () => {
     expect(detail).toContain('函数曲线采样总数超过上限');
   });
 
+  it('文档范围累计采样：多个图表超过文档级上限时拒绝', () => {
+    // 每图 3 系列 × 50 = 150，单图内合法；两图合计 300 必须超过文档级 200。
+    const three = [1, 2, 3].map((number) => ({
+      label: `曲线${number}`,
+      function: { expression: PARABOLA, samples: 50 },
+    }));
+    const tooMany = { ...doc(), elements: [lineElement(three), lineElement(three)] };
+    const detail = expectFailure(parseGenui(JSON.stringify(tooMany)), 'too-complex');
+    expect(detail).toContain('函数曲线采样总数超过上限');
+  });
+
+  it('文档范围累计采样：合计恰好等于上限时接受', () => {
+    const two = [1, 2].map((number) => ({
+      label: `曲线${number}`,
+      function: { expression: PARABOLA, samples: 50 },
+    }));
+    const result = parseGenui(
+      JSON.stringify({ ...doc(), elements: [lineElement(two), lineElement(two)] }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('嵌套布局中的图表也计入文档级采样总数', () => {
+    const three = [1, 2, 3].map((number) => ({
+      label: `曲线${number}`,
+      function: { expression: PARABOLA, samples: 50 },
+    }));
+    const two = [1, 2].map((number) => ({
+      label: `曲线${number}`,
+      function: { expression: PARABOLA, samples: 50 },
+    }));
+    const combined = {
+      ...doc(),
+      elements: [
+        lineElement(three),
+        { kind: 'section', title: '嵌套', children: [lineElement(two)] },
+      ],
+    };
+    const detail = expectFailure(parseGenui(JSON.stringify(combined)), 'too-complex');
+    expect(detail).toContain('函数曲线采样总数超过上限');
+  });
+
   it('函数系列与离散系列可在同一图表混用', () => {
     const elements = [
       lineElement([

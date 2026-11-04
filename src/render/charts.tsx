@@ -212,6 +212,10 @@ function evaluateSeries(series: LineSeries[], evaluation: CompositeEvaluation): 
             `${item.label}：${result.dropped === 1 ? '1 个采样点' : `${result.dropped} 个采样点`}无法计算`,
           );
         }
+        if (!result.zeroFound) {
+          // zero 特征扩展后仍未覆盖零点（无实根或相切零点），以提示代替沉默。
+          warnings.push(`${item.label}：未找到零点（已尝试扩展视口）`);
+        }
         return { label: item.label, color, kind: 'function', runs };
       }
       const points: XYPoint[] = [];

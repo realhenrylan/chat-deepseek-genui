@@ -22,6 +22,8 @@ const X: FunctionExpression = { op: 'x' };
 const C = (value: number): NumericExpression => ({ op: 'const', value });
 /** y = x + 2（平移示例曲线）。 */
 const ADD_SHIFT: FunctionExpression = { op: 'add', left: X, right: C(2) };
+/** y = x² + 1（无实根，触底而不穿过 x 轴）。 */
+const SQUARE_PLUS1: FunctionExpression = { op: 'add', left: { op: 'multiply', left: X, right: X }, right: C(1) };
 
 function v4Document(chart: GenuiV4Element): GenuiV4Document {
   return {
@@ -36,8 +38,17 @@ function v4Document(chart: GenuiV4Element): GenuiV4Document {
 function functionSeries(
   expression: FunctionExpression,
   domain?: ChartFunctionSeries['function']['domain'],
+  features?: Array<'zero'>,
 ): ChartFunctionSeries {
-  return { label: '曲线', function: { expression, samples: 21, ...(domain ? { domain } : {}) } };
+  return {
+    label: '曲线',
+    function: {
+      expression,
+      samples: 21,
+      ...(domain ? { domain } : {}),
+      ...(features ? { features } : {}),
+    },
+  };
 }
 
 describe('genui-chart 坐标轴与数据坐标一致', () => {
@@ -87,5 +98,36 @@ describe('genui-chart 坐标轴与数据坐标一致', () => {
     expect(Number(axes[0].getAttribute('x2'))).toBe(48);
     expect(Number(axes[1].getAttribute('y1'))).toBe(146);
     expect(Number(axes[1].getAttribute('y2'))).toBe(146);
+  });
+
+  it('zero 特征扩展无果时以局部状态提示「未找到零点」', () => {
+    // y = x²+1 无实根：扩展一轮无改善即撤销，不挤压顶点附近的形状。
+    const chart = {
+      kind: 'chart' as const,
+      chartType: 'line' as const,
+      series: [functionSeries(SQUARE_PLUS1, undefined, ['zero'])],
+    } as unknown as GenuiV4Element;
+    const document = v4Document(chart);
+    const element = document.elements[0];
+    const evaluation = evaluateComposite(document, { shift: 0 });
+
+    const { container } = render(<ChartElementView element={element as AnyChartElement} evaluation={evaluation} />);
+    expect(container.textContent).toContain('未找到零点');
+    // 曲线仍然正常绘制（两根轴 + 命名空间线不少于既有结构）。
+    expect(container.querySelectorAll<SVGLineElement>('line.genui-chart-axis')).toHaveLength(2);
+  });
+
+  it('未声明 zero 特征的曲线不提示「未找到零点」', () => {
+    const chart = {
+      kind: 'chart' as const,
+      chartType: 'line' as const,
+      series: [functionSeries(SQUARE_PLUS1)],
+    } as unknown as GenuiV4Element;
+    const document = v4Document(chart);
+    const element = document.elements[0];
+    const evaluation = evaluateComposite(document, { shift: 0 });
+
+    const { container } = render(<ChartElementView element={element as AnyChartElement} evaluation={evaluation} />);
+    expect(container.textContent).not.toContain('未找到零点');
   });
 });

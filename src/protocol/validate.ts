@@ -112,6 +112,8 @@ interface SemanticContext {
   expressionNodes: number;
   expressionBudget: number;
   conditionNodes: number;
+  /** 文档范围内累计的函数曲线采样数（跨图表、跨嵌套布局累加）。 */
+  functionSamples: number;
 }
 
 function createContext(
@@ -125,6 +127,7 @@ function createContext(
     expressionBudget:
       document.version >= 3 ? LIMITS.maxExpressionNodesV3 : LIMITS.maxExpressionNodes,
     conditionNodes: 0,
+    functionSamples: 0,
   };
 }
 
@@ -531,12 +534,11 @@ function inspectElements(
         case 'chart': {
           if (element.chartType === 'line') {
             let points = 0;
-            let functionSamples = 0;
             for (const series of element.series) {
               if ('function' in series) {
                 const failure = inspectFunctionSeries(context, series, version === PROTOCOL_VERSION);
                 if (failure) return failure;
-                functionSamples += series.function.samples ?? LIMITS.defaultFunctionSamples;
+                context.functionSamples += series.function.samples ?? LIMITS.defaultFunctionSamples;
                 continue;
               }
               let previousX = Number.NEGATIVE_INFINITY;
@@ -553,7 +555,7 @@ function inspectElements(
             if (points > LIMITS.maxChartPointsTotal) {
               return semanticFailure('too-complex', '折线图数据点总数超过上限');
             }
-            if (functionSamples > LIMITS.maxFunctionSamplesTotal) {
+            if (context.functionSamples > LIMITS.maxFunctionSamplesTotal) {
               return semanticFailure('too-complex', '函数曲线采样总数超过上限');
             }
           } else {

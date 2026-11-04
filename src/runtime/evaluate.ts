@@ -55,8 +55,14 @@ export interface FunctionSeriesEvaluation {
   xs: number[];
   ys: Array<number | null>;
   dropped: number;
-  /** 是否触发过零点覆盖的 ×2 重采样。 */
+  /** 是否接受了零点覆盖的 ×2 重采样（扩展无益时撤销并保留原视口）。 */
   expanded: boolean;
+  /**
+   * zero 特征最终是否满足：请求了 features:["zero"] 却未能覆盖（无实根、
+   * 相切零点或达上限）时为 false，渲染层据此提示「未找到零点」；
+   * 未请求 zero 特征的曲线恒为 true，不提示。
+   */
+  zeroFound: boolean;
   fallbackDomain: boolean;
 }
 
@@ -346,7 +352,9 @@ export function evaluateComposite(
   /**
    * v4 函数曲线采样：每系列独立引擎与专用运算预算（不占用共享池）。
    * 可选 domain 表达式在共享池求值；失败（例如 a=0 时的顶点除零）按设计
-   * 静默回退默认域，不向用户显示错误。features=['zero'] 触发对称倍增重采样。
+   * 静默回退默认域，不向用户显示错误。features=['zero'] 触发对称倍增重采样：
+   * 仅当扩展后零点覆盖更近时保留，否则撤销扩展（无实根/相切零点不会把
+   * 视口扩到不可辨认），最终未覆盖时 zeroFound=false 由渲染层提示「未找到零点」。
    */
   const sampleFunctionSeries = (definition: ChartFunctionDefinition): FunctionSeriesResult => {
     const samplingEngine = new EvaluationEngine(
@@ -363,12 +371,14 @@ export function evaluateComposite(
       const xs: number[] = [];
       const ys: Array<number | null> = [];
       let dropped = 0;
+      let minAbsY = Number.POSITIVE_INFINITY;
       for (let index = 0; index < samples; index += 1) {
         const x = domain.start + ((domain.end - domain.start) * index) / (samples - 1);
         xs.push(x);
         const result = samplingEngine.evaluateAt(definition.expression, x);
         if (result.ok) {
           ys.push(result.value);
+          minAbsY = Math.min(minAbsY, Math.abs(result.value));
         } else {
           ys.push(null);
           dropped += 1;
@@ -390,7 +400,7 @@ export function evaluateComposite(
         }
         previousIndex = index;
       }
-      return { xs, ys, dropped, zeroCovered };
+      return { xs, ys, dropped, minAbsY, zeroCovered };
     };
 
     let domain: { start: number; end: number } = {
@@ -419,6 +429,8 @@ export function evaluateComposite(
       Math.max(5, definition.samples ?? LIMITS.defaultFunctionSamples),
     );
 
+    const wantsZero = definition.features?.includes('zero') ?? false;
+
     if (!expressionUsesX(definition.expression)) {
       // 常量函数不随 x 变化，采样一轮即可，无需零点覆盖扩展。
       const pass = runPass(domain, samples);
@@ -430,16 +442,18 @@ export function evaluateComposite(
         ys: pass.ys,
         dropped: pass.dropped,
         expanded: false,
+        zeroFound: wantsZero ? pass.zeroCovered : true,
         fallbackDomain,
       };
     }
 
-    const wantsZero = definition.features?.includes('zero') ?? false;
     let pass = runPass(domain, samples);
     if (outOfBudget()) return { ok: false, error: budgetError };
     let expanded = false;
     if (wantsZero && !pass.zeroCovered) {
       for (let round = 0; round < LIMITS.maxFunctionExpandRounds; round += 1) {
+        const previousPass = pass;
+        const previousDomain = { ...domain };
         const center = (domain.start + domain.end) / 2;
         const halfWidth = domain.end - domain.start;
         const nextStart = center - halfWidth;
@@ -453,9 +467,17 @@ export function evaluateComposite(
           break; // 幅值超限提前停
         }
         domain = { start: nextStart, end: nextEnd };
-        expanded = true;
-        pass = runPass(domain, samples);
+        const nextPass = runPass(domain, samples);
         if (outOfBudget()) return { ok: false, error: budgetError };
+        if (!nextPass.zeroCovered && nextPass.minAbsY >= previousPass.minAbsY) {
+          // 扩展无益（等距采样下 0 距离没有更近，例如无实根或相切零点）：
+          // 撤销本轮，保留上一个视口与采样，避免视口被持续放大。
+          domain = previousDomain;
+          pass = previousPass;
+          break;
+        }
+        expanded = true;
+        pass = nextPass;
         if (pass.zeroCovered) break;
       }
     }
@@ -467,6 +489,7 @@ export function evaluateComposite(
       ys: pass.ys,
       dropped: pass.dropped,
       expanded,
+      zeroFound: wantsZero ? pass.zeroCovered : true,
       fallbackDomain,
     };
   };

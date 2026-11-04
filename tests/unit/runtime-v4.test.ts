@@ -149,6 +149,54 @@ describe('v4 函数曲线采样', () => {
     expect(result.fallbackDomain).toBe(false);
   });
 
+  it('无实根时扩展无效：撤销扩展、视口保持 [-10,10] 并记录 zeroFound=false', () => {
+    const series = seriesWith({ expression: PARABOLA, features: ['zero'] });
+    const document = documentWith([lineElement([series])]);
+    const evaluation = evaluateComposite(document, { a: 1, b: 0, c: 1 });
+    const result = lookupFunctionSeries(evaluation, series.function);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('期望采样成功');
+    // y = x²+1 无零点：首轮扩展的最近 |y| 仍为 1，无改善 → 撤销扩展并保留
+    // 原视口，而不是一路扩到 [-160,160] 挤压顶点附近的形状。
+    expect(result.expanded).toBe(false);
+    expect(result.domain).toEqual({ start: -10, end: 10 });
+    expect(result.zeroFound).toBe(false);
+    expect(result.ys[20]).toBeCloseTo(1, 12);
+  });
+
+  it('相切零点落在采样点之间时不误判也不持续扩域', () => {
+    const f = MUL(SUB(X, C(7.3)), SUB(X, C(7.3)));
+    const series = seriesWith({ expression: f, features: ['zero'] });
+    const document = documentWith([lineElement([series])]);
+    const evaluation = evaluateComposite(document, { a: 1, b: 0, c: 0 });
+    const result = lookupFunctionSeries(evaluation, series.function);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('期望采样成功');
+    // 初始 [-10,10] 最近 |y| = (7.5-7.3)² = 0.04；扩展一步后最近为 (7-7.3)²
+    // = 0.09 反而更远 → 撤销扩展（相切零点不会被采样网格锁定）。
+    expect(result.expanded).toBe(false);
+    expect(result.domain).toEqual({ start: -10, end: 10 });
+    expect(result.zeroFound).toBe(false);
+  });
+
+  it('扩展有益但未覆盖时保留扩展，最终未找到零点时记录 zeroFound=false', () => {
+    const f = MUL(SUB(X, C(15.3)), SUB(X, C(15.3)));
+    const series = seriesWith({ expression: f, features: ['zero'] });
+    const document = documentWith([lineElement([series])]);
+    const evaluation = evaluateComposite(document, { a: 1, b: 0, c: 0 });
+    const result = lookupFunctionSeries(evaluation, series.function);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('期望采样成功');
+    // 首轮扩展把最近 |y| 从 28.09 拉近到 0.09 → 保留（域 [-20,20]）；
+    // 第二轮最近 |y| 不再改善（0.49 ≥ 0.09）→ 撤销，域不再放大。
+    expect(result.expanded).toBe(true);
+    expect(result.domain).toEqual({ start: -20, end: 20 });
+    expect(result.zeroFound).toBe(false);
+  });
+
   it('单个样本求值失败时丢弃该点并标记 dropped，渲染为折线断裂', () => {
     const f = (x: FunctionExpression) => DIV(x, SUB(x, C(1)));
     const series = seriesWith({ expression: f(X), samples: 41 });
