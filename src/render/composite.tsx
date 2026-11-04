@@ -1,7 +1,10 @@
 import { createElement } from 'react';
 import type {
+  GenuiSource,
   GenuiV3Document,
   GenuiV3Element,
+  GenuiV4Document,
+  GenuiV4Element,
   InteractiveStateValues,
   NoteElement,
   TableElement,
@@ -24,12 +27,18 @@ import { TableElementView } from './table';
  */
 
 export interface CompositeContext {
-  document: GenuiV3Document;
+  document: GenuiV3Document | GenuiV4Document;
   evaluation: CompositeEvaluation;
   registry: ElementRegistry;
   state: InteractiveStateValues;
   drafts: Record<string, string>;
   fieldErrors: Record<string, string>;
+  /** v4 声明的来源与「今天」，用于依据徽标与过期提示；v3 为空。 */
+  sources: GenuiSource[];
+  today: string;
+  /** 已被用户修改的状态 id；静态文字/说明据此提示可能过时。 */
+  editedState?: readonly string[];
+  hasEdits?: boolean;
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
   /** 每次卡片重置递增；表格据此重新挂载，清空筛选并恢复初始排序。 */
@@ -40,6 +49,18 @@ function ConditionError({ message }: { message: string }) {
   return (
     <p className="genui-condition-error" role="status">
       显示条件无法计算：{message}
+    </p>
+  );
+}
+
+/**
+ * 静态文字/说明由模型按初始条件生成，插件无法判断其中是否写死了旧结果。
+ * 一旦用户改过输入，就明确提示它们可能已过时，避免静态说明冒充当前结论。
+ */
+function StaticStaleNotice({ kind }: { kind: 'text' | 'note' }) {
+  return (
+    <p className="genui-static-notice">
+      输入已修改：这段静态{kind === 'note' ? '说明' : '文字'}按初始条件生成，可能已不对应当前结果。
     </p>
   );
 }
@@ -58,7 +79,7 @@ function ElementContent({
   context,
   path,
 }: {
-  element: GenuiV3Element;
+  element: GenuiV3Element | GenuiV4Element;
   context: CompositeContext;
   path: string;
 }) {
@@ -70,6 +91,7 @@ function ElementContent({
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
+          {context.hasEdits ? <StaticStaleNotice kind="text" /> : null}
           {Component ? createElement(Component, { element }) : <UnknownElementView element={element} />}
         </>
       );
@@ -80,6 +102,7 @@ function ElementContent({
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
+          {context.hasEdits ? <StaticStaleNotice kind="note" /> : null}
           <div
             className={`genui-note genui-note-${element.tone ?? 'info'}`}
             role={element.tone === 'error' ? 'alert' : undefined}
@@ -90,14 +113,27 @@ function ElementContent({
       );
     }
     case 'chart':
-      return <ChartElementView element={element} evaluation={context.evaluation} />;
+      return (
+        <ChartElementView
+          element={element}
+          evaluation={context.evaluation}
+          sources={context.sources}
+          today={context.today}
+        />
+      );
     case 'table': {
       const gate = gatedVisible(element, context);
       if (!gate.visible) return null;
       return (
         <>
           {gate.error ? <ConditionError message={gate.error} /> : null}
-          <TableElementView key={context.resetToken} element={element} evaluation={context.evaluation} />
+          <TableElementView
+            key={context.resetToken}
+            element={element}
+            evaluation={context.evaluation}
+            sources={context.sources}
+            today={context.today}
+          />
         </>
       );
     }
@@ -129,6 +165,8 @@ function ElementContent({
           calculation={context.evaluation.derived}
           drafts={context.drafts}
           fieldErrors={context.fieldErrors}
+          sources={context.sources}
+          today={context.today}
           onValueChange={context.onValueChange}
           onNumberInput={context.onNumberInput}
         />
@@ -141,7 +179,7 @@ export function ElementList({
   context,
   path,
 }: {
-  elements: GenuiV3Element[];
+  elements: Array<GenuiV3Element | GenuiV4Element>;
   context: CompositeContext;
   path: string;
 }) {

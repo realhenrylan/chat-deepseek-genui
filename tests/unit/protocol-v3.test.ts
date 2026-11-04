@@ -51,13 +51,13 @@ describe('genui v3 协议', () => {
     if (result.ok) expect(result.document.version).toBe(3);
   });
 
-  it('version 4 返回 unsupported-version 并说明支持范围', () => {
+  it('version 5 返回 unsupported-version 并说明支持范围', () => {
     const detail = expectFailure(
-      parseGenui('{"type":"genui","version":4,"state":[],"derived":[],"elements":[{"kind":"text","value":"x"}]}'),
+      parseGenui('{"type":"genui","version":5,"state":[],"derived":[],"elements":[{"kind":"text","value":"x"}]}'),
       'unsupported-version',
     );
-    expect(detail).toContain('4');
-    expect(detail).toContain('1–3');
+    expect(detail).toContain('5');
+    expect(detail).toContain('1–4');
   });
 
   it('v2 文档不允许使用 v3 的 text.visibleIf', () => {

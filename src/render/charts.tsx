@@ -1,6 +1,7 @@
-import type { ChartElement, ChartItem, ChartSeries } from '../protocol/types';
+import type { ChartElement, ChartItem, ChartSeries, GenuiBasis, GenuiSource } from '../protocol/types';
 import { lookupExpression, type CompositeEvaluation } from '../runtime/evaluate';
 import { formatNumber } from './format';
+import { BasisBadge } from './provenance';
 
 /**
  * 图表视图（v3）：柱状、折线、饼图。
@@ -448,13 +449,39 @@ function isItemChart(element: ChartElement): element is ItemChart {
   return element.chartType === 'bar' || element.chartType === 'pie';
 }
 
-export function ChartElementView({ element, evaluation }: {
+export function ChartElementView({ element, evaluation, sources, today }: {
   element: ChartElement;
   evaluation: CompositeEvaluation;
+  /** 仅 v4 传入；用于展示元素/条目/系列的 basis。 */
+  sources?: GenuiSource[];
+  today?: string;
 }) {
+  const bases: Array<{ label: string; basis: GenuiBasis }> = [];
+  const elementBasis = (element as ChartElement & { basis?: GenuiBasis }).basis;
+  if (elementBasis) bases.push({ label: '图表整体', basis: elementBasis });
+  if (isItemChart(element)) {
+    for (const item of element.items as Array<ChartItem & { basis?: GenuiBasis }>) {
+      if (item.basis) bases.push({ label: item.label, basis: item.basis });
+    }
+  } else {
+    for (const series of element.series as Array<ChartSeries & { basis?: GenuiBasis }>) {
+      if (series.basis) bases.push({ label: series.label, basis: series.basis });
+    }
+  }
+
   return (
     <figure className="genui-chart">
       {element.title ? <figcaption className="genui-chart-title">{element.title}</figcaption> : null}
+      {today !== undefined && bases.length > 0 ? (
+        <div className="genui-chart-basis">
+          {bases.map(({ label, basis }) => (
+            <span className="genui-chart-basis-item" key={label}>
+              <span className="genui-chart-basis-label">{label}：</span>
+              <BasisBadge basis={basis} sources={sources} today={today} />
+            </span>
+          ))}
+        </div>
+      ) : null}
       {isItemChart(element) ? (
         element.chartType === 'bar' ? (
           <BarChart element={element} evaluation={evaluation} />

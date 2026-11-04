@@ -1,29 +1,37 @@
 import type { ErrorObject } from 'ajv';
 import genuiValidate from './genui-validator.generated';
+import { isValidProvenanceDate } from './provenance';
 import { isStepAligned } from './step';
 import {
   LIMITS,
   PROTOCOL_VERSION,
   type Condition,
   type DerivedValue,
+  type GenuiBasis,
   type GenuiDocument,
+  type GenuiSource,
   type GenuiV2Document,
   type GenuiV3Document,
   type GenuiV3Element,
+  type GenuiV4Document,
+  type GenuiV4Element,
   type NumericExpression,
   type ParseGenuiResult,
   type StateVariable,
 } from './types';
 
 /**
- * genui 协议解析与验证（v1 静态 / v2 交互 / v3 组合）。
+ * genui 协议解析与验证（v1 静态 / v2 交互 / v3 组合 / v4 依据）。
  *
  * 守卫顺序（每一步先于解析成本更高的步骤）：
  * 1. too-large          原始长度上限；
  * 2. too-deep           字符串感知的嵌套深度扫描（先于 JSON.parse 拦截病态输入）；
  * 3. invalid-json       JSON.parse 失败；
  * 4. schema-violation   结构校验（Ajv allErrors，构建期代码生成，见下）；
- * 5. 语义检查            引用、依赖、初始状态、组合布局与资源预算。
+ * 5. 语义检查            引用、依赖、初始状态、组合布局、资源预算与依据。
+ *
+ * v4 的「依据」只是一份声明：插件不请求来源 URL、不核验资料存在，
+ * 因此语义阶段只检查 URL 形状、日期可解析性与来源绑定是否自洽。
  *
  * 失败 detail 面向日志与测试断言，不面向用户；用户看到的是原始代码块回退。
  */
@@ -103,20 +111,32 @@ function semanticFailure(code: SemanticFailure['code'], detail: string): Semanti
 interface SemanticContext {
   stateById: Map<string, StateVariable>;
   derivedById: Map<string, DerivedValue>;
+  sourcesById: Map<string, GenuiSource>;
   dependencies: Map<string, Set<string>>;
   expressionNodes: number;
   expressionBudget: number;
   conditionNodes: number;
 }
 
-function createContext(document: GenuiV2Document | GenuiV3Document): SemanticContext {
+function createContext(
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document,
+): SemanticContext {
   return {
-    stateById: new Map(document.state.map((variable) => [variable.id, variable])),
-    derivedById: new Map(document.derived.map((value) => [value.id, value])),
+    stateById: new Map(
+      document.state.map((variable): [string, StateVariable] => [variable.id, variable]),
+    ),
+    derivedById: new Map(
+      document.derived.map((value): [string, DerivedValue] => [value.id, value]),
+    ),
+    sourcesById: new Map(
+      (document.version === 4 ? document.sources ?? [] : []).map(
+        (source): [string, GenuiSource] => [source.id, source],
+      ),
+    ),
     dependencies: new Map(),
     expressionNodes: 0,
     expressionBudget:
-      document.version === 3 ? LIMITS.maxExpressionNodesV3 : LIMITS.maxExpressionNodes,
+      document.version >= 3 ? LIMITS.maxExpressionNodesV3 : LIMITS.maxExpressionNodes,
     conditionNodes: 0,
   };
 }
@@ -257,10 +277,10 @@ function inspectCondition(
   return inspectExpression(context, condition.right, 1);
 }
 
-/** 状态定义、派生定义、表达式预算与循环依赖（v2/v3 共用）。 */
+/** 状态定义、派生定义、表达式预算与循环依赖（v2/v3/v4 共用）。 */
 function inspectStateAndDerived(
   context: SemanticContext,
-  document: GenuiV2Document | GenuiV3Document,
+  document: GenuiV2Document | GenuiV3Document | GenuiV4Document,
 ): SemanticFailure | null {
   if (context.stateById.size !== document.state.length) {
     return semanticFailure('invalid-reference', 'state 中存在重复 id');
@@ -362,10 +382,12 @@ function inspectDependencyCycles(context: SemanticContext): SemanticFailure | nu
   return null;
 }
 
-/** v2 叶元素引用检查（控件绑定、结果来源）。 */
+/** v2/v4 叶元素引用检查（控件绑定、结果来源）。 */
 function inspectLeafElement(
   context: SemanticContext,
-  element: Exclude<GenuiV2Document['elements'][number], { kind: 'text' }>,
+  element:
+    | { kind: 'number-input' | 'slider' | 'select'; bind: string }
+    | { kind: 'value'; source: { kind: 'state' | 'derived'; id: string } },
 ): SemanticFailure | null {
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = context.stateById.get(element.bind);
@@ -406,14 +428,16 @@ function validateV2Semantics(document: GenuiV2Document): SemanticFailure | null 
   return inspectDependencyCycles(context);
 }
 
-/** 展平后的元素总数、布局嵌套深度与各组合元素内部引用。 */
+/** 展平后的元素总数、布局嵌套深度与各组合元素内部引用（v3/v4 共用）。 */
+type ValidatedElement = GenuiV3Element | GenuiV4Element;
+
 function inspectV3Elements(
   context: SemanticContext,
-  elements: GenuiV3Element[],
+  elements: ValidatedElement[],
 ): SemanticFailure | null {
   let elementCount = 0;
 
-  const walk = (list: GenuiV3Element[], depth: number): SemanticFailure | null => {
+  const walk = (list: ValidatedElement[], depth: number): SemanticFailure | null => {
     for (const element of list) {
       if (depth > LIMITS.maxNestingDepth) {
         return semanticFailure('too-complex', '组合布局嵌套超过上限');
@@ -524,10 +548,184 @@ function inspectV3Elements(
   return walk(elements, 1);
 }
 
+/** v4 来源声明：id 唯一、URL 形状可接受、日期真实存在。 */
+function inspectSources(document: GenuiV4Document): SemanticFailure | null {
+  const sources = document.sources ?? [];
+  const ids = new Set<string>();
+  for (const source of sources) {
+    if (ids.has(source.id)) {
+      return semanticFailure('invalid-reference', `来源 id 重复：${source.id}`);
+    }
+    ids.add(source.id);
+    // URL 的 https 与长度由 schema 保证；凭据/私有主机等不可靠形式不拒绝整份
+    // 文档，而是在界面中按纯文本显著标注。插件从不请求这些链接。
+    if (source.publishedAt !== undefined && !isValidProvenanceDate(source.publishedAt)) {
+      return semanticFailure('semantic-violation', `来源 ${source.id} 的发布时间无效`);
+    }
+    if (source.retrievedAt !== undefined && !isValidProvenanceDate(source.retrievedAt)) {
+      return semanticFailure('semantic-violation', `来源 ${source.id} 的获取时间无效`);
+    }
+  }
+  return null;
+}
+
+/** 单条 basis：日期、有效期顺序、来源绑定都必须自洽。 */
+function inspectBasis(
+  context: SemanticContext,
+  basis: GenuiBasis | undefined,
+  where: string,
+): SemanticFailure | null {
+  if (basis === undefined) {
+    return null;
+  }
+  if (basis.asOf !== undefined && !isValidProvenanceDate(basis.asOf)) {
+    return semanticFailure('semantic-violation', `${where}的时点无效`);
+  }
+  if (basis.validUntil !== undefined && !isValidProvenanceDate(basis.validUntil)) {
+    return semanticFailure('semantic-violation', `${where}的有效期无效`);
+  }
+  if (
+    basis.asOf !== undefined &&
+    basis.validUntil !== undefined &&
+    basis.validUntil.slice(0, 10) < basis.asOf.slice(0, 10)
+  ) {
+    return semanticFailure('semantic-violation', `${where}的有效期早于适用时点`);
+  }
+  if (basis.kind === 'reference' && basis.sourceId === undefined) {
+    return semanticFailure('semantic-violation', `${where}标记为模型引用但没有 sourceId`);
+  }
+  if (basis.kind === 'computed' && basis.sourceId !== undefined) {
+    return semanticFailure('semantic-violation', `${where}的计算结果不能绑定来源`);
+  }
+  if (basis.sourceId !== undefined && !context.sourcesById.has(basis.sourceId)) {
+    return semanticFailure('invalid-reference', `${where}引用了未声明的来源：${basis.sourceId}`);
+  }
+  return null;
+}
+
+/**
+ * v4 依据检查：来源声明 + 每个数据节点的 basis。
+ * 过期数据不会让文档失效（界面必须显示「已过期」），但伪造/悬空的来源会。
+ */
+function inspectV4Provenance(
+  context: SemanticContext,
+  document: GenuiV4Document,
+): SemanticFailure | null {
+  const sourceFailure = inspectSources(document);
+  if (sourceFailure) return sourceFailure;
+
+  for (const variable of document.state) {
+    if (variable.basis?.kind === 'computed') {
+      return semanticFailure(
+        'semantic-violation',
+        `状态 ${variable.id} 是输入项，不能标记为计算结果`,
+      );
+    }
+    const failure = inspectBasis(context, variable.basis, `状态 ${variable.id} 的依据`);
+    if (failure) return failure;
+  }
+
+  for (const derived of document.derived) {
+    if (derived.basis !== undefined && derived.basis.kind !== 'computed') {
+      return semanticFailure(
+        'semantic-violation',
+        `派生值 ${derived.id} 由其他数据计算得出，依据应标为计算结果`,
+      );
+    }
+    const failure = inspectBasis(context, derived.basis, `派生值 ${derived.id} 的依据`);
+    if (failure) return failure;
+  }
+
+  const walk = (elements: GenuiV4Element[]): SemanticFailure | null => {
+    for (const element of elements) {
+      const failure = inspectBasis(
+        context,
+        (element as { basis?: GenuiBasis }).basis,
+        `元素 ${element.kind} 的依据`,
+      );
+      if (failure) return failure;
+
+      switch (element.kind) {
+        case 'value': {
+          break;
+        }
+        case 'chart': {
+          if (element.chartType === 'line') {
+            for (const series of element.series) {
+              const seriesFailure = inspectBasis(
+                context,
+                series.basis,
+                `折线系列「${series.label}」的依据`,
+              );
+              if (seriesFailure) return seriesFailure;
+            }
+          } else {
+            for (const item of element.items) {
+              const itemFailure = inspectBasis(
+                context,
+                item.basis,
+                `图表条目「${item.label}」的依据`,
+              );
+              if (itemFailure) return itemFailure;
+            }
+          }
+          break;
+        }
+        case 'table': {
+          for (const column of element.columns) {
+            const columnFailure = inspectBasis(
+              context,
+              column.basis,
+              `表格列「${column.label}」的依据`,
+            );
+            if (columnFailure) return columnFailure;
+          }
+          for (const row of element.rows) {
+            const rowFailure = inspectBasis(context, row.basis, '表格行的依据');
+            if (rowFailure) return rowFailure;
+          }
+          break;
+        }
+        case 'section': {
+          const sectionFailure = walk(element.children);
+          if (sectionFailure) return sectionFailure;
+          break;
+        }
+        case 'columns': {
+          for (const column of element.columns) {
+            const columnFailure = walk(column);
+            if (columnFailure) return columnFailure;
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return null;
+  };
+
+  return walk(document.elements);
+}
+
 function validateV3Semantics(document: GenuiV3Document): SemanticFailure | null {
   const context = createContext(document);
   const stateFailure = inspectStateAndDerived(context, document);
   if (stateFailure) return stateFailure;
+
+  const elementFailure = inspectV3Elements(context, document.elements);
+  if (elementFailure) return elementFailure;
+
+  return inspectDependencyCycles(context);
+}
+
+function validateV4Semantics(document: GenuiV4Document): SemanticFailure | null {
+  const context = createContext(document);
+  const stateFailure = inspectStateAndDerived(context, document);
+  if (stateFailure) return stateFailure;
+
+  const provenanceFailure = inspectV4Provenance(context, document);
+  if (provenanceFailure) return provenanceFailure;
 
   const elementFailure = inspectV3Elements(context, document.elements);
   if (elementFailure) return elementFailure;
@@ -587,6 +785,9 @@ export function parseGenui(raw: string): ParseGenuiResult {
     if (failure) return failure;
   } else if (document.version === 3) {
     const failure = validateV3Semantics(document);
+    if (failure) return failure;
+  } else if (document.version === 4) {
+    const failure = validateV4Semantics(document);
     if (failure) return failure;
   }
   return { ok: true, document };

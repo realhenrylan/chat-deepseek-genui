@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GenuiDocument } from '../../src/protocol/types';
+import type { GenuiDocument, GenuiV4Document } from '../../src/protocol/types';
 import { buildContinueSummary } from '../../src/render/summarize';
 
 /**
@@ -150,5 +150,163 @@ describe('buildContinueSummary', () => {
       derivedErrors: { balance: '状态值缺失' },
     });
     expect(summary).toContain('已支出：（未确认）');
+  });
+
+  it('v4 摘要保留来源、依据类别、未核验说明与适用时点', () => {
+    const doc: GenuiV4Document = {
+      type: 'genui',
+      version: 4,
+      title: '带依据的预算',
+      sources: [
+        {
+          id: 'stats',
+          label: '统计公报',
+          url: 'https://example.com/report',
+          publisher: '统计局',
+          publishedAt: '2026-01-02',
+          retrievedAt: '2026-01-03',
+        },
+      ],
+      state: [
+        {
+          id: 'budget',
+          label: '总预算',
+          kind: 'number',
+          initial: 100,
+          min: 0,
+          max: 200,
+          step: 10,
+          unit: '元',
+          basis: { kind: 'user' },
+        },
+        {
+          id: 'spent',
+          label: '已支出',
+          kind: 'number',
+          initial: 40,
+          min: 0,
+          max: 100,
+          step: 10,
+          unit: '元',
+          basis: { kind: 'example', note: '按常见水平示意' },
+        },
+      ],
+      derived: [
+        {
+          id: 'balance',
+          label: '余额',
+          unit: '元',
+          expression: {
+            op: 'subtract',
+            left: { op: 'state', id: 'budget' },
+            right: { op: 'state', id: 'spent' },
+          },
+          basis: { kind: 'computed' },
+        },
+      ],
+      elements: [],
+    };
+
+    const summary = buildContinueSummary({
+      title: doc.title,
+      state: doc.state,
+      derived: doc.derived,
+      stateValues: { budget: 100, spent: 40 },
+      derivedValues: { balance: 60 },
+      derivedErrors: {},
+      sources: doc.sources,
+      today: '2026-06-01',
+    });
+
+    expect(summary).toContain('总预算：100 元（用户提供）');
+    expect(summary).toContain('已支出：40 元（示例数据；按常见水平示意）');
+    expect(summary).toContain('余额：60 元（计算结果）');
+    expect(summary).toContain('声明的来源（模型声称，插件未核验）：');
+    expect(summary).toContain(
+      '《统计公报》 · 统计局 · https://example.com/report · 资料时间 2026-01-02 · 声称获取于 2026-01-03',
+    );
+    expect(summary).toContain('依据时点：2026-06-01');
+    expect(summary).toContain('缺失值不是 0');
+  });
+
+  it('用户修改后的摘要保留原依据，并说明当前值以用户为准', () => {
+    const summary = buildContinueSummary({
+      title: '修改后的预算',
+      state: [
+        {
+          id: 'price',
+          label: '价格',
+          kind: 'number',
+          initial: 10,
+          min: 0,
+          max: 100,
+          step: 1,
+          unit: '元',
+          basis: {
+            kind: 'reference',
+            sourceId: 'stats',
+            asOf: '2026-01-02',
+            validUntil: '2026-12-31',
+          },
+        },
+      ],
+      derived: [],
+      stateValues: { price: 12 },
+      derivedValues: {},
+      derivedErrors: {},
+      sources: [{ id: 'stats', label: '统计公报', url: 'https://example.com/report' }],
+      editedState: ['price'],
+      today: '2026-06-01',
+    });
+
+    expect(summary).toContain(
+      '价格：12 元（用户修改；原依据：模型引用 · 未核验；《统计公报》，未核验；原适用时点 2026-01-02；原有效期至 2026-12-31）',
+    );
+    expect(summary).toContain('用户修改的输入以当前值为准，原依据仅作历史说明');
+    expect(summary).not.toContain('已验证');
+  });
+
+  it('过期引用与未标注依据不会冒充当前结果', () => {
+    const summary = buildContinueSummary({
+      title: '时效检查',
+      state: [
+        {
+          id: 'price',
+          label: '价格',
+          kind: 'number',
+          initial: 10,
+          min: 0,
+          max: 100,
+          step: 1,
+          unit: '元',
+          basis: {
+            kind: 'reference',
+            sourceId: 'stats',
+            asOf: '2026-01-02',
+            validUntil: '2026-05-31',
+          },
+        },
+        {
+          id: 'quantity',
+          label: '数量',
+          kind: 'number',
+          initial: 1,
+          min: 0,
+          max: 10,
+          step: 1,
+        },
+      ],
+      derived: [],
+      stateValues: { price: 10, quantity: 2 },
+      derivedValues: {},
+      derivedErrors: {},
+      sources: [{ id: 'stats', label: '统计公报', url: 'https://example.com/report' }],
+      today: '2026-06-01',
+    });
+
+    expect(summary).toContain('价格：10 元（模型引用 · 未核验；《统计公报》，未核验');
+    expect(summary).toContain('已过期（有效期至 2026-05-31）');
+    expect(summary).toContain('数量：2（未标注依据）');
+    expect(summary).not.toContain('已验证');
   });
 });

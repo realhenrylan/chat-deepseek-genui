@@ -2,7 +2,7 @@
 
 当前分发版本：**0.1.1**（2026-11-03）。README 已加入明暗 Logo 并重写为功能介绍；项目版本、当前隐私说明、构建标记与发布 ZIP 已同步。`npm run check`（253 项单测）及默认 Edge/Chrome e2e（18 通过、6 跳过）通过，ZIP 含全部 7 个运行时文件。当前校验值见 [分层报告](phase8-verification.md)；本轮未重跑真实 origin 或真实模型会话。
 
-更新日期：2026-11-03。阶段 0–8 已完成；Edge Add-ons 商店提交与审核未执行（原因与素材见阶段 8 记录与 [store-submission.md](store-submission.md)），发布准备不等于已上架。阶段 7 默认增强 v2 已接入运行时，并完成真实 DeepSeek 网页三场景、同类新问题、普通问答、关闭/恢复与说明面板验收；收尾修复三项 P2，并并入视口门控、版本对账标记与 browser-skill 操作手册。阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5/6 的本地示例与合成文档验证见对应阶段记录。阶段 8 完成全量复检、双浏览器版本记录、生产包与发布 ZIP、Edge Add-ons 政策逐条复核、隐私说明与分层验证报告，见 [phase8-verification.md](phase8-verification.md)。
+更新日期：2026-11-04。阶段 0–8 已完成；阶段 9（Issue 8 依据与方案可追溯）已在 issue8 工作树完成，尚未合并。Edge Add-ons 商店提交与审核未执行（原因与素材见阶段 8 记录与 [store-submission.md](store-submission.md)），发布准备不等于已上架。阶段 7 默认增强 v2 已接入运行时，并完成真实 DeepSeek 网页三场景、同类新问题、普通问答、关闭/恢复与说明面板验收；收尾修复三项 P2，并并入视口门控、版本对账标记与 browser-skill 操作手册。阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5/6 的本地示例与合成文档验证见对应阶段记录。阶段 8 完成全量复检、双浏览器版本记录、生产包与发布 ZIP、Edge Add-ons 政策逐条复核、隐私说明与分层验证报告，见 [phase8-verification.md](phase8-verification.md)。
 
 产品目标与验收范围见[产品规格](product-spec.md)。Edge 官方资料、技术基线、权限和工程规范见[开发指南](development-guide.md)。执行前先阅读这两份文档。
 
@@ -244,3 +244,35 @@
 - 检查未执行与原因：①Edge Add-ons 商店提交未执行——无 Partner Center 账号，属用户侧动作，政策复核与素材已备妥；②真实页面 URL 级网络抓包未执行——需独立取证环境，「无未声明网络行为」结论由源码静态不变量、manifest 权限、构建扫描与模拟页零请求断言四条独立证据支撑，口径沿用阶段 6 收紧措辞；③Logo 接入发生在本次全量复核之后：manifest `icons`、受限页面图形资源与 UI 标记已加入源码，尚未全量复核或重出包，因此保留旧 ZIP 和 SHA256 作为历史验收基线。
 - 交付物状态：源码、可加载 `dist/`、发布 ZIP、README/CHANGELOG、隐私说明、安装与卸载说明、分层验证报告齐备；商店提交与审核状态单独报告——发布准备不等于已上架。
 - 发布前复审修正三处文档口径（2026-11-03 第二轮）：①store-submission 的 1.3.1/1.3.2 由「不需要测试账号 / N-A」改为登录与站点在线服务依赖的如实披露，给出无法提供站点账号的原因（账号受站点服务条款约束、非本项目所有）与不登录的替代复核路径（e2e 模拟页、协议文档与示例 JSON），审核者自有账号不再作为豁免依据；②privacy/README 卸载说明改为「已打开页面注入效果需刷新或关闭标签页后消失」，privacy「第三方」区分本地打包库（React/react-dom）、数据共享（无）与站点自身在线服务；③store-submission 状态行改为「商店素材尚未全部就绪」，Logo 规格按官方提交说明改为 300×300 推荐、最低 128×128、截图可选。
+
+## 阶段 9：依据与方案可追溯（Issue 8）
+
+### 背景
+
+结构合法、计算成功与事实可靠是不同问题。旧实现把来源、示例和估算混在正文或 note 中，用户可能把示例价格、模型假设或过期数据当成已核验事实；保存方案、导出与继续讨论也不携带依据。本阶段先改善已有资料的表达与可追溯性，不承诺实时价格、库存或可信工具结果直连；外部数据连接需要独立设计权限、获取与核验机制。
+
+### 待办
+
+- [x] 协议 v4：根级 `sources` 与数据节点 `basis`，区分用户提供、示例、估算、模型引用、计算与未知；记录链接、发布/获取时间、适用时点与有效期。
+- [x] 校验：来源 id 唯一、日期真实、`validUntil` 不早于 `asOf`；`reference` 必须有已声明来源，`computed` 不得绑定来源，派生值只能标 `computed`，状态不得标 `computed`；URL 结构接受任意非空字符串（最长 2048），非 `https://`、凭据/控制字符/本地私有主机等不可靠链接由界面标注为不可用，不拒绝整份文档。
+- [x] 渲染：卡片「依据与适用范围」面板、输入旁依据徽标、来源纯文本展示且不发请求、引用统一标「模型引用 · 未核验」、过期与未标注依据明确显示。
+- [x] 联动：面板中的数值与选择控件直接修改当前状态，派生值、图表与表格同步更新；表格 `null` 显示「—」并说明“缺失值（不是 0）”，不参与数值比较。
+- [x] 导出/导入：方案文件含 `document`、`state`、`exportedAt`；导入重新校验文档与状态，失败保留当前界面并说明原因；支持恢复对话中的原始界面。
+- [x] 继续讨论摘要携带来源、依据类别、适用时点、有效期与“插件未核验/缺失值不是 0”声明。
+- [x] 提示词升级 v2.4，要求模型声明 sources/basis、不得声称已验证、缺失值用 null、有时效数据写 validUntil。
+- [x] 文档、示例、单测与 e2e 全量复核。
+- [x] 复核修复：用户修改输入后区分“当前值/原依据”，静态说明标注可能过时，无效草稿阻止导出与继续讨论，日期时间保留时区并按绝对时刻判断过期，非 https 链接由依据面板明确标注。
+
+### 交付物与通过条件
+
+交付协议实现、渲染面板、方案导出/导入、摘要、提示词、示例与测试。通过条件对应 Issue 8 验收：用户可区分真实输入/示例/估算；修改假设后结果同步更新；缺失≠零且无来源不冒充已核验；无效或不支持的链接有明确处理；导出/导入/摘要保留依据与时间；旧协议正常渲染且缺依据时显示诚实未知说明。
+
+### 阶段 9 完成记录（2026-11-04）
+
+- 协议：`src/protocol/{types,schema,validate,provenance,plan}.ts` 增加 v4 `sources`/`basis`、语义校验、方案文件格式与导入校验；`src/protocol/genui-validator.generated.ts` 由 `npm run gen-validator` 重新生成。
+- 渲染与交互：`src/render/{Card,composite,interactive,table,charts,summarize,provenance}.tsx` 接入依据面板、徽标、缺失值说明、URI 不可靠提示；`card.css` 增加对应亮/暗样式。
+- 提示词与文档：`src/content/prompt.ts` 升至 v2.4 并更新示例；`docs/genui-protocol.md`、`product-spec.md`、`README.md`、`CHANGELOG.md` 与 `docs/examples/budget-v4.json` 同步。
+- 自动化检查：`npm run typecheck`、`npm run lint`、`npm test`（31 个文件，295 passed / 3 skipped）、`npm run check`（含 prebuild 校验器再生成、build 与 postbuild 生产包校验）全部通过；`npm run test:e2e` 在 Edge 与 Chrome 模拟页运行 22 项通过、6 项真实网页条件跳过。
+- 覆盖范围：新增 `tests/unit/{provenance,protocol-v4,plan,render-v4,card-plan}.test.ts(x)`，并更新 `prompt`、`summarize`、`protocol-v3`、`protocol`、`card`、`enhance`、`examples` 既有断言。v4 依据面板与方案导入导出由渲染/单测覆盖；本轮未新增 v4 专属 e2e 场景。
+- 复核修复（2026-11-04 第二轮）：①Card 记录 `editedState`，用户修改后徽标/面板/摘要显示“用户修改”并保留“原依据”，值回到初始值自动清除；②存在用户修改时，静态 `text`/`note` 显示“按初始条件生成”提示，卡片显示编辑说明；③输入框为空或无效时阻止导出方案与继续讨论，提示先修正；④`formatProvenanceDate` 保留秒与时区，`isBasisExpired`/`basisProblem` 对带时间值按绝对时刻判断，同日截止也会过期；⑤来源 URL 结构放宽为非空字符串，非 https/凭据/私有主机等由依据面板标注“形式不可靠”，不再整份回退；方案格式增加可选 `editedState` 并在导入时恢复。对应测试已补充到 `render-v4`、`card-plan`、`summarize`、`plan`、`protocol-v4`、`provenance`。
+- 合并注意：本分支把 provenance 编号为协议 v4；上游 issue4 的 v4 是函数曲线，合并时需重编号并同步提示词、示例与测试。

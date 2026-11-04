@@ -29,6 +29,8 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 | 图表联动 | 用柱状图、折线图和饼图查看变化，展开「查看数据」核对数值 |
 | 表格比较 | 排序、搜索筛选，结合预算等条件缩小候选范围 |
 | 条件说明 | 按当前参数显示提示，例如超支警告、无候选结果或公式退化说明 |
+| 依据与来源 | 区分用户提供、示例、估算、模型引用与计算结果；引用标为“模型引用 · 未核验”，过期与缺失值单独说明；用户改值后标为“用户修改”并保留原依据，静态说明提示可能过时 |
+| 方案导出导入 | 把界面、来源/依据与当前状态保存为本地 JSON 方案（含被修改的输入），之后重新导入继续；输入无效时阻止导出与继续讨论，也可恢复对话中的原始界面 |
 | 重置与收起 | 一键恢复初始参数、表格排序和筛选；收起界面时保留当前卡片状态 |
 | 继续讨论 | 把当前条件和计算结果汇总到聊天输入框，保留已有草稿，由你决定是否发送 |
 | 主题与开关 | 跟随站点明暗主题，随时关闭增强并恢复原始代码块 |
@@ -139,7 +141,7 @@ npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
 
-协议支持 v1 / v2 / v3。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4；v4 增加来源与依据，并支持本地方案导出/导入。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)及 [分层验证报告](docs/phase8-verification.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

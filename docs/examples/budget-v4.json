@@ -1,0 +1,136 @@
+{
+  "type": "genui",
+  "version": 4,
+  "title": "月度预算与依据",
+  "sources": [
+    {
+      "id": "user_budget",
+      "label": "用户描述的月收入",
+      "publisher": "用户",
+      "note": "对话中提供，未附外部链接"
+    },
+    {
+      "id": "stats",
+      "label": "统计公报示例",
+      "url": "https://example.com/report",
+      "publisher": "示例统计局",
+      "publishedAt": "2026-01-02",
+      "retrievedAt": "2026-01-03",
+      "note": "仅演示引用格式，插件未访问该链接"
+    }
+  ],
+  "state": [
+    {
+      "id": "income",
+      "label": "月收入",
+      "kind": "number",
+      "initial": 8000,
+      "min": 0,
+      "max": 30000,
+      "step": 500,
+      "unit": "元",
+      "basis": { "kind": "user", "sourceId": "user_budget" }
+    },
+    {
+      "id": "fixed",
+      "label": "固定支出",
+      "kind": "number",
+      "initial": 3000,
+      "min": 0,
+      "max": 20000,
+      "step": 100,
+      "unit": "元",
+      "basis": { "kind": "example", "note": "按常见水平示意，请按实际情况调整" }
+    },
+    {
+      "id": "food",
+      "label": "餐饮",
+      "kind": "number",
+      "initial": 1200,
+      "min": 0,
+      "max": 10000,
+      "step": 100,
+      "unit": "元",
+      "basis": {
+        "kind": "reference",
+        "sourceId": "stats",
+        "asOf": "2026-01-02",
+        "validUntil": "2026-12-31",
+        "note": "示例引用，界面会标注未核验"
+      }
+    }
+  ],
+  "derived": [
+    {
+      "id": "left",
+      "label": "可支配",
+      "unit": "元",
+      "expression": {
+        "op": "subtract",
+        "left": { "op": "state", "id": "income" },
+        "right": {
+          "op": "add",
+          "left": { "op": "state", "id": "fixed" },
+          "right": { "op": "state", "id": "food" }
+        }
+      },
+      "basis": { "kind": "computed" }
+    }
+  ],
+  "elements": [
+    {
+      "kind": "note",
+      "text": "收入来自你的描述；固定支出是示例值；餐饮引用了模型声明的资料，插件未核验。修改下方假设会同步更新结果。"
+    },
+    { "kind": "slider", "bind": "income" },
+    { "kind": "slider", "bind": "fixed" },
+    { "kind": "number-input", "bind": "food" },
+    {
+      "kind": "value",
+      "label": "每月可支配",
+      "source": { "kind": "derived", "id": "left" },
+      "unit": "元",
+      "basis": { "kind": "computed" }
+    },
+    {
+      "kind": "table",
+      "title": "依据明细",
+      "basis": { "kind": "computed" },
+      "columns": [
+        { "key": "item", "label": "项目" },
+        {
+          "key": "amount",
+          "label": "金额",
+          "numeric": true,
+          "unit": "元",
+          "basis": { "kind": "user" }
+        }
+      ],
+      "rows": [
+        {
+          "cells": {
+            "item": "月收入",
+            "amount": { "op": "state", "id": "income" }
+          },
+          "basis": { "kind": "user", "sourceId": "user_budget" }
+        },
+        {
+          "cells": {
+            "item": "餐饮",
+            "amount": { "op": "state", "id": "food" }
+          },
+          "basis": {
+            "kind": "reference",
+            "sourceId": "stats",
+            "asOf": "2026-01-02",
+            "validUntil": "2026-12-31"
+          }
+        },
+        {
+          "cells": { "item": "其他支出", "amount": null },
+          "basis": { "kind": "unknown", "note": "未提供，缺失不等同于 0" }
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import type {
+  GenuiBasis,
+  GenuiSource,
   NumericExpression,
   TableCell,
   TableColumn,
@@ -9,19 +11,31 @@ import type {
 import { lookupCondition, lookupExpression } from '../runtime/evaluate';
 import type { CompositeEvaluation } from '../runtime/evaluate';
 import { formatNumber } from './format';
+import { BasisBadge } from './provenance';
 
 /**
- * 表格视图（v3）：列定义、条件行、数值单元格、排序与筛选。
+ * 表格视图（v3/v4）：列定义、条件行、数值单元格、排序与筛选。
  *
  * 单元格里的表达式只读取运行时已求值的结果；排序/筛选纯本地状态，
  * 不改变文档状态。宽表被包在可聚焦的横向滚动容器内，键盘用户可平移。
+ * v4 的列/行/表格 basis 会显式展示；null 明确标为缺失而不是 0。
  */
 
 interface CellView {
   text: string;
   numeric?: number;
   error?: string;
+  /** 原始值缺失（null/undefined），与 0、空字符串和计算错误区分。 */
+  missing?: boolean;
 }
+
+type TableColumnLike = TableColumn & { basis?: GenuiBasis };
+type TableRowLike = TableRow & { basis?: GenuiBasis };
+type TableElementLike = Omit<TableElement, 'columns' | 'rows'> & {
+  basis?: GenuiBasis;
+  columns: TableColumnLike[];
+  rows: TableRowLike[];
+};
 
 type SortDirection = 'asc' | 'desc';
 
@@ -34,8 +48,8 @@ function isExpression(cell: TableCell): cell is NumericExpression {
   return typeof cell === 'object' && cell !== null;
 }
 
-function evaluateCell(cell: TableCell, column: TableColumn, evaluation: CompositeEvaluation): CellView {
-  if (cell === null || cell === undefined) return { text: '—' };
+function evaluateCell(cell: TableCell, column: TableColumnLike, evaluation: CompositeEvaluation): CellView {
+  if (cell === null || cell === undefined) return { text: '—', missing: true };
   if (isExpression(cell)) {
     const result = lookupExpression(evaluation, cell);
     if (!result.ok) return { text: '—', error: result.error };
@@ -43,8 +57,9 @@ function evaluateCell(cell: TableCell, column: TableColumn, evaluation: Composit
     return { text: `${formatNumber(result.value)}${unit}`, numeric: result.value };
   }
   if (typeof cell === 'number') {
+    if (!Number.isFinite(cell)) return { text: '—', error: '数值无效' };
     const unit = column.unit ? ` ${column.unit}` : '';
-    return { text: Number.isFinite(cell) ? `${formatNumber(cell)}${unit}` : '—', numeric: cell };
+    return { text: `${formatNumber(cell)}${unit}`, numeric: cell };
   }
   return { text: cell };
 }
@@ -52,7 +67,7 @@ function evaluateCell(cell: TableCell, column: TableColumn, evaluation: Composit
 function compareRows(
   left: { views: Record<string, CellView> },
   right: { views: Record<string, CellView> },
-  column: TableColumn,
+  column: TableColumnLike,
   direction: SortDirection,
 ): number {
   const a = left.views[column.key];
@@ -72,9 +87,11 @@ function compareRows(
   return direction === 'asc' ? result : -result;
 }
 
-export function TableElementView({ element, evaluation }: {
-  element: TableElement;
+export function TableElementView({ element, evaluation, sources, today }: {
+  element: TableElementLike;
   evaluation: CompositeEvaluation;
+  sources?: GenuiSource[];
+  today?: string;
 }) {
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState<SortState | null>(element.initialSort ?? null);
@@ -82,7 +99,7 @@ export function TableElementView({ element, evaluation }: {
   const rendered = useMemo(() => {
     const conditionErrors: string[] = [];
     const cellErrors: string[] = [];
-    const rows = element.rows.flatMap((row: TableRow, index: number) => {
+    const rows = element.rows.flatMap((row: TableRowLike, index: number) => {
       if (row.visibleIf) {
         const condition = lookupCondition(evaluation, row.visibleIf);
         if (!condition.ok) {
@@ -102,7 +119,10 @@ export function TableElementView({ element, evaluation }: {
       }
       return [{ key: index, views }];
     });
-    return { rows, conditionErrors, cellErrors };
+    const missing = rows.some((row) =>
+      Object.values(row.views).some((view) => view.missing === true),
+    );
+    return { rows, conditionErrors, cellErrors, missing };
   }, [element, evaluation]);
 
   const normalizedFilter = filter.trim().toLocaleLowerCase('zh-Hans-CN');
@@ -124,8 +144,12 @@ export function TableElementView({ element, evaluation }: {
   const warnings = [...rendered.conditionErrors, ...rendered.cellErrors];
   const columnCount = element.columns.length;
   const emptyText = element.emptyText ?? (rendered.rows.length === 0 ? '没有可显示的数据' : '没有符合筛选条件的数据');
+  const showBasis = today !== undefined;
+  const rowBases = showBasis
+    ? element.rows.flatMap((row, index) => (row.basis ? [{ index, basis: row.basis }] : []))
+    : [];
 
-  const toggleSort = (column: TableColumn) => {
+  const toggleSort = (column: TableColumnLike) => {
     if (!element.sortable) return;
     setSort((previous) => {
       if (previous?.key !== column.key) return { key: column.key, dir: 'asc' };
@@ -135,6 +159,12 @@ export function TableElementView({ element, evaluation }: {
 
   return (
     <div className="genui-table-block">
+      {showBasis && element.basis ? (
+        <p className="genui-table-basis">
+          <span>表格依据：</span>
+          <BasisBadge basis={element.basis} sources={sources} today={today} />
+        </p>
+      ) : null}
       {warnings.length > 0 ? (
         <p className="genui-table-warning" role="status">
           {warnings.length === 1 ? warnings[0] : `${warnings.length} 项无法计算：${warnings.join('；')}`}
@@ -182,6 +212,9 @@ export function TableElementView({ element, evaluation }: {
                     ) : (
                       column.label
                     )}
+                    {showBasis && column.basis ? (
+                      <BasisBadge basis={column.basis} sources={sources} today={today} label="列依据" />
+                    ) : null}
                   </th>
                 );
               })}
@@ -195,17 +228,39 @@ export function TableElementView({ element, evaluation }: {
             ) : (
               sorted.map((row) => (
                 <tr key={row.key}>
-                  {element.columns.map((column) => (
-                    <td key={column.key} className={column.numeric ? 'genui-table-numeric' : undefined}>
-                      {row.views[column.key]?.text ?? '—'}
-                    </td>
-                  ))}
+                  {element.columns.map((column) => {
+                    const view = row.views[column.key];
+                    return (
+                      <td
+                        key={column.key}
+                        className={column.numeric ? 'genui-table-numeric' : undefined}
+                        title={view?.missing ? '缺失值（不是 0）' : undefined}
+                      >
+                        {view?.text ?? '—'}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+      {rendered.missing ? (
+        <p className="genui-table-missing-note">
+          — 表示缺失值，不是 0；缺少的单元格不会参与数值比较。
+        </p>
+      ) : null}
+      {rowBases.length > 0 ? (
+        <ul className="genui-table-row-bases" aria-label="行数据依据">
+          {rowBases.map(({ index, basis }) => (
+            <li key={index}>
+              <span>第 {index + 1} 行：</span>
+              <BasisBadge basis={basis} sources={sources} today={today} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <p className="genui-table-count" role="status">
         显示 {sorted.length} / {rendered.rows.length} 行
       </p>

@@ -4,6 +4,8 @@ import {
   type DerivedCalculation,
   type GenuiV2Document,
   type GenuiV3Document,
+  type GenuiV4Document,
+  type GenuiV4Element,
   type InteractiveStateValues,
   type NumericExpression,
 } from '../protocol/types';
@@ -16,7 +18,7 @@ import {
  * 表达式，渲染阶段只读结果，避免渲染副作用与重复计费。
  */
 
-type StatefulDocument = GenuiV2Document | GenuiV3Document;
+type StatefulDocument = GenuiV2Document | GenuiV3Document | GenuiV4Document;
 
 /** 运行时只需要状态与派生定义；v2/v3 文档都满足该结构。 */
 interface StatefulDocumentLike {
@@ -185,11 +187,11 @@ function isNumericExpression(cell: unknown): cell is NumericExpression {
 }
 
 /**
- * v3 组合文档求值：派生值、图表/表格内联表达式、条件说明谓词在一次
+ * v3/v4 组合文档求值：派生值、图表/表格内联表达式、条件说明谓词在一次
  * `useMemo` 内全部算完。失败被限制在单个表达式或条件上，不阻断整张卡片。
  */
 export function evaluateComposite(
-  document: GenuiV3Document,
+  document: GenuiV3Document | GenuiV4Document,
   state: InteractiveStateValues,
 ): CompositeEvaluation {
   const engine = new EvaluationEngine(document, state);
@@ -276,7 +278,7 @@ export function evaluateComposite(
     return result;
   };
 
-  const walk = (elements: GenuiV3Document['elements']): void => {
+  const walk = (elements: Array<GenuiV3Document['elements'][number] | GenuiV4Element>): void => {
     for (const element of elements) {
       switch (element.kind) {
         case 'text':

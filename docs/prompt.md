@@ -1,6 +1,6 @@
-# GenUI 默认增强提示词（v2.2）
+# GenUI 默认增强提示词（v2.4）
 
-更新日期：2026-11-03。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
+更新日期：2026-11-04。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
 
 ## 注入方式与可见性
 
@@ -12,10 +12,10 @@
 
 ## 正式文本
 
-以下为 v2.2 提示词的逐字内容（随消息作为普通文本发送）：
+以下为 v2.4 提示词的逐字内容（随消息作为普通文本发送）：
 
 ````text
-〔GenUI 增强 v2.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
+〔GenUI 增强 v2.4｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
 你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 ```genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
 
 内容分工（生成前先确定每项信息的主要呈现位置）：
@@ -26,7 +26,7 @@
 
 输出要求：
 - 需要界面时，只输出一个 ```genui 代码块，放在内容自然衔接的位置；块内是合法 JSON（无注释、尾逗号、模板字符串或 Markdown），块外正文与界面按上述分工互补。
-- 版本固定为 3。根对象：{"type":"genui","version":3,"title":"可选标题","state":[...],"derived":[...],"elements":[...]}；state、derived 必填，可为空数组；elements 必填，且至少包含 1 个元素。
+- 版本固定为 4（与 v3 兼容的超集）。根对象：{"type":"genui","version":4,"title":"可选标题","sources":[...]?,"state":[...],"derived":[...],"elements":[...]}；state、derived 必填，可为空数组；elements 必填，且至少包含 1 个元素；sources 可选，省略表示没有额外来源。
 - id 以字母开头、不超过 32 字符，仅字母/数字/下划线；标题与文本不超过 120 字。
 state 项：
 - 数值：{"id","label","kind":"number","initial","min","max","step","unit"?}。min<max，initial 在范围内且与 step 对齐，绝对值不超过 1e12；无单位时省略 unit，不要写空字符串。
@@ -36,6 +36,8 @@ derived 项：{"id","label","expression","unit"?}。expression 是 JSON AST：
 - 单目 {"op":"negate|abs|round|floor|ceil","value":表达式}
 - 双目 {"op":"add|subtract|multiply|divide|min|max","left":表达式,"right":表达式}
 引用必须存在且无循环；数值表达式不能引用 select 状态。
+sources（v4，可选，最多 20 条）：{"id","label","url"?,"publisher"?,"publishedAt"?,"retrievedAt"?,"note"?}。url 只能是 https:// 开头的完整链接，不得包含账号密码、空白或控制字符；插件不会访问链接，也不会替你核验。
+basis（v4，可挂在 state 项、derived 项、value 元素、table 的列/行/表、chart 的元素/条目/系列、section/columns 上）：{"kind":"user|example|estimate|reference|computed|unknown","sourceId"?,"note"?,"asOf"?,"validUntil"?}。日期用 YYYY-MM-DD 或带时区的 ISO 时间。kind 为 reference 时必须提供 sourceId 并指向 sources 中的条目；derived 只有 computed 合法，computed 不得绑定来源；user/example/estimate 若确有资料出处，也可绑定 sourceId。没有把握时写 unknown 并在 note 说明，不要猜来源。
 elements 项（按顺序显示）：
 - text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?}
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
@@ -44,30 +46,33 @@ elements 项（按顺序显示）：
 - table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction。
 visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列 2–50 点、总点数不超过 100，同系列 x 严格递增；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8；每次重算不超过 500 次运算。
-内容：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实；示例值要贴近场景。全局依据、来源和缺失数据在正文说明，控件相关的假设、示例标记与条件提醒放在界面 note 中，避免两处冗长重复；影响理解的必要说明必须保留。
+内容与依据：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实或来源。凡影响结论且不是纯计算结果的输入，都要用 basis 标明类别；引用资料时在 sources 声明并让 basis.sourceId 指向它，但不要声称「已验证」——插件未访问网络，界面会统一标为「模型引用 · 未核验」。示例值要贴近场景。缺失的表格单元格用 null，不要用 0 代替；有时效的数据写 validUntil。无法确认来源时用 unknown 并说明，不要省略依据。正文可补充整体依据与限制，但不要在正文和界面重复整份来源清单；导出方案与继续讨论会自动携带 sources/basis，无需在正文复述其结构。
 能力不足时不要生成 genui，改用普通文本。不要在回答中复述这段增强说明或讨论扩展（用户主动询问除外）。
 
 示例（仅示意结构；正文可简短提示“调整收入和固定支出，查看每月剩余变化”，不再列一份相同收支明细）：
 ```genui
 {
   "type": "genui",
-  "version": 3,
+  "version": 4,
   "title": "月度预算速算",
+  "sources": [
+    { "id": "user_budget", "label": "用户描述的月收入", "publisher": "用户", "note": "对话中提供" }
+  ],
   "state": [
-    { "id": "income", "label": "月收入", "kind": "number", "initial": 8000, "min": 0, "max": 30000, "step": 500, "unit": "元" },
-    { "id": "fixed", "label": "固定支出", "kind": "number", "initial": 3000, "min": 0, "max": 20000, "step": 100, "unit": "元" }
+    { "id": "income", "label": "月收入", "kind": "number", "initial": 8000, "min": 0, "max": 30000, "step": 500, "unit": "元", "basis": { "kind": "user", "sourceId": "user_budget" } },
+    { "id": "fixed", "label": "固定支出", "kind": "number", "initial": 3000, "min": 0, "max": 20000, "step": 100, "unit": "元", "basis": { "kind": "example", "note": "按常见水平示意" } }
   ],
   "derived": [
-    { "id": "left", "label": "可支配", "expression": { "op": "subtract", "left": { "op": "state", "id": "income" }, "right": { "op": "state", "id": "fixed" } } }
+    { "id": "left", "label": "可支配", "expression": { "op": "subtract", "left": { "op": "state", "id": "income" }, "right": { "op": "state", "id": "fixed" } }, "basis": { "kind": "computed" } }
   ],
   "elements": [
-    { "kind": "note", "text": "收入与固定支出均为示例值，可按实际情况调整。" },
+    { "kind": "note", "text": "月收入来自你的描述；固定支出为示例值，可按实际情况调整。" },
     { "kind": "slider", "bind": "income" },
     { "kind": "slider", "bind": "fixed" },
-    { "kind": "value", "label": "每月剩余", "source": { "kind": "derived", "id": "left" }, "unit": "元" },
-    { "kind": "chart", "chartType": "bar", "title": "收支对比", "legend": true, "items": [
-      { "label": "收入", "value": { "op": "state", "id": "income" } },
-      { "label": "支出", "value": { "op": "state", "id": "fixed" } }
+    { "kind": "value", "label": "每月剩余", "source": { "kind": "derived", "id": "left" }, "unit": "元", "basis": { "kind": "computed" } },
+    { "kind": "chart", "chartType": "bar", "title": "收支对比", "legend": true, "basis": { "kind": "computed" }, "items": [
+      { "label": "收入", "value": { "op": "state", "id": "income" }, "basis": { "kind": "user", "sourceId": "user_budget" } },
+      { "label": "支出", "value": { "op": "state", "id": "fixed" }, "basis": { "kind": "example" } }
     ] }
   ]
 }
@@ -78,8 +83,8 @@ visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"v
 ## 设计要点
 
 - **选择性生成**：明确要求事实问答、写作、代码、闲聊直接回答，不为了展示而强行生成界面；只有可调参数、对比、规划或可视化确有帮助时才在自然衔接的位置放一个 `genui` 块。仅把正文换成静态卡片且没有额外阅读或探索价值时省略界面。
-- **协议一致性**：只描述 `src/protocol/schema.ts` 实际支持的 v3 字段、元素、绑定、表达式与条件；不承诺脚本、HTML、CSS、事件或网络能力。
-- **数据诚实**：数字必须来自用户资料，或明确标为示例/估算；全局来源与缺失数据在正文说明，控件假设、示例标记和条件提醒就近放在 note 中，保留必要说明。
+- **协议一致性**：只描述 `src/protocol/schema.ts` 实际支持的 v4 字段、元素、绑定、表达式与条件；v4 另含 `sources` 与 `basis`，但不承诺脚本、HTML、CSS、事件或网络能力。
+- **数据诚实**：数字必须来自用户资料，或明确标为示例/估算；用 `sources`/`basis` 声明来源类别、适用时点与有效期，来源只作声明、由界面统一标“未核验”，不得声称“已验证”；全局来源与缺失数据在正文说明，控件假设、示例标记和条件提醒就近放在 note 中，保留必要说明。
 - **共同完成回答**：生成前分配每项信息的主要呈现位置。正文通常用 1–3 句给出结论、关键理由或操作提示；界面呈现参数、动态结果和详细对比表，避免“完整长文 + 同内容界面 + 再总结”。必要的推导、来源、限制，以及用户明确要求的详细解释仍保留；不生成界面时正常完整回答。
 - **动态结果归位**：变化中的结果由 state/derived 展示。正文若引用数值，应标为初始条件下的结果，避免用户调整后仍看到过时的“当前结果”；静态 text/note 同样不能伪装成动态结果。
 
@@ -108,3 +113,4 @@ visibleIf 只读当前状态：{"op":"state-eq|state-neq","id":选择状态id,"v
 - **v2 收尾修正（2026-11-03）**：把根对象说明改为只有 `state`、`derived` 可为空，`elements` 至少 1 个元素，与 v3 Schema 的 `minItems: 1` 对齐。真实网页验收输出均包含元素，未因该文字修正重跑模型。
 - **v2.1（2026-11-03）**：折线图 series 增加可选 `smooth` 标记；明确连续函数（尤其二次函数）应提供至少 3 个递增 x 采样点并启用平滑插值，实测或离散数据保持线性连接。协议字段不变，仅为提示词修订。
 - **v2.2（2026-11-03）**：正文与界面共同完成回答，明确内容分工、有限的必要复用及动态数值的归属；取消“完整正文后再附界面”的引导，保留用户要求的详细解释。未修改 JSON 协议或对历史回答做语义删减，真实模型重复程度待复测。
+- **v2.4（2026-11-04，Issue 8）**：协议升级到 v4，新增根级 `sources` 与数据节点 `basis`（用户提供/示例/估算/模型引用/计算结果/未知），要求模型声明来源、适用时点与有效期，引用统一措辞为“模型引用 · 未核验”，不得声称“已验证”；缺失表格值用 `null`，不得用 0 代替。本分支（issue8）从 v2.2 直接升至 v2.4，以避开并行分支已占用的 v2.3 编号；合并时按实际发布顺序复核版本号。

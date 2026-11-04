@@ -1,4 +1,5 @@
-import { LIMITS } from './types.ts';
+import { PROVENANCE_DATE_PATTERN } from './provenance.ts';
+import { BASIS_KINDS, LIMITS } from './types.ts';
 
 const idSchema = {
   type: 'string',
@@ -16,6 +17,49 @@ const boundedNumberSchema = {
 };
 // 只接受 6 位十六进制颜色，避免远程 paint server / 任意 CSS 值进入 SVG。
 const colorSchema = { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' };
+
+const provenanceDateSchema = {
+  type: 'string',
+  maxLength: LIMITS.maxProvenanceDateLength,
+  pattern: PROVENANCE_DATE_PATTERN,
+};
+
+/**
+ * 模型声称的来源。url 只做长度与文本约束；是否 https、是否含凭据或私有主机
+ * 由界面在展示时标注，避免一个不可靠链接让整份界面退回原始 JSON。
+ * 插件不请求该地址，也不把任何来源标为「已验证」。
+ */
+const sourceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'label'],
+  properties: {
+    id: idSchema,
+    label: { type: 'string', minLength: 1, maxLength: LIMITS.maxSourceLabelLength },
+    url: {
+      type: 'string',
+      minLength: 1,
+      maxLength: LIMITS.maxSourceUrlLength,
+    },
+    publisher: { type: 'string', minLength: 1, maxLength: LIMITS.maxPublisherLength },
+    publishedAt: provenanceDateSchema,
+    retrievedAt: provenanceDateSchema,
+    note: { type: 'string', minLength: 1, maxLength: LIMITS.maxSourceNoteLength },
+  },
+};
+
+const basisSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind'],
+  properties: {
+    kind: { enum: BASIS_KINDS },
+    sourceId: idSchema,
+    note: { type: 'string', minLength: 1, maxLength: LIMITS.maxBasisNoteLength },
+    asOf: provenanceDateSchema,
+    validUntil: provenanceDateSchema,
+  },
+};
 
 const textElementSchema = {
   type: 'object',
@@ -48,102 +92,147 @@ const expressionRef = { $ref: '#/definitions/expression' };
 const conditionRef = { $ref: '#/definitions/condition' };
 const elementRef = { $ref: '#/definitions/element' };
 
+const numberStateVariableSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'label', 'kind', 'initial', 'min', 'max', 'step'],
+  properties: {
+    id: idSchema,
+    label: labelSchema,
+    kind: { const: 'number' },
+    initial: boundedNumberSchema,
+    min: boundedNumberSchema,
+    max: boundedNumberSchema,
+    step: {
+      type: 'number',
+      exclusiveMinimum: 0,
+      maximum: LIMITS.maxNumberMagnitude,
+    },
+    unit: unitSchema,
+  },
+};
+
+const selectStateVariableSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'label', 'kind', 'initial', 'options'],
+  properties: {
+    id: idSchema,
+    label: labelSchema,
+    kind: { const: 'select' },
+    initial: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
+    options: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxSelectOptions,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'value'],
+        properties: {
+          label: labelSchema,
+          value: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
+        },
+      },
+    },
+  },
+};
+
 const stateVariableSchema = {
+  oneOf: [numberStateVariableSchema, selectStateVariableSchema],
+};
+
+/** v4 状态项：在 v2/v3 字段上增加可选 basis。 */
+const v4StateVariableSchema = {
   oneOf: [
     {
-      type: 'object',
-      additionalProperties: false,
-      required: ['id', 'label', 'kind', 'initial', 'min', 'max', 'step'],
+      ...numberStateVariableSchema,
       properties: {
-        id: idSchema,
-        label: labelSchema,
-        kind: { const: 'number' },
-        initial: boundedNumberSchema,
-        min: boundedNumberSchema,
-        max: boundedNumberSchema,
-        step: {
-          type: 'number',
-          exclusiveMinimum: 0,
-          maximum: LIMITS.maxNumberMagnitude,
-        },
-        unit: unitSchema,
+        ...numberStateVariableSchema.properties,
+        basis: { $ref: '#/definitions/basis' },
       },
     },
     {
-      type: 'object',
-      additionalProperties: false,
-      required: ['id', 'label', 'kind', 'initial', 'options'],
+      ...selectStateVariableSchema,
       properties: {
-        id: idSchema,
-        label: labelSchema,
-        kind: { const: 'select' },
-        initial: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
-        options: {
-          type: 'array',
-          minItems: 1,
-          maxItems: LIMITS.maxSelectOptions,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['label', 'value'],
-            properties: {
-              label: labelSchema,
-              value: { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength },
-            },
-          },
-        },
+        ...selectStateVariableSchema.properties,
+        basis: { $ref: '#/definitions/basis' },
       },
     },
   ],
 };
 
+const numberInputElementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'bind'],
+  properties: { kind: { const: 'number-input' }, bind: idSchema },
+};
+
+const sliderElementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'bind'],
+  properties: { kind: { const: 'slider' }, bind: idSchema },
+};
+
+const selectElementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'bind'],
+  properties: { kind: { const: 'select' }, bind: idSchema },
+};
+
+const valueSourceSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'id'],
+      properties: { kind: { const: 'state' }, id: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'id'],
+      properties: { kind: { const: 'derived' }, id: idSchema },
+    },
+  ],
+};
+
+const valueElementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'label', 'source'],
+  properties: {
+    kind: { const: 'value' },
+    label: labelSchema,
+    source: valueSourceSchema,
+    unit: unitSchema,
+  },
+};
+
+/** v4 数值项：可显式说明结果依据；缺省时渲染器回落到来源状态/派生值的 basis。 */
+const v4ValueElementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'label', 'source'],
+  properties: {
+    kind: { const: 'value' },
+    label: labelSchema,
+    source: valueSourceSchema,
+    unit: unitSchema,
+    basis: { $ref: '#/definitions/basis' },
+  },
+};
+
 const interactiveElementSchema = {
   oneOf: [
     textElementSchema,
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['kind', 'bind'],
-      properties: { kind: { const: 'number-input' }, bind: idSchema },
-    },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['kind', 'bind'],
-      properties: { kind: { const: 'slider' }, bind: idSchema },
-    },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['kind', 'bind'],
-      properties: { kind: { const: 'select' }, bind: idSchema },
-    },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['kind', 'label', 'source'],
-      properties: {
-        kind: { const: 'value' },
-        label: labelSchema,
-        source: {
-          oneOf: [
-            {
-              type: 'object',
-              additionalProperties: false,
-              required: ['kind', 'id'],
-              properties: { kind: { const: 'state' }, id: idSchema },
-            },
-            {
-              type: 'object',
-              additionalProperties: false,
-              required: ['kind', 'id'],
-              properties: { kind: { const: 'derived' }, id: idSchema },
-            },
-          ],
-        },
-        unit: unitSchema,
-      },
-    },
+    numberInputElementSchema,
+    sliderElementSchema,
+    selectElementSchema,
+    valueElementSchema,
   ],
 };
 
@@ -470,6 +559,229 @@ const elementDefinition = {
   ],
 };
 
+/** v4 柱/饼图：元素与每个条目都可声明 basis。 */
+const v4ChartBarPieSchema = {
+  ...chartBarPieSchema,
+  properties: {
+    ...chartBarPieSchema.properties,
+    items: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxChartItems,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'value'],
+        properties: {
+          label: labelSchema,
+          value: expressionRef,
+          basis: { $ref: '#/definitions/basis' },
+        },
+      },
+    },
+    basis: { $ref: '#/definitions/basis' },
+  },
+};
+
+/** v4 折线图：元素与每个系列都可声明 basis。 */
+const v4ChartLineSchema = {
+  ...chartLineSchema,
+  properties: {
+    ...chartLineSchema.properties,
+    series: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxChartSeries,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'points'],
+        properties: {
+          label: labelSchema,
+          color: colorSchema,
+          smooth: { type: 'boolean' },
+          basis: { $ref: '#/definitions/basis' },
+          points: {
+            type: 'array',
+            minItems: 2,
+            maxItems: LIMITS.maxChartPointsPerSeries,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['x', 'y'],
+              properties: {
+                x: boundedNumberSchema,
+                y: expressionRef,
+              },
+            },
+          },
+        },
+      },
+    },
+    basis: { $ref: '#/definitions/basis' },
+  },
+};
+
+/** v4 表格：列、行与整个表格都可声明 basis；单元格仍用 null 表示缺失。 */
+const v4TableSchema = {
+  ...tableSchema,
+  properties: {
+    ...tableSchema.properties,
+    columns: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxTableColumns,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'label'],
+        properties: {
+          key: idSchema,
+          label: labelSchema,
+          numeric: { type: 'boolean' },
+          unit: unitSchema,
+          basis: { $ref: '#/definitions/basis' },
+        },
+      },
+    },
+    rows: {
+      type: 'array',
+      maxItems: LIMITS.maxTableRows,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['cells'],
+        properties: {
+          cells: {
+            type: 'object',
+            minProperties: 1,
+            propertyNames: { pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
+            patternProperties: {
+              '^[A-Za-z][A-Za-z0-9_]*$': tableCellValueSchema,
+            },
+            additionalProperties: false,
+          },
+          visibleIf: conditionRef,
+          basis: { $ref: '#/definitions/basis' },
+        },
+      },
+    },
+    basis: { $ref: '#/definitions/basis' },
+  },
+};
+
+const v4SectionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'children'],
+  properties: {
+    kind: { const: 'section' },
+    title: labelSchema,
+    children: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      items: { $ref: '#/definitions/elementV4' },
+    },
+  },
+};
+
+const v4ColumnsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'columns'],
+  properties: {
+    kind: { const: 'columns' },
+    columns: {
+      type: 'array',
+      minItems: LIMITS.minColumns,
+      maxItems: LIMITS.maxColumnsLayout,
+      items: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 20,
+        items: { $ref: '#/definitions/elementV4' },
+      },
+    },
+  },
+};
+
+const v4ElementDefinition = {
+  oneOf: [
+    v3TextSchema,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'number-input' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'slider' }, bind: idSchema },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'bind'],
+      properties: { kind: { const: 'select' }, bind: idSchema },
+    },
+    v4ValueElementSchema,
+    noteSchema,
+    v4ChartBarPieSchema,
+    v4ChartLineSchema,
+    v4TableSchema,
+    v4SectionSchema,
+    v4ColumnsSchema,
+  ],
+};
+
+const v4DerivedValueSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'label', 'expression'],
+  properties: {
+    id: idSchema,
+    label: labelSchema,
+    unit: unitSchema,
+    expression: expressionRef,
+    basis: { $ref: '#/definitions/basis' },
+  },
+};
+
+const v4Schema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'version', 'state', 'derived', 'elements'],
+  properties: {
+    type: { const: 'genui' },
+    version: { const: 4 },
+    title: labelSchema,
+    sources: {
+      type: 'array',
+      maxItems: LIMITS.maxSources,
+      items: { $ref: '#/definitions/source' },
+    },
+    state: {
+      type: 'array',
+      maxItems: LIMITS.maxStateVariables,
+      items: v4StateVariableSchema,
+    },
+    derived: {
+      type: 'array',
+      maxItems: LIMITS.maxDerivedValues,
+      items: v4DerivedValueSchema,
+    },
+    elements: {
+      type: 'array',
+      minItems: 1,
+      maxItems: LIMITS.maxElementsV3,
+      items: { $ref: '#/definitions/elementV4' },
+    },
+  },
+};
+
 const v2Schema = {
   type: 'object',
   additionalProperties: false,
@@ -551,14 +863,18 @@ const v3Schema = {
  * controls, output references, and a recursive but finite arithmetic whitelist.
  * v3 adds composition elements (note/chart/table/section/columns) plus
  * conditional display, all bound to the same state/derived values.
- * Semantic checks that JSON Schema cannot express (references and dependency
- * cycles) run after generated-schema validation in validate.ts.
+ * v4 adds optional provenance: declared sources plus a per-datum basis.
+ * Semantic checks that JSON Schema cannot express (references, dependency
+ * cycles, URL/date sanity) run after generated-schema validation in validate.ts.
  */
 export const genuiSchema = {
-  oneOf: [v1Schema, v2Schema, v3Schema],
+  oneOf: [v1Schema, v2Schema, v3Schema, v4Schema],
   definitions: {
     expression: expressionDefinitions.expression,
     condition: conditionDefinition,
     element: elementDefinition,
+    elementV4: v4ElementDefinition,
+    source: sourceSchema,
+    basis: basisSchema,
   },
 };

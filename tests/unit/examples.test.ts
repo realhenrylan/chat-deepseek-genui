@@ -29,7 +29,17 @@ describe('docs/examples 示例文档', () => {
   it.each(files)('%s 能通过完整协议校验', (name) => {
     const document = load(name);
     expect(document.type).toBe('genui');
-    expect([1, 2, 3]).toContain(document.version);
+    expect([1, 2, 3, 4]).toContain(document.version);
+  });
+
+  it('v4 预算示例声明来源与依据，覆盖缺失值', () => {
+    const document = load('budget-v4.json');
+    expect(document.version).toBe(4);
+    const serialized = JSON.stringify(document);
+    expect(serialized).toContain('"sources"');
+    expect(serialized).toContain('"basis"');
+    expect(serialized).toContain('"kind":"reference"');
+    expect(serialized).toContain('"url":"https://example.com/report"');
   });
 
   it('抛物线示例覆盖折线与退化提示', () => {

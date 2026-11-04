@@ -2,26 +2,40 @@ import { useId } from 'react';
 import type {
   DerivedCalculation,
   DerivedValue,
+  GenuiBasis,
+  GenuiSource,
   InteractiveElement,
   InteractiveStateValues,
   StateVariable,
   TextElement,
 } from '../protocol/types';
 import { getOwn } from '../runtime/records';
+import { BasisBadge } from './provenance';
 import { UnknownElementView } from './elements';
 import { formatNumber, stateDisplay } from './format';
 
 /**
- * v2/v3 共用的交互叶元素视图：数值输入、滑块、下拉选择与结果展示。
- * 文档参数只要求 state/derived 列表，因此 v2 文档与 v3 组合文档都可传入。
+ * v2/v3/v4 共用的交互叶元素视图：数值输入、滑块、下拉选择与结果展示。
+ * v4 额外接收 sources/today 以显示依据徽标；v2/v3 不传这些参数，行为不变。
+ * 文档参数只要求 state/derived 列表，因此各版本文档都可传入。
  */
+type InteractiveLike = Exclude<InteractiveElement, TextElement> & { basis?: GenuiBasis };
+
 export interface InteractiveElementProps {
-  document: { state: StateVariable[]; derived: DerivedValue[] };
-  element: Exclude<InteractiveElement, TextElement>;
+  document: {
+    state: Array<StateVariable & { basis?: GenuiBasis }>;
+    derived: Array<DerivedValue & { basis?: GenuiBasis }>;
+  };
+  element: InteractiveLike;
   state: InteractiveStateValues;
   calculation: DerivedCalculation;
   drafts: Record<string, string>;
   fieldErrors: Record<string, string>;
+  /** 仅 v4 传入；缺省时不显示依据徽标。 */
+  sources?: GenuiSource[];
+  today?: string;
+  /** 已被用户修改的状态 id；据此显示「用户修改」并保留原依据。 */
+  editedState?: readonly string[];
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
 }
@@ -33,21 +47,37 @@ export function InteractiveElementView({
   calculation,
   drafts,
   fieldErrors,
+  sources,
+  today,
+  editedState,
   onValueChange,
   onNumberInput,
 }: InteractiveElementProps) {
   const controlId = useId();
+  const showBasis = today !== undefined;
+  const isEdited = (id: string) => editedState?.includes(id) ?? false;
 
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = document.state.find((item) => item.id === element.bind);
     if (!variable) return <UnknownElementView element={{ kind: element.kind }} />;
     const error = getOwn(fieldErrors, variable.id);
     const errorId = `${controlId}-error`;
+    const basis = variable.basis;
 
     if (element.kind === 'select' && variable.kind === 'select') {
       return (
         <div className="genui-control">
-          <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+          <div className="genui-control-head">
+            <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+            {showBasis && basis ? (
+              <BasisBadge
+                basis={basis}
+                sources={sources}
+                today={today}
+                edited={isEdited(variable.id)}
+              />
+            ) : null}
+          </div>
           <select
             id={controlId}
             className="genui-select"
@@ -72,7 +102,17 @@ export function InteractiveElementView({
     if (element.kind === 'slider') {
       return (
         <div className="genui-control">
-          <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+          <div className="genui-control-head">
+            <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+            {showBasis && basis ? (
+              <BasisBadge
+                basis={basis}
+                sources={sources}
+                today={today}
+                edited={isEdited(variable.id)}
+              />
+            ) : null}
+          </div>
           <div className="genui-slider-row">
             <input
               id={controlId}
@@ -98,9 +138,19 @@ export function InteractiveElementView({
     const inputValue = getOwn(drafts, variable.id) ?? String(current);
     return (
       <div className="genui-control">
-        <label className="genui-control-label" htmlFor={controlId}>
-          {variable.label}{variable.unit ? <span className="genui-control-unit">（{variable.unit}）</span> : null}
-        </label>
+        <div className="genui-control-head">
+          <label className="genui-control-label" htmlFor={controlId}>
+            {variable.label}{variable.unit ? <span className="genui-control-unit">（{variable.unit}）</span> : null}
+          </label>
+          {showBasis && basis ? (
+            <BasisBadge
+                basis={basis}
+                sources={sources}
+                today={today}
+                edited={isEdited(variable.id)}
+              />
+          ) : null}
+        </div>
         <input
           id={controlId}
           className="genui-number-input"
@@ -125,9 +175,15 @@ export function InteractiveElementView({
     const value = getOwn(calculation.values, source.id);
     const definition = document.derived.find((item) => item.id === source.id);
     const unit = element.unit ?? definition?.unit;
+    const basis = element.basis ?? definition?.basis;
     return (
       <div className="genui-value">
-        <span className="genui-value-label">{element.label}</span>
+        <div className="genui-value-head">
+          <span className="genui-value-label">{element.label}</span>
+          {showBasis && basis ? (
+            <BasisBadge basis={basis} sources={sources} today={today} />
+          ) : null}
+        </div>
         {error ? (
           <span className="genui-runtime-error" role="status">无法计算：{error}</span>
         ) : (
@@ -146,10 +202,21 @@ export function InteractiveElementView({
   const display = variable.kind === 'number'
     ? `${formatNumber(Number(value))}${unit ? ` ${unit}` : ''}`
     : stateDisplay(variable, value);
+  const basis = element.basis ?? variable.basis;
 
   return (
     <div className="genui-value">
-      <span className="genui-value-label">{element.label}</span>
+      <div className="genui-value-head">
+        <span className="genui-value-label">{element.label}</span>
+        {showBasis && basis ? (
+          <BasisBadge
+                basis={basis}
+                sources={sources}
+                today={today}
+                edited={isEdited(variable.id)}
+              />
+        ) : null}
+      </div>
       <output className="genui-value-output" aria-label={element.label}>{display}</output>
     </div>
   );

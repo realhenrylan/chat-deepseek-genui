@@ -11,8 +11,8 @@
  * 失败码按「守卫顺序」排列：长度 → 深度 → JSON 解析 → 结构校验 → 版本。
  */
 
-/** 最新协议版本；仍兼容静态 v1 与交互 v2 文档。 */
-export const PROTOCOL_VERSION = 3;
+/** 最新协议版本；仍兼容静态 v1、交互 v2 与组合 v3 文档。 */
+export const PROTOCOL_VERSION = 4;
 
 /** 规模限制（与 schema 保持一致，validate 的长度守卫复用同一份常量）。 */
 export const LIMITS = {
@@ -62,6 +62,15 @@ export const LIMITS = {
   maxConditionDepth: 5,
   /** v3 文档内所有数值表达式（派生 + 图表/表格/条件内联）共享的节点预算。 */
   maxExpressionNodesV3: 300,
+  /** v4 依据（provenance）上限。 */
+  maxSources: 20,
+  maxSourceLabelLength: 120,
+  maxSourceUrlLength: 2048,
+  maxSourceNoteLength: 500,
+  maxPublisherLength: 120,
+  maxBasisNoteLength: 300,
+  /** ISO 日期或日期时间的字符串长度上限。 */
+  maxProvenanceDateLength: 40,
 } as const;
 
 /** v1 与 v2 均支持的纯文本元素；v3 允许按条件显示。 */
@@ -252,8 +261,150 @@ export interface GenuiV3Document {
   elements: GenuiV3Element[];
 }
 
+/**
+ * v4：给数据附加可保存、可查看的来源与适用范围。
+ *
+ * 依据分四类「实际输入」和两类「派生/未知」：
+ * - user：用户在本对话中提供；
+ * - example：示例数据，不代表真实情况；
+ * - estimate：有说明的估算；
+ * - reference：模型引用的外部资料，插件不会访问网络核验；
+ * - computed：由前几类数据计算得出；
+ * - unknown：没有可用依据，界面必须诚实显示未知，不能当成已核验。
+ *
+ * 缺少 basis 时与 unknown 同义；v1–v3 文档没有本结构，界面按旧协议渲染。
+ */
+export const BASIS_KINDS = ['user', 'example', 'estimate', 'reference', 'computed', 'unknown'] as const;
+
+export type GenuiBasisKind = (typeof BASIS_KINDS)[number];
+
+/** 模型声称的资料，不是插件核验过的事实；URL 只作为不可信文本展示。 */
+export interface GenuiSource {
+  id: string;
+  label: string;
+  /** 仅接受 https URL；插件从不发起请求，也不把链接标为已验证。 */
+  url?: string;
+  publisher?: string;
+  /** 资料自身的时间（例如数据所属月份），ISO 日期或日期时间。 */
+  publishedAt?: string;
+  /** 模型声称的获取时间，插件无法核验。 */
+  retrievedAt?: string;
+  note?: string;
+}
+
+/** 附加在一项数据上的依据说明。 */
+export interface GenuiBasis {
+  kind: GenuiBasisKind;
+  /** 仅 kind=reference 时必填，指向 sources 中声明的来源。 */
+  sourceId?: string;
+  note?: string;
+  /** 该数据适用的时点（例如“按 2025 年均价”）。 */
+  asOf?: string;
+  /** 有效期截止；过期后界面必须提示已过期。 */
+  validUntil?: string;
+}
+
+export type GenuiV4StateVariable =
+  | (NumberStateVariable & { basis?: GenuiBasis })
+  | (SelectStateVariable & { basis?: GenuiBasis });
+
+export type GenuiV4DerivedValue = DerivedValue & { basis?: GenuiBasis };
+
+export interface GenuiV4TableColumn extends TableColumn {
+  basis?: GenuiBasis;
+}
+
+export interface GenuiV4TableRow extends TableRow {
+  basis?: GenuiBasis;
+}
+
+export interface GenuiV4TableElement {
+  kind: 'table';
+  title?: string;
+  columns: GenuiV4TableColumn[];
+  rows: GenuiV4TableRow[];
+  sortable?: boolean;
+  initialSort?: { key: string; dir: 'asc' | 'desc' };
+  emptyText?: string;
+  visibleIf?: Condition;
+  basis?: GenuiBasis;
+}
+
+export interface GenuiV4ChartItem extends ChartItem {
+  basis?: GenuiBasis;
+}
+
+export interface GenuiV4ChartSeries extends ChartSeries {
+  basis?: GenuiBasis;
+}
+
+export type GenuiV4ChartElement =
+  | {
+      kind: 'chart';
+      chartType: 'bar' | 'pie';
+      title?: string;
+      legend?: boolean;
+      items: GenuiV4ChartItem[];
+      basis?: GenuiBasis;
+    }
+  | {
+      kind: 'chart';
+      chartType: 'line';
+      title?: string;
+      xLabel?: string;
+      yLabel?: string;
+      legend?: boolean;
+      series: GenuiV4ChartSeries[];
+      basis?: GenuiBasis;
+    };
+
+export interface GenuiV4ValueElement {
+  kind: 'value';
+  label: string;
+  source: { kind: 'state' | 'derived'; id: string };
+  unit?: string;
+  basis?: GenuiBasis;
+}
+
+export type GenuiV4InteractiveElement =
+  | TextElement
+  | { kind: 'number-input'; bind: string }
+  | { kind: 'slider'; bind: string }
+  | { kind: 'select'; bind: string }
+  | GenuiV4ValueElement;
+
+export interface GenuiV4SectionElement {
+  kind: 'section';
+  title?: string;
+  children: GenuiV4Element[];
+}
+
+export interface GenuiV4ColumnsElement {
+  kind: 'columns';
+  columns: GenuiV4Element[][];
+}
+
+export type GenuiV4Element =
+  | GenuiV4InteractiveElement
+  | NoteElement
+  | GenuiV4ChartElement
+  | GenuiV4TableElement
+  | GenuiV4SectionElement
+  | GenuiV4ColumnsElement;
+
+/** v4 组合文档：v3 元素 + 全局 sources 与逐项 basis。 */
+export interface GenuiV4Document {
+  type: 'genui';
+  version: 4;
+  title?: string;
+  sources?: GenuiSource[];
+  state: GenuiV4StateVariable[];
+  derived: GenuiV4DerivedValue[];
+  elements: GenuiV4Element[];
+}
+
 /** 经 parseGenui 校验后可安全交给渲染器的版本化文档。 */
-export type GenuiDocument = GenuiV1Document | GenuiV2Document | GenuiV3Document;
+export type GenuiDocument = GenuiV1Document | GenuiV2Document | GenuiV3Document | GenuiV4Document;
 
 export type InteractiveStateValues = Record<string, number | string>;
 
