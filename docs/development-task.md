@@ -267,3 +267,34 @@
 - 自动化：新增 `protocol-v5.test.ts`（24 例）、`runtime-v5.test.ts`（27 例）、`render-v5.test.tsx`（5 例）与 `model-samples.test.ts`（2 例最终样本），并补充筛选阈值数字常量、可选 `kind:"model"` 来源、成本浮点容差、权重表达式、预算明细精度与模型独立预算等回归用例。`npm run check` 通过（33 个文件 348 passed、3 skipped；typecheck、lint、构建与生产包校验均通过）；默认 Edge/Chrome e2e 通过（22 passed、6 skipped，3 个真实 origin 用例跳过）。
 - 真实模型对比：见 [`phase9-model-comparison.md`](phase9-model-comparison.md)。9 份真实模型输出显示 v5 的 JSON 长度约为 v4 的 38%，derived 为 0、运算 0–7 次（v4 为 5–18 个 derived、46–174 次运算）；v5 的缺失值与并列规则由运行时统一，v4 两份样本对缺失续航给出不同处理。首轮失败集中在固定标量键、筛选阈值写法与 source 形状，已分别用固定键清单、数字常量和可选 `kind:"model"` 修正。复核后另用最终 v2.5 提示词采样预算/偏好各 1 份，原始文件在 `docs/phase9-samples/`，并由 `tests/unit/model-samples.test.ts` 解析求值。
 - 验证边界：示例与合成文档只证明协议、运行时、渲染与规则可用，不证明模型提供的价格等事实正确；对比样本量小、非生产 API，结论只用于方向判断。
+## 阶段 10：issue7 本轮模式与提示词体验（合入 v2.6）
+
+### 目标与范围
+
+- 保持默认「自动适配」增强文本逐字节不变，新增本轮「明确生成工具」与「普通回答」显式控制；模式不持久化、逐字可见、可回退。
+- 建立真实模型对照基线与固定任务集（[issue7-baseline-tasks.md](issue7-baseline-tasks.md)），先测后决，不预置成功率结论。
+
+### 实现
+
+- [x] `src/content/prompt.ts`：新增 `GenuiPromptMode`（auto/tool/plain）、`GENUI_PROMPT_TOOL_START`、`GENUI_TOOL_PROMPT_TEXT`、`GENUI_PLAIN_PROMPT_NOTE` 与 `getGenuiPromptTextForMode`；`appendGenuiPrompt(value, mode)` / `hasGenuiPrompt` 双标记去重。auto 正文合入时沿用 v2.6 正文不改一字（v2.2 基线逐字节对照断言保留在 issue7 历史提交），tool 变体共享「内容分工」起的协议主体，仅首段表达策略不同。
+- [x] `src/content/augment.ts`：新增 `setMode`/`getMode`/`onModeChange` 与状态 `plain`、`edited`；草稿末尾说明逐字完整时切换模式原地整段替换（plain 连同分隔空行移除并保留原文、选区夹取），说明被修改时不覆盖并如实提示，显式选择清除 dismissed 并重新调度；发送清空、草稿被外部替换、关闭再开启、stop/start、IME 组合开始内的模式切换均回到 auto（IME 在组合结束后补执行）。
+- [x] `src/content/toggle.ts`：浮标新增「本轮：…」循环按钮与面板模式说明/`<pre>` 跟随当前模式；未提供 tool 文本时自动隐藏（回退入口）；不改变持久开关与拖动/ESC 行为。
+- [x] `src/content/controller.ts`：接线三份提示词文本、`onModeSelect`→`augmenter.setMode`、`onModeChange`→`control.setAugmentMode`。
+- [x] 单测：prompt 模式映射/去重/plain 不插/tool 共享协议主体与示例解析；augment 十项模式状态机用例（追加、原地换文与光标、removed、显式清除 dismissed、清空重置、stop/start、开关重置、IME 推迟、onModeChange 计数）；controller-augment 浮标按钮循环与面板跟随、普通回答不追加。
+- [x] 文档与基线：`docs/prompt.md` 增「本轮模式」节与版本历史注记（默认文本未改一字）；新建 `docs/issue7-baseline-tasks.md`（固定任务集、四项指标、auto vs tool 对照设计、回退策略）。
+
+### 验证记录（2026-11-04，issue7 分支；合入 main 后复测）
+
+- `npm run check` 通过：typecheck、lint、42 个测试文件 517 项单测（3 项设计性跳过）、校验器再生成、vite 构建与 dist 校验（`dist/content.js` 884,006 B / 884.00 kB / gzip 158.67 kB，7 个文件清单通过）。
+- auto 正文在合入时沿用主分支 v2.6 不改一字（v2.2 基线逐字节对照断言与一次性用例保留在 issue7 历史提交）；tool 与 auto 的「内容分工」起协议主体（6520 字符）逐字节共享。
+- e2e 窄集（阶段 1 注入、阶段 4 控件/隔离/面板宽度）：Edge/Chrome 4 通过、2 为 `REAL_SITE=1` 默认跳过。
+- 真实模型对照未执行：按 [issue7-baseline-tasks.md](issue7-baseline-tasks.md) 由用户在真实会话中跑 auto/tool 各 3 遍固定任务集并记录指标后再决定保留或回退。
+
+### 核验修复（2026-11-04，`50d1928` 评审 → `59d659f`）
+
+- **[P1] 编辑原文后切模式仍发旧说明**：新增 `describeGenuiDraftPrompt` 识别「草稿末尾逐字完整」的说明尾部（有切换记录或无记录但完整均可），auto↔tool 整段替换（连同分隔空行）、→普通回答连分隔一并移除，恢复到追加前原文；不再要求 `value === appendedValue`。
+- **[P1] 改过说明时面板掩盖残留**：新增 `AugmentStatus` 的 `edited` 与 `GENUI_PLAIN_RESIDUAL_NOTE`；说明被用户修改时扩展不覆盖：切 auto/tool 显示「说明已被你修改」，切「普通回答」面板如实显示残留提示，草稿内容原样保留。
+- **[P2] 移除说明丢光标/选区**：替换与恢复统一走同一写回函数，选区按恢复后文本长度夹取、scrollTop 保留。
+- **[P2] 文档口径澄清**：[issue7-baseline-tasks.md](issue7-baseline-tasks.md) 增「范围界定」（合入 v2.6 后实测自动适配 6738 / tool 6786 / plain 34 字符，tool≠精简；「每轮重发 vs 只发一次」未验证）与「当前状态」（真实对照未执行）；首轮可用率改为按「任务 1–3 parseGenui+形态 / 任务 4–5 无界面」分口径统计；[prompt.md](prompt.md) 补切换语义（尾部完整才替换、edited 不覆盖、plain 残留如实显示）。
+- 验证：42 个测试文件 517 项单测 + 3 项设计性跳过全绿，`npm run check`（typecheck、lint、校验器再生成、构建与生产包校验）再通过；真实模型对照仍待执行。
+

@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPageLifecycle } from '../../src/content/controller';
 import type { ExtensionSettingsStore } from '../../src/content/settings';
-import { GENUI_PROMPT_TEXT } from '../../src/content/prompt';
+import {
+  GENUI_PLAIN_PROMPT_NOTE,
+  GENUI_PROMPT_TEXT,
+  GENUI_TOOL_PROMPT_TEXT,
+} from '../../src/content/prompt';
+import { GENUI_PLAIN_RESIDUAL_NOTE } from '../../src/content/augment';
 
 /**
  * 阶段 7：默认增强与页面生命周期的集成。
@@ -144,5 +149,147 @@ describe('默认增强与页面生命周期', () => {
     doc.querySelector('[data-genui-control]')?.shadowRoot?.querySelector('button')?.click();
     await advance(30);
     expect(input.value).toBe(`已有关闭设置的草稿\n\n${GENUI_PROMPT_TEXT}`);
+  });
+});
+
+describe('issue7 本轮模式与浮标', () => {
+  const NL = String.fromCharCode(10);
+  let lifecycle: ReturnType<typeof createPageLifecycle> | null = null;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    lifecycle?.dispose();
+    lifecycle = null;
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it('点击「本轮」循环模式，面板逐字说明跟随', async () => {
+    const doc = buildDoc();
+    lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 20,
+      augmentDelayMs: 30,
+    });
+    await lifecycle.start();
+
+    const shadow = doc.querySelector('[data-genui-control]')?.shadowRoot;
+    const modeButton = shadow?.querySelectorAll('button')[2] as HTMLButtonElement | undefined;
+    expect(modeButton?.textContent).toBe('本轮：自动适配');
+    expect(modeButton?.hidden).toBe(false);
+    expect(shadow?.textContent).toContain('不改变持久设置');
+
+    modeButton?.click();
+    expect(modeButton?.textContent).toBe('本轮：明确生成工具');
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_TOOL_PROMPT_TEXT);
+
+    modeButton?.click();
+    expect(modeButton?.textContent).toBe('本轮：普通回答');
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_PLAIN_PROMPT_NOTE);
+
+    modeButton?.click();
+    expect(modeButton?.textContent).toBe('本轮：自动适配');
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_PROMPT_TEXT);
+  });
+
+  it('普通回答：输入不追加并提示状态，清空草稿后回到自动适配', async () => {
+    const doc = buildDoc();
+    lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 20,
+      augmentDelayMs: 30,
+    });
+    await lifecycle.start();
+
+    const shadow = doc.querySelector('[data-genui-control]')?.shadowRoot;
+    const modeButton = shadow?.querySelectorAll('button')[2] as HTMLButtonElement | undefined;
+    modeButton?.click();
+    modeButton?.click();
+
+    type(doc, '普通问题直接说');
+    await advance(100);
+    const input = doc.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(input.value).toBe('普通问题直接说');
+    expect(shadow?.textContent).toContain('状态：普通回答');
+
+    type(doc, '');
+    expect(modeButton?.textContent).toBe('本轮：自动适配');
+
+    type(doc, '再问一次');
+    await advance(100);
+    expect(input.value).toBe(`再问一次${NL}${NL}${GENUI_PROMPT_TEXT}`);
+    expect(input.value).not.toContain(GENUI_TOOL_PROMPT_TEXT);
+  });
+});
+
+describe('issue7 模式切换与浮标一致', () => {
+  const NL = String.fromCharCode(10);
+  const SEP = NL + NL;
+  let lifecycle: ReturnType<typeof createPageLifecycle> | null = null;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    lifecycle?.dispose();
+    lifecycle = null;
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it('编辑原文后点「本轮」到明确生成工具：草稿尾部换成 tool 文本', async () => {
+    const doc = buildDoc();
+    lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 20,
+      augmentDelayMs: 30,
+    });
+    await lifecycle.start();
+
+    const input = doc.querySelector<HTMLTextAreaElement>('textarea[name="search"]')!;
+    type(doc, '帮我规划每月预算');
+    await advance(60);
+    expect(input.value).toBe(`帮我规划每月预算${SEP}${GENUI_PROMPT_TEXT}`);
+
+    const EDITED = '帮我规划每月预算，再算年度';
+    type(doc, `${EDITED}${SEP}${GENUI_PROMPT_TEXT}`);
+
+    const shadow = doc.querySelector('[data-genui-control]')?.shadowRoot;
+    const modeButton = shadow?.querySelectorAll('button')[2] as HTMLButtonElement | undefined;
+    modeButton?.click();
+    await advance(60);
+    expect(input.value).toBe(`${EDITED}${SEP}${GENUI_TOOL_PROMPT_TEXT}`);
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_TOOL_PROMPT_TEXT);
+  });
+
+  it('说明被修改后点两次到普通回答：面板如实显示残留提示', async () => {
+    const doc = buildDoc();
+    lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 20,
+      augmentDelayMs: 30,
+    });
+    await lifecycle.start();
+
+    const input = doc.querySelector<HTMLTextAreaElement>('textarea[name="search"]')!;
+    type(doc, '帮我规划每月预算');
+    await advance(60);
+    type(doc, `帮我规划每月预算${SEP}${GENUI_PROMPT_TEXT.slice(0, 80)}真`);
+
+    const shadow = doc.querySelector('[data-genui-control]')?.shadowRoot;
+    const modeButton = shadow?.querySelectorAll('button')[2] as HTMLButtonElement | undefined;
+    modeButton?.click();
+    modeButton?.click();
+    await advance(60);
+
+    expect(input.value).toBe(`帮我规划每月预算${SEP}${GENUI_PROMPT_TEXT.slice(0, 80)}真`);
+    expect(shadow?.querySelector('pre')?.textContent).toBe(GENUI_PLAIN_RESIDUAL_NOTE);
+    expect(modeButton?.textContent).toBe('本轮：普通回答');
   });
 });

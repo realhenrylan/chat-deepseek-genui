@@ -1,6 +1,7 @@
 import { attachThemeAttribute } from '../render/theme';
 import { getBrandMarkUrl } from '../branding';
 import type { AugmentStatus } from './augment';
+import type { GenuiPromptMode } from './prompt';
 
 const CONTROL_ATTR = 'data-genui-control';
 
@@ -11,20 +12,39 @@ export const AUGMENT_STATUS_LABELS: Record<AugmentStatus, string> = {
   dismissed: '你删除了增强说明，本草稿不再自动追加',
   disabled: '增强已关闭，不会追加',
   'no-input': '未找到聊天输入框',
+  plain: '普通回答：本轮不追加增强说明',
+  edited: '说明已被你修改：扩展不会自动替换或重复追加',
 };
+
+/** 本轮模式在浮标上的展示标签；AUGMENT_MODE_ORDER 即循环切换顺序。 */
+export const AUGMENT_MODE_LABELS: Record<GenuiPromptMode, string> = {
+  auto: '自动适配',
+  tool: '明确生成工具',
+  plain: '普通回答',
+};
+const AUGMENT_MODE_ORDER: readonly GenuiPromptMode[] = ['auto', 'tool', 'plain'];
 
 export interface ToggleControl {
   setEnabled(enabled: boolean): void;
   /** 面板中的实时草稿状态；null 表示设置仍在加载。 */
   setAugmentStatus(status: AugmentStatus | null): void;
+  /** 本轮增强模式变化（用户选择或内部重置）；驱动按钮文案与面板文本。 */
+  setAugmentMode(mode: GenuiPromptMode): void;
+  /** plain 模式的面板说明文本；null 恢复默认短说明，非 null 为草稿残留提示。 */
+  setAugmentPlainNote(note: string | null): void;
   dispose(): void;
 }
 
 export interface ToggleOptions {
   /** 实际参与对话的增强文本；面板逐字展示同一常量。 */
   promptText?: string;
+  /** 各本轮模式的完整面板文本；auto 取 promptText，tool 为 genUI tool 变体，plain 为简短说明。 */
+  promptTexts?: Partial<Record<GenuiPromptMode, string>>;
   promptVersion?: number;
   initialStatus?: AugmentStatus;
+  initialMode?: GenuiPromptMode;
+  /** 用户通过浮标循环按钮显式选择本轮模式。 */
+  onModeSelect?: (mode: GenuiPromptMode) => void;
 }
 
 /** 创建隔离样式、键盘可操作的页面级增强开关与可查看的增强说明面板。 */
@@ -191,6 +211,10 @@ export function createToggleControl(
   infoButton.hidden = !options.promptText;
   infoButton.addEventListener('click', handleInfoClick);
 
+  const modeButton = doc.createElement('button');
+  modeButton.type = 'button';
+  modeButton.addEventListener('click', handleModeClick);
+
   const panel = doc.createElement('section');
   panel.id = 'genui-panel';
   panel.className = 'panel';
@@ -216,12 +240,15 @@ export function createToggleControl(
   behavior.textContent =
     '关闭开关时，扩展会移除仍在草稿末尾的自动追加说明（即使你已在说明前继续输入），并保留你的原文；如果你修改过说明文本本身，则不会覆盖你的内容。手动删除说明后，本草稿不再重复追加。';
 
+  const modeHint = doc.createElement('p');
+  modeHint.textContent =
+    '「本轮」按钮只影响这一轮草稿会追加的内容（自动适配 / 明确生成工具 / 普通回答），不改变持久设置；发送、清空草稿或重开会话后会回到自动适配。只有说明仍在草稿末尾且与你逐字未改时，切换才会替换或移除它；修改过的说明不会被自动覆盖，plain 模式中面板会如实显示残留内容。';
+
   const statusLine = doc.createElement('p');
   statusLine.className = 'status';
   statusLine.setAttribute('aria-live', 'polite');
   const prompt = doc.createElement('pre');
   prompt.tabIndex = 0;
-  prompt.textContent = options.promptText ?? '';
   const actions = doc.createElement('div');
   actions.className = 'actions';
   const closeButton = doc.createElement('button');
@@ -229,9 +256,9 @@ export function createToggleControl(
   closeButton.textContent = '关闭说明';
   closeButton.addEventListener('click', handleCloseClick);
 
-  panel.append(heading, description, behavior, statusLine, prompt, actions);
+  panel.append(heading, description, behavior, modeHint, statusLine, prompt, actions);
   actions.append(closeButton);
-  column.append(button, infoButton);
+  column.append(button, infoButton, modeButton);
   wrap.append(column, panel);
   shadow.append(style, wrap);
   (doc.documentElement ?? doc.body).append(host);
@@ -240,6 +267,14 @@ export function createToggleControl(
 
   let enabled = initialEnabled;
   let augmentStatus: AugmentStatus | null = options.initialStatus ?? null;
+  let augmentMode: GenuiPromptMode = options.initialMode ?? 'auto';
+  /** plain 模式的临时面板说明（残留提示）；null 表示默认短说明。 */
+  let plainNote: string | null = null;
+  const modeTexts: Record<GenuiPromptMode, string> = {
+    auto: options.promptText ?? '',
+    tool: options.promptTexts?.tool ?? '',
+    plain: options.promptTexts?.plain ?? '',
+  };
   let dragState: {
     pointerId: number;
     startX: number;
@@ -259,6 +294,24 @@ export function createToggleControl(
         ? '状态：正在读取设置…'
         : `状态：${AUGMENT_STATUS_LABELS[augmentStatus]}`;
     statusLine.setAttribute('data-status', augmentStatus ?? 'loading');
+  }
+
+  /** 模式按钮文案与面板逐字文本跟随当前本轮模式；plain 展示残留提示或默认短说明。 */
+  function renderMode(): void {
+    modeButton.textContent = `本轮：${AUGMENT_MODE_LABELS[augmentMode]}`;
+    modeButton.title = '切换本轮增强模式（自动适配 / 明确生成工具 / 普通回答）';
+    modeButton.setAttribute('aria-label', `本轮模式：${AUGMENT_MODE_LABELS[augmentMode]}，点击切换为下一模式`);
+    prompt.textContent = augmentMode === 'plain' ? plainNote ?? modeTexts.plain : modeTexts[augmentMode];
+  }
+
+  function handleModeClick(event: MouseEvent): void {
+    event.stopPropagation();
+    const index = AUGMENT_MODE_ORDER.indexOf(augmentMode);
+    const next = AUGMENT_MODE_ORDER[(index + 1) % AUGMENT_MODE_ORDER.length];
+    // 点击后先乐观渲染；实际追加行为以 augmenter 的 onModeChange 回执为准。
+    augmentMode = next;
+    renderMode();
+    options.onModeSelect?.(next);
   }
 
   function setPanelOpen(open: boolean): void {
@@ -399,7 +452,10 @@ export function createToggleControl(
   }
 
   render();
+  renderMode();
   renderStatus();
+  // 未提供 tool 文本时没有可切换的模式集合，隐藏循环按钮，保持旧行为。
+  modeButton.hidden = modeTexts.tool === '';
   button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight');
   button.setAttribute('aria-description', '可拖动移动；按住 Alt 并使用方向键移动，Shift 加方向键可快速移动。');
   win?.addEventListener('resize', handleResize);
@@ -433,6 +489,16 @@ export function createToggleControl(
       augmentStatus = nextStatus;
       renderStatus();
     },
+    setAugmentMode(mode) {
+      if (augmentMode === mode) return;
+      augmentMode = mode;
+      renderMode();
+    },
+    setAugmentPlainNote(note) {
+      if (plainNote === note) return;
+      plainNote = note;
+      if (augmentMode === 'plain') renderMode();
+    },
     dispose() {
       button.removeEventListener('click', handleClick);
       button.removeEventListener('pointerdown', handlePointerDown);
@@ -441,6 +507,7 @@ export function createToggleControl(
       button.removeEventListener('pointercancel', handlePointerCancel);
       button.removeEventListener('keydown', handleKeyDown);
       infoButton.removeEventListener('click', handleInfoClick);
+      modeButton.removeEventListener('click', handleModeClick);
       closeButton.removeEventListener('click', handleCloseClick);
       panel.removeEventListener('keydown', handlePanelKeyDown);
       win?.removeEventListener('resize', handleResize);
