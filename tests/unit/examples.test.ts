@@ -2,6 +2,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseGenui } from '../../src/protocol/validate';
+import {
+  createInitialState,
+  evaluateComposite,
+  lookupModel,
+  modelTable,
+} from '../../src/runtime/evaluate';
 import type { GenuiDocument } from '../../src/protocol/types';
 
 /**
@@ -115,5 +121,16 @@ describe('docs/examples 示例文档', () => {
     expect(serialized).toContain('单次成本不可用');
     expect(serialized).toContain('"view":"plans"');
     expect(serialized).toContain('"key":"lowestUnitCost"');
+
+    const evaluation = evaluateComposite(document, createInitialState(document));
+    const result = lookupModel(evaluation, 'membership');
+    if (!result) throw new Error('期望成本模型结果');
+    const payPerUse = modelTable(result)?.rows.find((row) => row.plan === '按次');
+    expect(payPerUse).toMatchObject({
+      purchases: 12,
+      totalCost: 384,
+      totalUses: 96,
+      unitCost: 4,
+    });
   });
 });

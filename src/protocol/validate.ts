@@ -744,6 +744,8 @@ function inspectPreferenceModel(
   earlier: ReadonlySet<string>,
 ): SemanticFailure | null {
   const dimensionIds = new Set<string>();
+  let positiveNumericWeight = false;
+  let hasWeightExpression = false;
   for (const dimension of model.dimensions) {
     if (dimensionIds.has(dimension.id)) {
       return semanticFailure(
@@ -751,12 +753,23 @@ function inspectPreferenceModel(
         `偏好维度 id 重复：${dimension.id}`,
       );
     }
-    if (!Number.isFinite(dimension.weight) || dimension.weight < 0) {
-      return semanticFailure('semantic-violation', `偏好维度 ${dimension.id} 的权重无效`);
+    if (typeof dimension.weight === 'number') {
+      if (
+        !Number.isFinite(dimension.weight) ||
+        dimension.weight < 0 ||
+        dimension.weight > LIMITS.maxPreferenceWeight
+      ) {
+        return semanticFailure('semantic-violation', `偏好维度 ${dimension.id} 的权重无效`);
+      }
+      if (dimension.weight > 0) positiveNumericWeight = true;
+    } else {
+      hasWeightExpression = true;
+      const failure = inspectExpression(context, dimension.weight, 1, false, earlier);
+      if (failure) return failure;
     }
     dimensionIds.add(dimension.id);
   }
-  if (!model.dimensions.some((dimension) => dimension.weight > 0)) {
+  if (!positiveNumericWeight && !hasWeightExpression) {
     return semanticFailure('semantic-violation', '偏好比较至少需要一个大于 0 的权重');
   }
 

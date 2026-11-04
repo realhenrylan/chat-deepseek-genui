@@ -31,15 +31,19 @@
         },
         {
           "label": "按次",
-          "fee": { "op": "const", "value": 4 },
+          "fee": {
+            "op": "multiply",
+            "left": { "op": "const", "value": 4 },
+            "right": { "op": "state", "id": "visits" }
+          },
           "coverage": 1,
-          "usesPerPeriod": { "op": "const", "value": 1 }
+          "usesPerPeriod": { "op": "state", "id": "visits" }
         }
       ]
     }
   ],
   "elements": [
-    { "kind": "note", "text": "价格为示例；总成本按覆盖周期向上取整购买，单次成本在总次数为 0 时不可用。", "tone": "info" },
+    { "kind": "note", "text": "价格为示例；总成本按覆盖周期向上取整购买，单次成本在总次数为 0 时不可用。按次方案每周期费用为 4 元 × 每月次数。", "tone": "info" },
     {
       "kind": "columns",
       "columns": [

@@ -653,9 +653,14 @@ const preferenceModelSchema = {
           id: idSchema,
           label: labelSchema,
           weight: {
-            type: 'number',
-            minimum: 0,
-            maximum: LIMITS.maxPreferenceWeight,
+            anyOf: [
+              {
+                type: 'number',
+                minimum: 0,
+                maximum: LIMITS.maxPreferenceWeight,
+              },
+              expressionV5Ref,
+            ],
           },
           direction: { enum: ['higher', 'lower'] },
         },

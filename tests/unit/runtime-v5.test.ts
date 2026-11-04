@@ -28,6 +28,15 @@ import type {
 const C = (value: number): NumericExpression => ({ op: 'const', value });
 const M = (model: string, key: string): NumericExpression => ({ op: 'model', model, key });
 
+/** 构造一条加法链，用于验证模型级运算预算。 */
+function chain(depth: number): NumericExpression {
+  let expression: NumericExpression = C(1);
+  for (let index = 0; index < depth; index += 1) {
+    expression = { op: 'add', left: expression, right: C(1) };
+  }
+  return expression;
+}
+
 function doc(models: SemanticModel[], elements: GenuiV5Element[] = []): GenuiV5Document {
   return {
     type: 'genui',
@@ -132,6 +141,22 @@ describe('v5 预算模型', () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes('超过收入'))).toBe(true);
   });
 
+  it('明细金额使用与合计相同的精度，不显示未舍入的原始值', () => {
+    const { evaluation } = evaluate([
+      budget({
+        precision: 2,
+        income: C(10),
+        expenses: [{ label: '零碎支出', amount: C(1.234) }],
+      }),
+    ]);
+    const result = lookupModel(evaluation, 'budget');
+    if (!result) throw new Error('期望模型结果');
+
+    expect(result.scalars.expenses).toBe(1.23);
+    expect(modelTable(result)?.rows[1]).toMatchObject({ item: '支出', amount: 1.23 });
+    expect(modelTable(result, 'items')?.rows[0]).toMatchObject({ item: '零碎支出', amount: 1.23 });
+  });
+
   it('收入为 0 时占比不可用而不是 0；负支出按 0 计并给出诊断', () => {
     const { evaluation } = evaluate([
       budget({
@@ -203,6 +228,24 @@ describe('v5 成本模型', () => {
     ]);
     expect(result.chartItems.map((item) => item.label)).toEqual(['方案 B', '方案 A']);
     expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes('整份购买'))).toBe(true);
+  });
+
+  it('小数周期恰好整除时不会因浮点误差多买一份', () => {
+    const { evaluation } = evaluate([
+      cost({
+        horizon: C(0.07),
+        plans: [{ label: '方案 A', fee: C(100), coverage: 0.01, usesPerPeriod: C(1) }],
+      }),
+    ]);
+    const result = lookupModel(evaluation, 'cost');
+    if (!result) throw new Error('期望模型结果');
+
+    expect(modelTable(result)?.rows[0]).toMatchObject({
+      purchases: 7,
+      totalCost: 700,
+      totalUses: 0.07,
+    });
+    expect(modelTable(result)?.rows[0].unitCost).toBeCloseTo(10000, 6);
   });
 
   it('周期为 0 时不购买、总成本与次数为 0、单次成本不可用', () => {
@@ -418,6 +461,53 @@ describe('v5 偏好模型', () => {
       { rank: null, candidate: '缺价格', score: null, missing: 1 },
     ]);
   });
+
+  it('权重可引用状态变量，调整权重会改变排名', () => {
+    const model = preference({
+      dimensions: [
+        { id: 'price', label: '价格', weight: { op: 'state', id: 'priceWeight' }, direction: 'lower' },
+        { id: 'quality', label: '质量', weight: { op: 'state', id: 'qualityWeight' }, direction: 'higher' },
+      ],
+    });
+    const document = {
+      ...doc([model]),
+      state: [
+        { id: 'priceWeight', label: '价格权重', kind: 'number' as const, initial: 1, min: 0, max: 10, step: 1 },
+        { id: 'qualityWeight', label: '质量权重', kind: 'number' as const, initial: 0, min: 0, max: 10, step: 1 },
+      ],
+    };
+
+    const priceFirst = evaluateComposite(document, { priceWeight: 1, qualityWeight: 0 });
+    const priceResult = lookupModel(priceFirst, 'preference');
+    if (!priceResult) throw new Error('期望模型结果');
+    expect(modelTable(priceResult)?.rows[0]).toMatchObject({ candidate: '候选 C', score: 100 });
+
+    const qualityFirst = evaluateComposite(document, { priceWeight: 0, qualityWeight: 1 });
+    const qualityResult = lookupModel(qualityFirst, 'preference');
+    if (!qualityResult) throw new Error('期望模型结果');
+    expect(modelTable(qualityResult)?.rows[0]).toMatchObject({ candidate: '候选 A', score: 100 });
+    expect(modelTable(qualityResult)?.rows[1]).toMatchObject({ candidate: '候选 C', score: 0 });
+  });
+
+  it('所有权重为 0 时得分不可用并给出诊断', () => {
+    const model = preference({
+      dimensions: [
+        { id: 'price', label: '价格', weight: { op: 'state', id: 'priceWeight' }, direction: 'lower' },
+      ],
+    });
+    const document = {
+      ...doc([model]),
+      state: [
+        { id: 'priceWeight', label: '价格权重', kind: 'number' as const, initial: 0, min: 0, max: 10, step: 1 },
+      ],
+    };
+    const evaluation = evaluateComposite(document, { priceWeight: 0 });
+    const result = lookupModel(evaluation, 'preference');
+    if (!result) throw new Error('期望模型结果');
+
+    expect(result.scalars).toMatchObject({ rankedCount: 0, topScore: null, weightTotal: 0 });
+    expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes('权重合计为 0'))).toBe(true);
+  });
 });
 
 describe('v5 模型引用与快照', () => {
@@ -489,6 +579,44 @@ describe('v5 模型引用与快照', () => {
     expect(evaluation.models.get('budget')?.scalars.balance).toBe(-100);
     expect(lookupExpression(evaluation, exprA)).toEqual({ ok: true, value: -100 });
     expect(lookupExpression(evaluation, exprB)).toEqual({ ok: true, value: -100 });
+  });
+
+  it('每个模型使用独立的 maxModelWork 预算，超过共享 500 次仍可完成', () => {
+    const heavy = budget({
+      expenses: Array.from({ length: 20 }, (_, index) => ({
+        label: `支出 ${index + 1}`,
+        amount: chain(30),
+      })),
+    });
+    const { evaluation } = evaluate([heavy]);
+    const result = lookupModel(evaluation, 'budget');
+    if (!result) throw new Error('期望模型结果');
+
+    expect(result.ok).toBe(true);
+    expect(result.operations).toBeGreaterThan(500);
+    expect(result.operations).toBeLessThanOrEqual(5000);
+  });
+
+  it('模型运算超限只让自身失败，不占用共享池', () => {
+    const overflow = budget({
+      id: 'overflow',
+      expenses: Array.from({ length: 20 }, (_, index) => ({
+        label: `大支出 ${index + 1}`,
+        amount: chain(300),
+      })),
+    });
+    const { evaluation } = evaluate([
+      overflow,
+      budget({ id: 'simple', income: C(500), expenses: [] }),
+    ]);
+
+    const failed = lookupModel(evaluation, 'overflow');
+    const simple = lookupModel(evaluation, 'simple');
+    if (!failed || !simple) throw new Error('期望模型结果');
+    expect(failed.ok).toBe(false);
+    expect(failed.error).toContain('计算量');
+    expect(simple.ok).toBe(true);
+    expect(simple.scalars.income).toBe(500);
   });
 
   it('状态变化后按新状态重新计算模型', () => {

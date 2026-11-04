@@ -344,6 +344,29 @@ function readFilterBound(
   return result;
 }
 
+/** 权重既可是常量，也可是表达式；非负且不超过权重上限。 */
+function readModelWeight(
+  engine: EvaluationEngine,
+  value: NumericExpression | number,
+  label: string,
+  diagnostics: ModelDiagnostic[],
+): number {
+  const raw = typeof value === 'number' ? value : readModelNumber(engine, value, label);
+  if (!Number.isFinite(raw)) throw calculationError(`${label}不是有限数字`);
+  if (raw < 0) {
+    diagnostics.push({ level: 'warn', message: `${label}为负数，按 0 计算` });
+    return 0;
+  }
+  if (raw > LIMITS.maxPreferenceWeight) {
+    diagnostics.push({
+      level: 'warn',
+      message: `${label}超过上限 ${LIMITS.maxPreferenceWeight}，按上限计算`,
+    });
+    return LIMITS.maxPreferenceWeight;
+  }
+  return raw;
+}
+
 function clampModelAmount(
   value: number,
   label: string,
@@ -386,6 +409,21 @@ function roundTo(value: number, digits: number): number {
   const factor = 10 ** digits;
   const rounded = Math.round(value * factor) / factor;
   return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/**
+ * 购买份数向上取整。十进制输入经二进制浮点除法后可能略高于整数
+ * （例如 0.07 / 0.01 = 7.000000000000001），先用相对容差吸收这种误差，
+ * 避免把恰好整除的周期误算成多买一份。
+ */
+function ceilPurchases(horizon: number, coverage: number): number {
+  const ratio = horizon / coverage;
+  const nearest = Math.round(ratio);
+  const tolerance = 1e-9 * Math.max(1, Math.abs(ratio));
+  if (nearest >= 1 && Math.abs(ratio - nearest) <= tolerance) {
+    return nearest;
+  }
+  return Math.ceil(ratio);
 }
 
 function formatFixed(value: number, digits: number): string {
@@ -455,7 +493,7 @@ function computeBudgetModel(engine: EvaluationEngine, model: BudgetModel): Model
     ],
     rows: expenses.map((expense) => ({
       item: expense.label,
-      amount: expense.amount,
+      amount: fromMinor(expense.minor, precision),
       share:
         expensesMinor > 0 ? roundTo((expense.minor / expensesMinor) * 100, 1) : null,
     })),
@@ -529,7 +567,7 @@ function computeCostModel(engine: EvaluationEngine, model: CostModel): ModelCore
     if (!Number.isFinite(coverage) || coverage <= 0) {
       throw calculationError(`方案「${plan.label}」的覆盖周期必须大于 0`);
     }
-    const purchases = horizon > 0 ? Math.ceil(horizon / coverage) : 0;
+    const purchases = horizon > 0 ? ceilPurchases(horizon, coverage) : 0;
     if (!Number.isFinite(purchases)) {
       throw calculationError(`方案「${plan.label}」购买份数超出可计算范围`);
     }
@@ -670,6 +708,21 @@ function computePreferenceModel(
   const diagnostics: ModelDiagnostic[] = [];
   const precision = model.precision ?? 1;
   const dimensions = model.dimensions;
+  const weights = new Map<string, number>();
+  let weightTotal = 0;
+  for (const dimension of dimensions) {
+    const weight = readModelWeight(
+      engine,
+      dimension.weight,
+      `偏好维度「${dimension.label}」权重`,
+      diagnostics,
+    );
+    weights.set(dimension.id, weight);
+    weightTotal += weight;
+  }
+  if (weightTotal <= 0) {
+    diagnostics.push({ level: 'info', message: '权重合计为 0，得分不可用' });
+  }
 
   const filters = (model.filters ?? []).map((filter) => {
     const min =
@@ -737,22 +790,20 @@ function computePreferenceModel(
     if (count > 0) stats.set(dimension.id, { min, max });
   }
 
-  let weightTotal = 0;
-  for (const dimension of dimensions) weightTotal += dimension.weight;
-
   for (const candidate of eligible) {
     let weighted = 0;
     let presentWeight = 0;
     let missing = 0;
     for (const dimension of dimensions) {
+      const weight = weights.get(dimension.id) ?? 0;
       const value = candidate.values.get(dimension.id);
       const range = stats.get(dimension.id);
       if (value === null || value === undefined || !range) {
-        if (dimension.weight > 0) missing += 1;
+        if (weight > 0) missing += 1;
         candidate.normal.set(dimension.id, null);
         continue;
       }
-      if (dimension.weight <= 0) {
+      if (weight <= 0) {
         candidate.normal.set(dimension.id, null);
         continue;
       }
@@ -767,8 +818,8 @@ function computePreferenceModel(
             ? 1 - normalized
             : normalized;
       candidate.normal.set(dimension.id, roundTo(oriented * 100, 1));
-      weighted += oriented * dimension.weight;
-      presentWeight += dimension.weight;
+      weighted += oriented * weight;
+      presentWeight += weight;
     }
     candidate.missing = missing;
     candidate.score =
@@ -969,15 +1020,21 @@ export function evaluateComposite(
 
   if (document.version === 5) {
     for (const model of document.models) {
-      const before = engine.operations;
+      // 每个模型使用独立引擎与独立预算：模型输入可读 state/derived 和更早
+      // 模型的标量，但不会占用元素/条件的共享 500 次池，也不会把失败扩散
+      // 到其他模型。
+      const modelEngine = new EvaluationEngine(document, state, LIMITS.maxModelWork);
+      for (const [earlierId, earlier] of models) {
+        if (earlier.ok) modelEngine.setModelScalars(earlierId, earlier.scalars);
+      }
       try {
-        const core = evaluateSemanticModel(engine, model);
-        models.set(model.id, { ...core, operations: engine.operations - before });
+        const core = evaluateSemanticModel(modelEngine, model);
+        models.set(model.id, { ...core, operations: modelEngine.operations });
         engine.setModelScalars(model.id, core.scalars);
       } catch (error) {
         models.set(
           model.id,
-          failedModel(model, errorMessage(error), engine.operations - before),
+          failedModel(model, errorMessage(error), modelEngine.operations),
         );
       }
     }

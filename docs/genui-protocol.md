@@ -178,7 +178,7 @@ v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图
 
 `income` 与 `expenses[].amount` 是数值表达式，支出项 0–20 个。输出标量：`income`、`expenses`、`balance`、`overspend`、`usage`、`itemCount`。`balance = income - expenses`；`overspend` 为 `1`/`0`；`usage` 是支出占收入的百分比（保留 1 位小数），收入为 0 时为 `null` 并给出诊断。负数输入按 0 计并给出警告；没有支出项时表为空并给出提示。
 
-表格视图：`summary` 三行（收入、支出、余额，含支出占比）与 `items`（支出项、金额、占支出比例；支出为 0 时占比为 `null`）。`chartItems` 为收入与支出两项。`explain` 展示收入、支出、余额、占比、超支与支出项依据。
+表格视图：`summary` 三行（收入、支出、余额，含支出占比）与 `items`（支出项、金额、占支出比例；支出为 0 时占比为 `null`）。明细金额与合计使用同一个按 `precision` 舍入后的值，不会出现明细显示 1.234、合计按 1.23 计算的不一致。`chartItems` 为收入与支出两项。`explain` 展示收入、支出、余额、占比、超支与支出项依据。
 
 ### 成本 `cost`
 
@@ -193,7 +193,7 @@ v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图
 }
 ```
 
-`horizon` 是计划周期数；`plans` 为 1–10 个方案，`fee` 是每份价格，`coverage > 0` 是每份覆盖的周期数，`usesPerPeriod` 是每周期使用次数。购买份数 `ceil(horizon / coverage)`，总成本 `fee × 份数`，总次数 `usesPerPeriod × horizon`，单次成本 `totalCost / totalUses`。周期为 0 时不购买、总成本为 0、总次数为 0、单次成本为 `null`；总次数为 0 时单次成本不可用。负数按 0 计并警告；整份超买会给出提示。方案按单次成本升序（不可用排最后）、总成本、声明顺序排列。输出标量：`horizon`、`planCount`、`lowestTotalCost`、`lowestUnitCost`（不可用时为 `null`）。表格视图 `plans`；`chartItems` 为各方案总成本。
+`horizon` 是计划周期数；`plans` 为 1–10 个方案，`fee` 是每份价格，`coverage > 0` 是每份覆盖的周期数，`usesPerPeriod` 是每周期使用次数。购买份数 `ceil(horizon / coverage)`；对十进制输入，运行时允许相对 `1e-9` 的浮点容差，数学上恰好整除时按整数份计，避免 `0.07 / 0.01` 被多算一份。总成本 `fee × 份数`，总次数 `usesPerPeriod × horizon`，单次成本 `totalCost / totalUses`。周期为 0 时不购买、总成本为 0、总次数为 0、单次成本为 `null`；总次数为 0 时单次成本不可用。负数按 0 计并警告；整份超买会给出提示。方案按单次成本升序（不可用排最后）、总成本、声明顺序排列。输出标量：`horizon`、`planCount`、`lowestTotalCost`、`lowestUnitCost`（不可用时为 `null`）。表格视图 `plans`；`chartItems` 为各方案总成本。
 
 ### 偏好 `preference`
 
@@ -214,9 +214,9 @@ v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图
 }
 ```
 
-维度 1–8 个，`weight` 0–1000 且至少一个大于 0，`direction` 为 `higher` 或 `lower`；候选 0–30 个，`values` 只允许已声明维度，值可为数字或 `null`；筛选 0–8 个，每个维度最多一个，至少提供 `min` 或 `max`。筛选阈值可写数字常量或表达式（如 `{"dimension":"price","max":8000}`）。`null` 与缺失键都表示资料缺失，不按 0 处理。
+维度 1–8 个，`weight` 可写 0–1000 的数字常量或表达式；表达式可引用 state、derived 或更早模型，运行时负数按 0、超过 1000 按上限并警告。数字权重至少一个大于 0；使用表达式时运行时会处理权重合计为 0 的情况。`direction` 为 `higher` 或 `lower`；候选 0–30 个，`values` 只允许已声明维度，值可为数字或 `null`；筛选 0–8 个，每个维度最多一个，至少提供 `min` 或 `max`。筛选阈值可写数字常量或表达式（如 `{"dimension":"price","max":8000}`）。`null` 与缺失键都表示资料缺失，不按 0 处理。
 
-计算顺序：先用筛选阈值（数字常量或表达式）排除候选（缺失值不通过筛选），再对通过候选的每个维度用现存值做 min-max 归一化；`max = min` 时该维度归一为 1；`lower` 方向取反。得分 `Σ(归一值 × weight) / Σ(存在的 weight > 0) × 100`，缺失维度不计 0、不进分母；没有可计权维度时得分为 `null`。得分按 `precision` 四舍五入（默认 1 位小数）。排序按得分降序、缺失计权维度数升序、声明顺序；同分同名次（competition ranking），未计分候选排后且名次为空。输出标量：`candidateCount`、`eligibleCount`、`rankedCount`、`topScore`、`weightTotal`、`dimensionCount`。表格视图：`ranking`（名次、候选、得分、缺失维度）与 `breakdown`（候选、得分、各维度归一值，列数上限 10）；`chartItems` 只含有得分的候选。空候选、全部被筛掉、全部缺少可计权维度都会返回明确计数与诊断，而不是编造 0 分。
+计算顺序：先用筛选阈值（数字常量或表达式）排除候选（缺失值不通过筛选），再对通过候选的每个维度用现存值做 min-max 归一化；`max = min` 时该维度归一为 1；`lower` 方向取反。得分 `Σ(归一值 × 有效weight) / Σ(存在的有效weight > 0) × 100`，缺失维度不计 0、不进分母；没有可计权维度或权重合计为 0 时得分为 `null`，`rankedCount` 为 0 并给出诊断。得分按 `precision` 四舍五入（默认 1 位小数）。排序按得分降序、缺失计权维度数升序、声明顺序；同分同名次（competition ranking），未计分候选排后且名次为空。输出标量：`candidateCount`、`eligibleCount`、`rankedCount`、`topScore`、`weightTotal`（有效权重之和）、`dimensionCount`。表格视图：`ranking`（名次、候选、得分、缺失维度）与 `breakdown`（候选、得分、各维度归一值，列数上限 10）；`chartItems` 只含有得分的候选。空候选、全部被筛掉、全部缺少可计权维度都会返回明确计数与诊断，而不是编造 0 分。
 
 ### 模型来源与解释
 
@@ -241,6 +241,7 @@ v5 可用 `source: { "model": "...", "view"? }` 替代 `columns`/`rows`，视图
 | 条件嵌套深度 | — | 5 |
 | 单条表达式深度 | 8 | 8 |
 | 单次重算运算数 | 500 | 500 |
+| 每个语义模型运算数（v5） | — | 5000（独立于共享 500 次池） |
 | 布局嵌套深度 | — | 4 |
 | 标题、标签、选项文本 | 120 字符 | 120 字符 |
 | 状态 ID | 32 字符，字母开头，仅字母、数字、下划线 | 同左 |

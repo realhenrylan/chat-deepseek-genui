@@ -3,7 +3,10 @@
   "version": 5,
   "title": "手机偏好对比",
   "state": [
-    { "id": "budget", "label": "预算上限", "kind": "number", "initial": 6000, "min": 3000, "max": 9000, "step": 500, "unit": "元" }
+    { "id": "budget", "label": "预算上限", "kind": "number", "initial": 6000, "min": 3000, "max": 9000, "step": 500, "unit": "元" },
+    { "id": "priceWeight", "label": "价格权重", "kind": "number", "initial": 3, "min": 0, "max": 5, "step": 1 },
+    { "id": "batteryWeight", "label": "续航权重", "kind": "number", "initial": 2, "min": 0, "max": 5, "step": 1 },
+    { "id": "weightWeight", "label": "重量权重", "kind": "number", "initial": 1, "min": 0, "max": 5, "step": 1 }
   ],
   "derived": [],
   "models": [
@@ -13,9 +16,9 @@
       "label": "候选手机",
       "precision": 1,
       "dimensions": [
-        { "id": "price", "label": "价格", "weight": 3, "direction": "lower" },
-        { "id": "battery", "label": "续航", "weight": 2, "direction": "higher" },
-        { "id": "weight", "label": "重量控制", "weight": 1, "direction": "higher" }
+        { "id": "price", "label": "价格", "weight": { "op": "state", "id": "priceWeight" }, "direction": "lower" },
+        { "id": "battery", "label": "续航", "weight": { "op": "state", "id": "batteryWeight" }, "direction": "higher" },
+        { "id": "weight", "label": "重量控制", "weight": { "op": "state", "id": "weightWeight" }, "direction": "higher" }
       ],
       "candidates": [
         { "label": "手机 A", "values": { "price": 4999, "battery": 80, "weight": 190 } },
@@ -32,6 +35,15 @@
   "elements": [
     { "kind": "note", "text": "续航与重量为 0–100 的相对评分，价格单位为元；缺失资料不按 0 分计算。", "tone": "info" },
     { "kind": "slider", "bind": "budget" },
+    { "kind": "note", "text": "调整三项权重会立即改变归一化得分与排名；权重为 0 的维度不参与计分，也不进入缺失分母。", "tone": "info" },
+    {
+      "kind": "columns",
+      "columns": [
+        [ { "kind": "slider", "bind": "priceWeight" } ],
+        [ { "kind": "slider", "bind": "batteryWeight" } ],
+        [ { "kind": "slider", "bind": "weightWeight" } ]
+      ]
+    },
     { "kind": "value", "label": "符合预算的候选", "source": { "kind": "model", "model": "pick", "key": "eligibleCount" }, "unit": "款" },
     { "kind": "value", "label": "最高得分", "source": { "kind": "model", "model": "pick", "key": "topScore" }, "unit": "分" },
     { "kind": "table", "title": "综合排名", "source": { "model": "pick", "view": "ranking" } },

@@ -301,6 +301,49 @@ describe('genui v5 语义模型协议', () => {
     );
   });
 
+  it('偏好权重可以引用状态变量，以便用户交互调整', () => {
+    const document = {
+      ...doc([
+        preference({
+          dimensions: [
+            { id: 'price', label: '价格', weight: { op: 'state', id: 'priceWeight' }, direction: 'lower' },
+            { id: 'quality', label: '质量', weight: 1, direction: 'higher' },
+          ],
+        }),
+      ]),
+      state: [
+        {
+          id: 'priceWeight',
+          label: '价格权重',
+          kind: 'number',
+          initial: 3,
+          min: 0,
+          max: 10,
+          step: 1,
+        },
+      ],
+    };
+    const result = parseGenui(JSON.stringify(document));
+    expect(result.ok, result.ok ? '' : `${result.code} ${result.detail}`).toBe(true);
+  });
+
+  it('偏好数字权重超过上限会被拒绝', () => {
+    expectFailure(
+      parseGenui(
+        JSON.stringify(
+          doc([
+            preference({
+              dimensions: [
+                { id: 'price', label: '价格', weight: 1001, direction: 'lower' },
+              ],
+            }),
+          ]),
+        ),
+      ),
+      'schema-violation',
+    );
+  });
+
   it('偏好筛选必须引用已声明维度且每个维度最多一次', () => {
     expectFailure(
       parseGenui(

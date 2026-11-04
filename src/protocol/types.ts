@@ -333,7 +333,8 @@ export interface CostModel {
 export interface PreferenceDimension {
   id: string;
   label: string;
-  weight: number;
+  /** 权重；可直接写数字，也可引用 state/derived/更早模型以便交互调整。 */
+  weight: NumericExpression | number;
   direction: ModelDirection;
 }
 
