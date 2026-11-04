@@ -874,6 +874,30 @@
   padding: 1px 6px;
 }
 
+.genui-scenario-recompute {
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+.genui-scenario-recompute summary {
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.genui-scenario-recompute ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.genui-scenario-recompute-changed {
+  color: #b26a00;
+}
+
+.genui-scenario-recompute-note {
+  margin: 2px 0;
+  opacity: 0.75;
+}
+
 .genui-scenario-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -955,4 +979,8 @@
 .genui-card-root[data-site-theme='dark'] .genui-scenario-feedback,
 .genui-card-root[data-site-theme='dark'] .genui-scenario-continue-feedback {
   color: #7cb8ff;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-scenario-recompute-changed {
+  color: #ffbe6e;
 }

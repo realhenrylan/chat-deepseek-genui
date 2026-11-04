@@ -17,6 +17,7 @@ import {
 } from '../runtime/evaluate';
 import {
   createCardUiState,
+  restoreCardUiState,
   type CardUiState,
   type PlanClearResult,
   type PlanSaveResult,
@@ -255,6 +256,18 @@ export function Card({
     setResetToken((previous) => previous + 1);
   };
 
+  /** 应用已保存方案：参数与表格视图经文档清洗后整体替换当前状态。 */
+  const handleApplyScenario = (values: Record<string, number | string>, nextTables: Record<string, TableViewState>) => {
+    if (doc.version === 1) return;
+    const restored = restoreCardUiState(doc, { values, tables: nextTables });
+    setState(restored.state.values);
+    setDrafts({});
+    setFieldErrors({});
+    setTables(restored.state.tables);
+    writeState(restored.state.values, restored.state.tables);
+    setResetToken((previous) => previous + 1);
+  };
+
   /** 表格筛选/排序随卡片一起保存在页面内仓库，重新挂载时恢复。 */
   const handleTableChange = (path: string, view: TableViewState) => {
     const next = { ...tables, [path]: view };
@@ -379,6 +392,7 @@ export function Card({
             tables={tables}
             results={{ values: calculation.values, errors: calculation.errors }}
             onContinue={onContinue}
+            onApply={handleApplyScenario}
           />
         )}
       </div>

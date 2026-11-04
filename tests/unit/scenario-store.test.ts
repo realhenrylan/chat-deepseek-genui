@@ -226,6 +226,104 @@ describe('方案端口：保存、导入与身份', () => {
     const list = await port.list();
     expect(list.map((item) => item.name)).toEqual(['晚', '早']);
   });
+
+  it('导入逐字段校验：未知字段、越界参数与无效表格视图被拒绝', async () => {
+    const area = new FakeArea();
+    const port = makePort(area);
+    const base = scenario('ref', 100, { id: 'ref' });
+
+    // 未知状态字段。
+    const unknownField: SavedScenario = { ...base, id: 'ref1', values: { budget: 5000, ghost: 1 } as never };
+    const first = await port.importText(JSON.stringify(unknownField));
+    expect(first.ok).toBe(false);
+    if (!first.ok) expect(first.message).toContain('不存在的参数字段「ghost」');
+
+    // 越界参数（超出 max）。
+    const outOfRange: SavedScenario = { ...base, id: 'ref2', values: { budget: 999999 } };
+    const second = await port.importText(JSON.stringify(outOfRange));
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.message).toContain('超出当前取值范围或步长');
+
+    // 不存在的表格视图路径。
+    const badTable: SavedScenario = {
+      ...base,
+      id: 'ref3',
+      tables: { 'root-9': { filter: '', sort: null } } as never,
+    };
+    const third = await port.importText(JSON.stringify(badTable));
+    expect(third.ok).toBe(false);
+    if (!third.ok) expect(third.message).toContain('不存在的表格视图');
+
+    // 不存在的结果字段。
+    const badResult: SavedScenario = {
+      ...base,
+      id: 'ref4',
+      results: { values: { ...base.results.values, ghost: 1 }, errors: {} },
+    };
+    const fourth = await port.importText(JSON.stringify(badResult));
+    expect(fourth.ok).toBe(false);
+    if (!fourth.ok) expect(fourth.message).toContain('不存在的结果字段「ghost」');
+
+    // 无效表格视图结构（sort 形状不对）：需要一个真的带表格的文档。
+    const tableDoc: GenuiV3Document = {
+      ...DOC,
+      elements: [
+        {
+          kind: 'table',
+          title: '明细',
+          columns: [{ key: 'item', label: '项目' }],
+          rows: [{ cells: { item: '甲' } }],
+          sortable: true,
+        },
+      ],
+    };
+    const tablePort = createScenarioPort({
+      store: createScenarioStore(area),
+      document: tableDoc,
+      documentHash: 'doc-hash',
+      source: { sessionId: '/a/chat/s/session', messageKey: 'vl:1', duplicateIndex: 0, title: '预算规划' },
+      now: () => 1000,
+    });
+    const badSort: SavedScenario = {
+      ...base,
+      id: 'ref5',
+      tables: { 'root-0': { filter: '', sort: { key: 'x', dir: 'sideways' } } } as never,
+    };
+    const fifth = await tablePort.importText(JSON.stringify(badSort));
+    expect(fifth.ok).toBe(false);
+    if (!fifth.ok) expect(fifth.message).toContain('排序设置无效');
+
+    // 排序字段不在该表列内同样拒绝。
+    const badSortKey: SavedScenario = {
+      ...base,
+      id: 'ref6',
+      tables: { 'root-0': { filter: '', sort: { key: 'ghost', dir: 'asc' } } } as never,
+    };
+    const sixth = await tablePort.importText(JSON.stringify(badSortKey));
+    expect(sixth.ok).toBe(false);
+    if (!sixth.ok) expect(sixth.message).toContain('排序字段不存在');
+
+    // 合法表格视图通过。
+    const goodView: SavedScenario = {
+      ...base,
+      id: 'ref7',
+      tables: { 'root-0': { filter: '甲', sort: { key: 'item', dir: 'asc' } } } as never,
+    };
+    const seventh = await tablePort.importText(JSON.stringify(goodView));
+    expect(seventh.ok).toBe(true);
+
+    // 全部被拒：本机没有新增记录（仅 ref7 合法入库）。
+    expect([...area.items.keys()]).toHaveLength(1);
+  });
+
+  it('合法记录通过逐字段校验并入库', async () => {
+    const area = new FakeArea();
+    const port = makePort(area);
+    const valid = scenario('ok', 100, { id: 'ok' });
+    const outcome = await port.importText(JSON.stringify(valid));
+    expect(outcome.ok).toBe(true);
+    expect([...area.items.keys()]).toHaveLength(1);
+  });
 });
 
 describe('比较与重算', () => {

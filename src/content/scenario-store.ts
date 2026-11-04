@@ -18,6 +18,7 @@ import {
   createScenario,
   isScenarioRecord,
   parseScenarioImport,
+  validateScenarioReferences,
   type ScenarioClearOutcome,
   type ScenarioImportOutcome,
   type ScenarioOpOutcome,
@@ -220,7 +221,7 @@ export function createScenarioPort(context: ScenarioPortContext): ScenarioPort {
       const parsed = parseScenarioImport(text);
       if (!parsed.ok) return { ok: false, message: parsed.message };
       const match = checkScenarioDocument(parsed.scenario, document, documentHash);
-      if (!match.ok) return { ok: false, message: match.message };
+      if (!match.ok) return { ok: false, message: `${match.message}，未导入。` };
       try {
         const existing = await store.loadAll();
         if (existing[parsed.scenario.id]) {
@@ -229,6 +230,8 @@ export function createScenarioPort(context: ScenarioPortContext): ScenarioPort {
             message: `本机已存在同名方案「${parsed.scenario.name}」，未覆盖；如需替换请先删除原方案。`,
           };
         }
+        const references = validateScenarioReferences(parsed.scenario, document);
+        if (!references.ok) return { ok: false, message: references.message };
         const outcome = await store.save(parsed.scenario);
         if (!outcome.ok) return { ok: false, message: outcome.message };
         return {

@@ -3,6 +3,8 @@ import type { GenuiDocument, InteractiveStateValues } from '../protocol/types';
 import {
   buildComparisonSummary,
   buildScenarioSummary,
+  CALC_RULE_VERSION,
+  checkScenarioDocument,
   compareScenarios,
   formatScenarioTime,
   MAX_SCENARIO_NAME_LENGTH,
@@ -10,6 +12,7 @@ import {
   type SavedScenario,
   type ScenarioPort,
 } from '../runtime/scenario';
+import { buildTablesCsv } from '../runtime/csv';
 import type { TableViewState } from '../runtime/card-state';
 
 export interface ScenarioPanelProps {
@@ -22,6 +25,8 @@ export interface ScenarioPanelProps {
   results: { values: Record<string, number>; errors: Record<string, string> };
   /** 「继续讨论」交接：把选中方案或差异摘要交给聊天流程。 */
   onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
+  /** 「应用此方案」：把方案里的参数与表格视图恢复到当前卡片，形成选择闭环。 */
+  onApply?: (values: InteractiveStateValues, tables: Record<string, TableViewState>) => void;
 }
 
 const CONTINUE_FEEDBACK: Record<string, string> = {
@@ -59,6 +64,7 @@ export function ScenarioPanel({
   tables,
   results,
   onContinue,
+  onApply,
 }: ScenarioPanelProps) {
   const nameId = useId();
   const fileId = useId();
@@ -151,7 +157,21 @@ export function ScenarioPanel({
     setFeedback(`已导出方案「${scenario.name}」的 JSON 文件。`);
   };
 
+  /**
+   * 摘要与「继续讨论」都用当前文档解释方案字段；方案若属于其他界面，
+   * 字段 ID 可能被赋予错误的名称与单位，因此先校验再生成。
+   */
+  const docMismatch = (scenario: SavedScenario): string | null => {
+    const match = checkScenarioDocument(scenario, doc, port.documentHash);
+    return match.ok ? null : `${match.message}；该方案的摘要或差异无法用当前卡片字段解释。`;
+  };
+
   const exportSummary = (scenario: SavedScenario): void => {
+    const mismatch = docMismatch(scenario);
+    if (mismatch) {
+      setFeedback(mismatch);
+      return;
+    }
     downloadText(`${safeFilename(scenario.name)}.txt`, buildScenarioSummary(scenario, doc), 'text/plain');
     setFeedback(`已导出方案「${scenario.name}」的可读摘要。`);
   };
@@ -169,6 +189,11 @@ export function ScenarioPanel({
   const handleContinueScenario = (scenario: SavedScenario): void => {
     if (!onContinue) {
       setContinueFeedback(CONTINUE_FEEDBACK.unavailable);
+      return;
+    }
+    const mismatch = docMismatch(scenario);
+    if (mismatch) {
+      setContinueFeedback(mismatch);
       return;
     }
     const summary = buildScenarioSummary(scenario, doc);
@@ -251,7 +276,50 @@ export function ScenarioPanel({
                   按当前规则重算与保存时不一致
                 </span>
               ) : null}
+              {recompute.ok && !recompute.changed && recompute.ruleChanged ? (
+                <span className="genui-scenario-stale" title={recompute.note ?? ''}>
+                  计算规则版本已变化，重算结果一致
+                </span>
+              ) : null}
+              {recompute.ok && (recompute.changed || recompute.ruleChanged) ? (
+                <details className="genui-scenario-recompute">
+                  <summary>保存时结果 vs 当前规则重算</summary>
+                  <ul>
+                    {recompute.diffs.map((diff) => (
+                      <li
+                        key={diff.id}
+                        className={diff.changed ? 'genui-scenario-recompute-changed' : undefined}
+                      >
+                        {diff.id}：保存 {diff.saved} → 当前 {diff.current}
+                      </li>
+                    ))}
+                  </ul>
+                  {recompute.ruleChanged ? (
+                    <p className="genui-scenario-recompute-note">
+                      计算规则版本：保存时 v{scenario.ruleVersion} → 当前 v{CALC_RULE_VERSION}
+                    </p>
+                  ) : null}
+                  {recompute.droppedFields > 0 ? (
+                    <p className="genui-scenario-recompute-note">
+                      {recompute.droppedFields} 个参数超出当前取值范围，已按当前规则回落。
+                    </p>
+                  ) : null}
+                </details>
+              ) : null}
               <span className="genui-scenario-actions">
+                <button
+                  type="button"
+                  className="genui-scenario-apply"
+                  disabled={busy || !onApply || docMismatch(scenario) !== null}
+                  title={docMismatch(scenario) ?? undefined}
+                  onClick={() => {
+                    if (!onApply) return;
+                    onApply(scenario.values, scenario.tables);
+                    setFeedback(`已应用方案「${scenario.name}」的参数与表格视图，可继续调整。`);
+                  }}
+                >
+                  应用此方案
+                </button>
                 <button
                   type="button"
                   className="genui-scenario-export-json"
@@ -325,6 +393,22 @@ export function ScenarioPanel({
         </button>
         <button type="button" className="genui-scenario-import" disabled={busy} onClick={() => setImportOpen((previous) => !previous)}>
           {importOpen ? '收起导入' : '导入方案'}
+        </button>
+        <button
+          type="button"
+          className="genui-scenario-export-csv"
+          disabled={busy}
+          onClick={() => {
+            const csv = buildTablesCsv(doc, values);
+            if (csv === null) {
+              setFeedback('当前界面没有可导出的表格数据。');
+              return;
+            }
+            downloadText(`${safeFilename(doc.title ?? '表格数据')}.csv`, csv, 'text/csv;charset=utf-8');
+            setFeedback('已导出表格数据 CSV 文件。');
+          }}
+        >
+          导出表格 CSV
         </button>
         <button
           type="button"

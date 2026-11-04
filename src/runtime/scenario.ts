@@ -12,6 +12,7 @@
 import type {
   DerivedCalculation,
   GenuiDocument,
+  GenuiV3Element,
   InteractiveStateValues,
 } from '../protocol/types';
 import { calculateDerived, evaluateComposite } from './evaluate';
@@ -261,23 +262,133 @@ export type ScenarioDocMatch =
   | { ok: true }
   | { ok: false; message: string };
 
-/** 导入/应用前的引用校验：方案必须属于当前卡片的同一文档与协议。 */
+/**
+ * 导入/应用/摘要前的引用校验：方案必须属于当前卡片的同一文档与协议。
+ * 返回的 message 不含导入语境的后缀，调用方按场景补全（导入追加「未导入。」）。
+ */
 export function checkScenarioDocument(
   scenario: SavedScenario,
   document: GenuiDocument,
   documentHash: string,
 ): ScenarioDocMatch {
   if (scenario.documentHash !== documentHash) {
-    return { ok: false, message: '方案属于其他界面（文档哈希不同），无法用于当前卡片，未导入。' };
+    return { ok: false, message: '方案属于其他界面（文档哈希不同），无法用于当前卡片' };
   }
   if (scenario.protocolVersion !== document.version) {
     return {
       ok: false,
-      message: `协议版本不同（方案 v${scenario.protocolVersion} / 当前 v${document.version}），无法用于当前卡片，未导入。`,
+      message: `协议版本不同（方案 v${scenario.protocolVersion} / 当前 v${document.version}），无法用于当前卡片`,
     };
   }
   if (scenario.stateSignature !== documentStateSignature(document)) {
-    return { ok: false, message: '状态字段定义已变化，方案无法用于当前卡片，未导入。' };
+    return { ok: false, message: '状态字段定义已变化，方案无法用于当前卡片' };
+  }
+  return { ok: true };
+}
+
+/** 按渲染路径规则递归收集文档里所有表格元素的路径 → 列 key 集合。 */
+function collectTablePaths(document: GenuiDocument): Map<string, Set<string>> {
+  const tables = new Map<string, Set<string>>();
+  if (document.version !== 3) return tables;
+  const walk = (elements: GenuiV3Element[], path: string): void => {
+    elements.forEach((element, index) => {
+      const elementPath = `${path}-${index}`;
+      if (element.kind === 'table') {
+        tables.set(
+          elementPath,
+          new Set(element.columns.map((column) => column.key)),
+        );
+      } else if (element.kind === 'section') {
+        walk(element.children, `${elementPath}-section`);
+      } else if (element.kind === 'columns') {
+        element.columns.forEach((column, columnIndex) => {
+          walk(column, `${elementPath}-col-${columnIndex}`);
+        });
+      }
+    });
+  };
+  walk(document.elements, 'root');
+  return tables;
+}
+
+/**
+ * 导入时的逐字段引用与取值校验：拒绝当前文档不存在的字段、越界参数与
+ * 无效表格视图，避免篡改后的记录进入本机并参与比较。
+ */
+export function validateScenarioReferences(
+  scenario: SavedScenario,
+  document: GenuiDocument,
+): ScenarioDocMatch {
+  const stateIds = new Set(
+    document.version === 1 ? [] : document.state.map((variable) => variable.id),
+  );
+  for (const id of Object.keys(scenario.values)) {
+    if (!stateIds.has(id)) {
+      return {
+        ok: false,
+        message: `方案包含当前界面不存在的参数字段「${id}」，未导入。`,
+      };
+    }
+  }
+  const { dropped } = sanitizeCardValues(document, scenario.values);
+  if (dropped.length > 0) {
+    return {
+      ok: false,
+      message: `参数「${dropped.join('、')}」超出当前取值范围或步长，未导入。`,
+    };
+  }
+
+  const tablePaths = collectTablePaths(document);
+  for (const [path, raw] of Object.entries(scenario.tables)) {
+    if (!isPlainRecord(raw)) {
+      return { ok: false, message: `表格视图（${path}）结构无效，未导入。` };
+    }
+    if (typeof raw['filter'] !== 'string') {
+      return { ok: false, message: `表格视图（${path}）的筛选内容无效，未导入。` };
+    }
+    const columns = tablePaths.get(path);
+    if (!columns) {
+      return {
+        ok: false,
+        message: `方案引用了当前界面不存在的表格视图（${path}），未导入。`,
+      };
+    }
+    const sort = raw['sort'];
+    if (sort !== null) {
+      if (
+        !isPlainRecord(sort) ||
+        typeof sort['key'] !== 'string' ||
+        (sort['dir'] !== 'asc' && sort['dir'] !== 'desc')
+      ) {
+        return { ok: false, message: `表格视图（${path}）的排序设置无效，未导入。` };
+      }
+      if (!columns.has(sort['key'])) {
+        return {
+          ok: false,
+          message: `表格视图（${path}）的排序字段不存在于当前表格，未导入。`,
+        };
+      }
+    }
+  }
+
+  const derivedIds = new Set(
+    document.version === 1 ? [] : document.derived.map((value) => value.id),
+  );
+  for (const id of Object.keys(scenario.results.values)) {
+    if (!derivedIds.has(id)) {
+      return {
+        ok: false,
+        message: `方案包含当前界面不存在的结果字段「${id}」，未导入。`,
+      };
+    }
+  }
+  for (const id of Object.keys(scenario.results.errors)) {
+    if (!derivedIds.has(id)) {
+      return {
+        ok: false,
+        message: `方案包含当前界面不存在的结果字段「${id}」，未导入。`,
+      };
+    }
   }
   return { ok: true };
 }
@@ -554,7 +665,17 @@ export function buildScenarioSummary(scenario: SavedScenario, document: GenuiDoc
   }
   const recompute = recomputeScenario(scenario, document, scenario.documentHash);
   if (recompute.ok && recompute.changed) {
-    lines.push('提示：按当前规则重算的结果与保存时不一致（规则或数据已变化）。');
+    lines.push('提示：按当前规则重算的结果与保存时不一致（规则或数据已变化）：');
+    for (const diff of recompute.diffs) {
+      if (diff.changed) lines.push(`- ${diff.id}：保存 ${diff.saved} → 当前 ${diff.current}`);
+    }
+    if (recompute.droppedFields > 0) {
+      lines.push(`（${recompute.droppedFields} 个参数超出当前取值范围，已按当前规则回落）`);
+    }
+  } else if (recompute.ok && recompute.ruleChanged) {
+    lines.push(
+      `提示：计算规则版本已变化（保存时 v${scenario.ruleVersion} → 当前 v${CALC_RULE_VERSION}），重算结果一致。`,
+    );
   }
   lines.push('请基于以上保存的方案继续讨论。');
   return lines.join('\n');

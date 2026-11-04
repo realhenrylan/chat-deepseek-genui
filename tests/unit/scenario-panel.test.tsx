@@ -7,8 +7,8 @@ import {
   SCENARIO_KEY_PREFIX,
   type ScenarioStorageArea,
 } from '../../src/content/scenario-store';
-import type { GenuiV3Document } from '../../src/protocol/types';
-import { documentStateSignature } from '../../src/runtime/card-state';
+import type { GenuiV3Document, InteractiveStateValues } from '../../src/protocol/types';
+import { documentStateSignature, type TableViewState } from '../../src/runtime/card-state';
 import type { SavedScenario } from '../../src/runtime/scenario';
 
 /**
@@ -66,8 +66,13 @@ const DOC: GenuiV3Document = {
 
 const activeCleanup: Array<() => void> = [];
 
-function setup(options: { now?: () => number } = {}) {
+function setup(options: {
+  now?: () => number;
+  seed?: (area: FakeArea) => void;
+  onApply?: (values: InteractiveStateValues, tables: Record<string, TableViewState>) => void;
+} = {}) {
   const area = new FakeArea();
+  options.seed?.(area);
   const store = createScenarioStore(area);
   const port = createScenarioPort({
     store,
@@ -85,6 +90,7 @@ function setup(options: { now?: () => number } = {}) {
       tables={{}}
       results={{ values: { total: 5000 }, errors: {} }}
       onContinue={onContinue}
+      onApply={options.onApply}
     />,
   );
   // 本环境未开 vitest globals，testing-library 无法自动清理，手动卸载。
@@ -336,5 +342,115 @@ describe('继续讨论交接', () => {
     const diffSummary = onContinue.mock.calls[1]![0];
     expect(diffSummary).toContain('方案对比');
     expect(diffSummary).toContain('请基于以上方案差异继续讨论。');
+  });
+});
+
+/** 直接写入本机的方案记录（模拟其他卡片保存的方案）。 */
+function seedScenario(area: FakeArea, overrides: Partial<SavedScenario>): SavedScenario {
+  const record: SavedScenario = {
+    format: 'genui-scenario',
+    version: 1,
+    id: 'scn_seed',
+    name: '他卡方案',
+    savedAt: 500,
+    documentHash: 'other-hash',
+    stateSignature: documentStateSignature(DOC),
+    protocolVersion: 3,
+    ruleVersion: 1,
+    source: { sessionId: '/a/chat/s/session', messageKey: 'vl:2', duplicateIndex: 0, title: '其他卡片' },
+    values: { budget: 3000, tier: 'standard' },
+    tables: {},
+    results: { values: { total: 3000 }, errors: {} },
+    ...overrides,
+  };
+  area.items.set(`${SCENARIO_KEY_PREFIX}${record.id}`, record);
+  return record;
+}
+
+describe('跨卡片摘要守卫（P1-1）', () => {
+  it('其他界面的方案不能导出摘要或交给继续讨论', async () => {
+    const { onContinue } = setup({ seed: (area) => seedScenario(area, {}) });
+    await waitFor(() => expect(screen.getByText('他卡方案')).toBeTruthy());
+
+    // 导出摘要被拦截并说明原因。
+    fireEvent.click(screen.getByRole('button', { name: '导出摘要' }));
+    expect(statusText()).toContain('文档哈希不同');
+    expect(statusText()).toContain('无法用当前卡片字段解释');
+
+    // 继续讨论被拦截，摘要不进入聊天。
+    fireEvent.click(screen.getByRole('button', { name: '继续讨论此方案' }));
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(statusText()).toContain('无法用当前卡片字段解释');
+
+    // 应用入口同样禁用。
+    expect(screen.getByRole('button', { name: '应用此方案' })).toBeDisabled();
+  });
+
+  it('本界面的方案摘要与应用入口可用', async () => {
+    const onApply = vi.fn();
+    const { onContinue } = setup({
+      seed: (area) => seedScenario(area, { documentHash: 'doc-hash' }),
+      onApply,
+    });
+    await waitFor(() => expect(screen.getByText('他卡方案')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '继续讨论此方案' }));
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onContinue.mock.calls[0]![0]).toContain('方案「他卡方案」');
+    expect(screen.getByRole('button', { name: '应用此方案' })).not.toBeDisabled();
+  });
+});
+
+describe('应用已保存方案（P2-3）', () => {
+  it('点击应用把方案参数与表格视图交给卡片', async () => {
+    const onApply = vi.fn();
+    const { area } = setup({ onApply });
+    fireEvent.change(screen.getByLabelText('方案名称'), { target: { value: '方案 A' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存当前方案' }));
+    await waitFor(() => expect(scenarioKeys(area)).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('button', { name: '应用此方案' }));
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply.mock.calls[0]![0]).toEqual({ budget: 5000, tier: 'standard' });
+    expect(onApply.mock.calls[0]![1]).toEqual({});
+    expect(statusText()).toContain('已应用方案「方案 A」');
+  });
+});
+
+describe('CSV 导出入口（P2-4）', () => {
+  it('没有表格数据时给出明确反馈', async () => {
+    const { area } = setup();
+    fireEvent.click(screen.getByRole('button', { name: '导出表格 CSV' }));
+    expect(statusText()).toContain('当前界面没有可导出的表格数据。');
+    expect(scenarioKeys(area)).toHaveLength(0);
+  });
+});
+
+describe('重算差异展示（P2-5）', () => {
+  it('保存值与重算值不一致时展开逐项对照', async () => {
+    setup({
+      seed: (area) =>
+        seedScenario(area, {
+          documentHash: 'doc-hash',
+          values: { budget: 4000, tier: 'standard' },
+          results: { values: { total: 999 }, errors: {} },
+        }),
+    });
+    await waitFor(() => expect(screen.getByText('他卡方案')).toBeTruthy());
+
+    const details = screen.getByText('保存时结果 vs 当前规则重算');
+    const container = details.closest('details');
+    expect(container).not.toBeNull();
+    expect(container?.textContent).toContain('total：保存 999 → 当前 4000');
+    expect(screen.getByText('按当前规则重算与保存时不一致')).toBeTruthy();
+  });
+
+  it('规则版本变化但数值一致也给出提示', async () => {
+    setup({ seed: (area) => seedScenario(area, { documentHash: 'doc-hash', ruleVersion: 99 }) });
+    await waitFor(() => expect(screen.getByText('他卡方案')).toBeTruthy());
+
+    expect(screen.getByText('计算规则版本已变化，重算结果一致')).toBeTruthy();
+    const details = screen.getByText('保存时结果 vs 当前规则重算').closest('details');
+    expect(details?.textContent).toContain('计算规则版本：保存时 v99');
   });
 });
