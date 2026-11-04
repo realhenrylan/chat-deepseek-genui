@@ -1,8 +1,8 @@
 # DeepSeek GenUI — MVP v0.1.1 开发任务
 
-当前分发版本：**0.1.1**（2026-11-03）。README 已加入明暗 Logo 并重写为功能介绍；项目版本、当前隐私说明、构建标记与发布 ZIP 已同步。`npm run check`（253 项单测）及默认 Edge/Chrome e2e（18 通过、6 跳过）通过，ZIP 含全部 7 个运行时文件。当前校验值见 [分层报告](phase8-verification.md)；本轮未重跑真实 origin 或真实模型会话。
+当前分发版本：**0.1.1**（2026-11-03）。README 已加入明暗 Logo 并重写为功能介绍；项目版本、当前隐私说明、构建标记与发布 ZIP 已同步。`npm run check`（545 项单测）及默认 Edge/Chrome e2e（24 通过、6 跳过）通过，ZIP 含全部 7 个运行时文件。当前校验值见 [分层报告](phase8-verification.md)；真实 origin 与真实模型会话本轮未重跑。
 
-更新日期：2026-11-03。阶段 0–8 已完成；Edge Add-ons 商店提交与审核未执行（原因与素材见阶段 8 记录与 [store-submission.md](store-submission.md)），发布准备不等于已上架。阶段 7 默认增强 v2 已接入运行时，并完成真实 DeepSeek 网页三场景、同类新问题、普通问答、关闭/恢复与说明面板验收；收尾修复三项 P2，并并入视口门控、版本对账标记与 browser-skill 操作手册。阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5/6 的本地示例与合成文档验证见对应阶段记录。阶段 8 完成全量复检、双浏览器版本记录、生产包与发布 ZIP、Edge Add-ons 政策逐条复核、隐私说明与分层验证报告，见 [phase8-verification.md](phase8-verification.md)。
+更新日期：2026-11-04。阶段 0–11 已完成；Edge Add-ons 商店提交与审核未执行（原因与素材见阶段 8 记录与 [store-submission.md](store-submission.md)），发布准备不等于已上架。阶段 7 默认增强 v2 已接入运行时，并完成真实 DeepSeek 网页三场景、同类新问题、普通问答、关闭/恢复与说明面板验收；收尾修复三项 P2，并并入视口门控、版本对账标记与 browser-skill 操作手册。阶段 4 真实会话单案例手工复核完成，原两项 P2 与计算上限严格检查已在阶段 5 收尾修复并重跑检查；阶段 5/6 的本地示例与合成文档验证见对应阶段记录。阶段 8 完成全量复检、双浏览器版本记录、生产包与发布 ZIP、Edge Add-ons 政策逐条复核、隐私说明与分层验证报告，见 [phase8-verification.md](phase8-verification.md)。阶段 9–11 分别并入 v5 本地语义模型、issue7 本轮模式与 issue8 依据旁路表/方案文件，验证记录见后文。
 
 产品目标与验收范围见[产品规格](product-spec.md)。Edge 官方资料、技术基线、权限和工程规范见[开发指南](development-guide.md)。执行前先阅读这两份文档。
 
