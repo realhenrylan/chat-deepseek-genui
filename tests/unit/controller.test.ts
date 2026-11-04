@@ -148,6 +148,36 @@ describe('页面生命周期控制器', () => {
     lifecycle.dispose();
   });
 
+  it('生成期间只撤下当前回复的卡片，历史回答保持挂载', async () => {
+    const doc = buildDoc(
+      assistant('history', VALID('历史回答')) + assistant('streaming', VALID('正在生成')),
+    );
+    const lifecycle = createPageLifecycle(doc, {
+      store: makeStore(true),
+      window,
+      debounceMs: 10,
+      settleMs: 40,
+    });
+
+    await lifecycle.start();
+    await advance(80);
+    expect(doc.querySelectorAll('.genui-card-host')).toHaveLength(2);
+
+    doc.body.insertAdjacentHTML('beforeend', stopControl());
+    await advance(40);
+
+    expect(isGenerationActive(doc)).toBe(true);
+    expect(doc.querySelectorAll('.genui-card-host')).toHaveLength(1);
+    const historyBlock = doc.querySelector<HTMLElement>('#history-block')!;
+    const streamingBlock = doc.querySelector<HTMLElement>('#streaming-block')!;
+    expect(historyBlock.previousElementSibling?.hasAttribute('data-genui-host')).toBe(true);
+    expect(historyBlock.getAttribute('data-genui-state')).toBe('mounted');
+    expect(streamingBlock.getAttribute('data-genui-status')).toBe('pending');
+    expect(streamingBlock.hasAttribute('data-genui-state')).toBe(false);
+
+    lifecycle.dispose();
+  });
+
   it('回复改写与会话节点替换会卸载旧卡片并只挂载当前节点', async () => {
     const doc = buildDoc(assistant('session-a', VALID('第一版')));
     const lifecycle = createPageLifecycle(doc, {

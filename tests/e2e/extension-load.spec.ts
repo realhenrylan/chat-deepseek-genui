@@ -64,6 +64,30 @@ const VALID_RAW_1 = '{"type":"genui","version":1,"elements":[{"kind":"text","val
 const VALID_RAW_2 = '{"type":"genui","version":1,"elements":[{"kind":"text","value":"第二张卡片"}]}';
 const USER_RAW = '{"type":"genui","version":1,"elements":[{"kind":"text","value":"用户消息中的块"}]}';
 const INVALID_RAW = '{"type":"genui",';
+const SORT_VALID_RAW = JSON.stringify({
+  type: 'genui',
+  version: 3,
+  title: '价格排序',
+  state: [],
+  derived: [],
+  elements: [
+    {
+      kind: 'table',
+      title: '价格表',
+      sortable: true,
+      initialSort: { key: 'price', dir: 'asc' },
+      columns: [
+        { key: 'price', label: '价格', numeric: true },
+        { key: 'name', label: '名称' },
+      ],
+      rows: [
+        { cells: { price: 30, name: '丙' } },
+        { cells: { price: 10, name: '甲' } },
+      ],
+    },
+  ],
+});
+const SORT_INVALID_RAW = SORT_VALID_RAW.replace('"dir":"asc"', '"direction":"asc"');
 const INTERACTIVE_RAW = JSON.stringify({
   type: 'genui',
   version: 2,
@@ -199,6 +223,7 @@ const MOCK_HTML =
   codeBlockHtml('e2e-block-1', 'genui', VALID_RAW_1) +
   codeBlockHtml('e2e-block-json', 'json', VALID_RAW_1) +
   codeBlockHtml('e2e-block-bad', 'genui', INVALID_RAW) +
+  codeBlockHtml('e2e-block-sort', 'genui', SORT_INVALID_RAW) +
   '</div>' +
   // AI 回复 2：第二个合法块，验证多块独立呈现。
   '<div class="ds-assistant-message-main-content" id="e2e-a2">' +
@@ -476,6 +501,55 @@ for (const { label, channel } of CHANNELS) {
       await expect(toggle).toHaveText('查看原始 JSON');
 
       // 模拟页唯一脚本即被测扩展：任何错误都判定失败。
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`阶段 3b · ${label} 排序字段错误的状态、修复草稿与恢复`, async () => {
+    test.skip(REAL_SITE, '模拟页交互断言仅在拦截模式执行');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    try {
+      await gotoAndAwaitMarker(page);
+      const block = page.locator('#e2e-block-sort');
+      await block.scrollIntoViewIfNeeded();
+      await expect(block).toHaveAttribute('data-genui-state', 'failed');
+      await expect(block).toHaveAttribute('data-genui-reason', 'schema-violation');
+      await expect(block).toHaveAttribute('data-genui-status', 'invalid');
+
+      const panel = page.locator('#e2e-block-sort + .genui-status-host');
+      await expect(panel).toHaveCount(1);
+      await expect(panel).toContainText('initialSort');
+      await expect(panel).toContainText('direction');
+
+      const input = page.locator('#e2e-input');
+      const repair = panel.locator('[data-genui-action="repair"]');
+      await repair.click();
+      await expect(input).toHaveValue(/elements\[0\]\.initialSort\.direction/);
+      const firstDraft = await input.inputValue();
+
+      // 重复点击不重复追加，也不自动发送。
+      await repair.click();
+      await expect(input).toHaveValue(firstDraft);
+
+      // 原始内容仍在，可用修复后的合法 v3 文档重新挂载。
+      await block.locator('pre span').evaluate((el, raw) => {
+        el.textContent = raw;
+      }, SORT_VALID_RAW);
+      await expect(block).toHaveAttribute('data-genui-state', 'mounted', { timeout: 8000 });
+      await expect(page.locator('.genui-card-host + #e2e-block-sort')).toHaveCount(1);
+      await expect(page.locator('#e2e-block-sort + .genui-status-host')).toHaveCount(0);
+      // 页面增强器可能继续往草稿追加说明，不要求整段相等；但修复内容仍只出现一次。
+      const finalDraft = await input.inputValue();
+      expect(finalDraft).toContain('elements[0].initialSort.direction');
+      // 修复请求中「错误摘要」和「错误路径」各引用一次；重复点击后仍是 2 次，没有整段重复追加。
+      expect(finalDraft.match(/elements\[0\]\.initialSort\.direction/g)?.length ?? 0).toBe(2);
+
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
       expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
     } finally {
@@ -924,25 +998,24 @@ for (const { label, channel } of CHANNELS) {
       await expect(page.locator('#e2e-stream-block')).toHaveAttribute('data-genui-state', 'mounted');
       await expect(page.locator('.genui-card-host')).toHaveCount(3);
 
-      // 重新生成沿用同一节点时先卸载旧卡片；稳定后只保留一个新卡片。
+      // 重新生成当前回复并沿用同一节点时先卸载该卡片；历史回答保持挂载。
       await page.evaluate(() => {
         const stop = document.createElement('div');
         stop.id = 'e2e-stop-regen';
         stop.setAttribute('role', 'button');
         stop.setAttribute('aria-label', '停止生成');
         document.body.append(stop);
-        const block = document.querySelector('#e2e-block-1 pre span');
+        const block = document.querySelector('#e2e-stream-block pre span');
         if (block) block.textContent = '{"type":"genui",';
       });
-      // 只卸载被改写的旧卡片，其他历史卡片不受影响。
       await expect(page.locator('.genui-card-host')).toHaveCount(2);
-      await expect(page.locator('#e2e-block-1')).toBeVisible();
-      await expect(page.locator('#e2e-block-1')).not.toHaveAttribute('data-genui-state', 'mounted');
-      await page.locator('#e2e-block-1 pre span').evaluate((node, value) => {
+      await expect(page.locator('#e2e-stream-block')).toBeVisible();
+      await expect(page.locator('#e2e-stream-block')).not.toHaveAttribute('data-genui-state', 'mounted');
+      await page.locator('#e2e-stream-block pre span').evaluate((node, value) => {
         node.textContent = value;
       }, VALID_RAW_2);
       await page.locator('#e2e-stop-regen').evaluate((node) => node.remove());
-      await expect(page.locator('#e2e-block-1')).toHaveAttribute('data-genui-state', 'mounted');
+      await expect(page.locator('#e2e-stream-block')).toHaveAttribute('data-genui-state', 'mounted');
       await expect(page.locator('.genui-card-host')).toHaveCount(3);
 
       // 会话列表替换回复容器后，旧卡片 host 和 React 根均被清理。

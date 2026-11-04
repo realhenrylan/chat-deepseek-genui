@@ -1,7 +1,7 @@
 import { LOG_PREFIX } from './lifecycle';
 import { createEnhancementManager, type EnhanceOptions } from './enhance';
 import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
-import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
+import { ASSISTANT_SELECTOR, findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createChromePlanStore } from './plan-store';
 import { createToggleControl, type ToggleControl } from './toggle';
@@ -71,7 +71,7 @@ function sameSnapshot(a: CandidateSnapshot[] | null, b: CandidateSnapshot[]): bo
 
 function nodeIsExtensionOwned(node: Node): boolean {
   const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-  return Boolean(element?.closest('[data-genui-host], [data-genui-control]'));
+  return Boolean(element?.closest('[data-genui-host], [data-genui-control], [data-genui-status-host]'));
 }
 
 function isOwnMutation(record: MutationRecord): boolean {
@@ -164,6 +164,15 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
       return;
     }
     if (isGenerationActive(doc)) {
+      // 生成中只显示等待状态；流式截断是暂态，不能写 failed。
+      // 只撤下当前正在生成的回复内卡片，历史回答的已挂载卡片保持不变。
+      const containers = doc.querySelectorAll<HTMLElement>(ASSISTANT_SELECTOR);
+      const activeContainer = containers[containers.length - 1];
+      const hasActiveBlock =
+        activeContainer !== undefined &&
+        candidates.some((candidate) => activeContainer.contains(candidate.block));
+      if (hasActiveBlock) manager.suspendMounted(activeContainer);
+      manager.markPending(candidates);
       stableSnapshot = null;
       clearSettleTimer();
       return;
@@ -180,6 +189,7 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     // wait for the original stability deadline instead of mounting early.
     if (settleTimer !== null) return;
 
+    manager.markValidating(candidates);
     const result = manager.reconcile(true);
     if (result.mounted || result.failed) {
       console.debug(`${LOG_PREFIX} lifecycle scan finished`, result);
