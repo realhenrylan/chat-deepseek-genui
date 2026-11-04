@@ -15,12 +15,10 @@ import { hashString } from '../runtime/hash';
  * - documentHash：原始 genui JSON 文本哈希，文档一旦被改写即更换键，
  *   旧状态不会套用到新文档。
  *
- * 两个独立的安全标记：
+ * 安全标记：
  * - ambiguous：消息键重复/文本指纹兜底/同消息出现完全相同的文档。此时
  *   不再让这些卡片共享键，而是按 DOM 元素分配一次性键（同一元素跨扫描
- *   稳定，节点替换后即失效），从根上避免串用；
- * - persistable：账号与会话都能验证，且身份不 ambiguous。只有这种身份
- *   允许读取/写入本机保存；账号未知时仍可做页面内恢复。
+ *   稳定，节点替换后即失效），从根上避免串用。
  */
 
 export const UNKNOWN_SESSION_ID = 'unknown-session';
@@ -37,7 +35,7 @@ const ACCOUNT_MARKERS: Array<{ selector: string; attribute: string }> = [
 ];
 
 export interface CardIdentity {
-  /** 页面内状态仓库与保存记录使用的键。 */
+  /** 页面内状态仓库使用的键。 */
   key: string;
   accountId: string;
   sessionId: string;
@@ -46,8 +44,6 @@ export interface CardIdentity {
   documentHash: string;
   /** true 表示消息/文档无法唯一区分，只能按元素隔离，不能共享状态。 */
   ambiguous: boolean;
-  /** true 表示账号、会话与消息身份都可靠，允许写入/读取本机保存。 */
-  persistable: boolean;
 }
 
 export interface ComputeIdentityOptions {
@@ -221,9 +217,6 @@ export function computeCardIdentities(
         duplicateIndex: seenCount,
         documentHash,
         ambiguous,
-        // 会话路由可验证时即可持久化；账号标记只用于叠加作用域，缺失时
-        // 记为 acct-unknown，不阻断保存（否则现网没有账号标记时功能不可用）。
-        persistable: !ambiguous && sessionId !== UNKNOWN_SESSION_ID,
       };
       identities.set(candidate.block, identity);
     }

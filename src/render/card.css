@@ -746,40 +746,6 @@
   font-size: 12px;
 }
 
-.genui-card-save,
-.genui-card-clear-plan {
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  border: 1px solid rgba(127, 127, 127, 0.45);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  padding: 3px 10px;
-}
-
-.genui-card-save:hover,
-.genui-card-clear-plan:hover {
-  background: rgba(127, 127, 127, 0.12);
-}
-
-.genui-card-save:disabled,
-.genui-card-clear-plan:disabled {
-  cursor: progress;
-  opacity: 0.6;
-}
-
-.genui-card-save:focus-visible,
-.genui-card-clear-plan:focus-visible {
-  outline: 2px solid #3988ff;
-  outline-offset: 2px;
-}
-
-.genui-card-plan-feedback {
-  margin: 0;
-  flex-basis: 100%;
-  color: #3988ff;
-  font-size: 12px;
 /* issue #5：继续讨论预览面板（快照摘要可编辑，用户再点一次才填入输入框）。 */
 .genui-followup {
   display: flex;
@@ -924,8 +890,6 @@
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand,
-.genui-card-root[data-site-theme='dark'] .genui-card-save,
-.genui-card-root[data-site-theme='dark'] .genui-card-clear-plan,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup {
   border-color: rgba(255, 255, 255, 0.26);
 }
@@ -933,8 +897,6 @@
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand:hover,
-.genui-card-root[data-site-theme='dark'] .genui-card-save:hover,
-.genui-card-root[data-site-theme='dark'] .genui-card-clear-plan:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup:hover {
   background: rgba(255, 255, 255, 0.1);
 }
@@ -986,274 +948,12 @@
   color: #ff9b91;
 }
 
-.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback,
-.genui-card-root[data-site-theme='dark'] .genui-card-plan-feedback {
+.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback {
   color: #7cb8ff;
 }
 
-/* ---------- issue #6：方案工作台 ---------- */
 
-.genui-scenario-panel {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed rgba(127, 127, 127, 0.35);
-  font-size: 12px;
-}
-
-.genui-scenario-heading {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.genui-scenario-save-row,
-.genui-scenario-compare-row,
-.genui-scenario-import-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.genui-scenario-label {
-  color: inherit;
-  opacity: 0.85;
-}
-
-.genui-scenario-name-input {
-  font: inherit;
-  padding: 3px 8px;
-  border: 1px solid rgba(127, 127, 127, 0.45);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  min-width: 160px;
-}
-
-.genui-scenario-panel button {
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  border: 1px solid rgba(127, 127, 127, 0.45);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  padding: 3px 10px;
-}
-
-.genui-scenario-panel button:hover:not(:disabled) {
-  background: rgba(127, 127, 127, 0.12);
-}
-
-.genui-scenario-panel button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.genui-scenario-panel button:focus-visible,
-.genui-scenario-name-input:focus-visible {
-  outline: 2px solid #3988ff;
-  outline-offset: 2px;
-}
-
-.genui-scenario-list {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-}
-
-.genui-scenario-empty {
-  color: inherit;
-  opacity: 0.7;
-}
-
-.genui-scenario-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
-}
-
-.genui-scenario-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.genui-scenario-name {
-  font-weight: 600;
-}
-
-.genui-scenario-time {
-  opacity: 0.75;
-}
-
-.genui-scenario-stale {
-  color: #b26a00;
-  font-size: 11px;
-  border: 1px solid rgba(178, 106, 0, 0.5);
-  border-radius: 8px;
-  padding: 1px 6px;
-}
-
-.genui-scenario-recompute {
-  margin: 4px 0;
-  font-size: 11px;
-}
-
-.genui-scenario-recompute summary {
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-.genui-scenario-recompute ul {
-  margin: 4px 0;
-  padding-left: 18px;
-}
-
-.genui-scenario-recompute-changed {
-  color: #b26a00;
-}
-
-.genui-scenario-recompute-note {
-  margin: 2px 0;
-  opacity: 0.75;
-}
-
-.genui-scenario-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.genui-scenario-compare-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.genui-scenario-compare-table th,
-.genui-scenario-compare-table td {
-  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
-  text-align: left;
-  padding: 4px 6px;
-}
-
-.genui-scenario-compare-table thead th {
-  background: rgba(127, 127, 127, 0.12);
-}
-
-.genui-scenario-row-changed th,
-.genui-scenario-row-changed td {
-  background: rgba(57, 136, 255, 0.1);
-}
-
-.genui-scenario-incompatible {
-  border: 1px solid rgba(210, 80, 60, 0.55);
-  border-radius: 8px;
-  padding: 6px 10px;
-  margin-bottom: 8px;
-}
-
-.genui-scenario-incompatible p {
-  margin: 0 0 4px;
-  color: #d2503c;
-}
-
-.genui-scenario-incompatible ul {
-  margin: 0;
-  padding-left: 18px;
-}
-
-.genui-scenario-compare-hint {
-  margin: 0 0 8px;
-  opacity: 0.75;
-}
-
-.genui-scenario-feedback,
-.genui-scenario-continue-feedback {
-  margin: 4px 0 0;
-  color: #3988ff;
-  font-size: 12px;
-}
-
-/* 暗色主题：方案工作台跟随卡片其余部分。 */
-.genui-card-root[data-site-theme='dark'] .genui-scenario-stale {
-  color: #ffbe6e;
-  border-color: rgba(255, 190, 110, 0.5);
-}
-
-.genui-card-root[data-site-theme='dark'] .genui-scenario-row-changed th,
-.genui-card-root[data-site-theme='dark'] .genui-scenario-row-changed td {
-  background: rgba(124, 184, 255, 0.14);
-}
-
-.genui-card-root[data-site-theme='dark'] .genui-scenario-compare-table thead th {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.genui-card-root[data-site-theme='dark'] .genui-scenario-incompatible p {
-  color: #ff9b91;
-}
-
-.genui-card-root[data-site-theme='dark'] .genui-scenario-feedback,
-.genui-card-root[data-site-theme='dark'] .genui-scenario-continue-feedback {
-  color: #7cb8ff;
-}
-
-.genui-card-root[data-site-theme='dark'] .genui-scenario-recompute-changed {
-  color: #ffbe6e;
-}
-
-/* ---------- 阶段 9：依据、假设与方案导出 ---------- */
-
-.genui-plan-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  border: 1px dashed rgba(127, 127, 127, 0.34);
-  border-radius: 8px;
-  font-size: 12px;
-}
-
-.genui-plan-label {
-  font-weight: 600;
-  opacity: 0.7;
-}
-
-.genui-plan-bar button {
-  margin: 0;
-  padding: 3px 9px;
-  border: 1px solid rgba(127, 127, 127, 0.4);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.genui-plan-bar button:hover {
-  border-color: #3988ff;
-  background: rgba(57, 136, 255, 0.1);
-}
-
-.genui-plan-origin {
-  opacity: 0.7;
-}
-
-.genui-plan-feedback {
-  margin: 0;
-  flex-basis: 100%;
-  color: #3988ff;
-}
+/* ---------- 阶段 9：依据与假设 ---------- */
 
 .genui-control-head,
 .genui-value-head {
@@ -1613,12 +1313,10 @@
   color: #7cb8ff;
 }
 
-.genui-card-root[data-site-theme='dark'] .genui-plan-bar,
 .genui-card-root[data-site-theme='dark'] .genui-provenance {
   border-color: rgba(255, 255, 255, 0.22);
 }
 
-.genui-card-root[data-site-theme='dark'] .genui-plan-bar button,
 .genui-card-root[data-site-theme='dark'] .genui-basis,
 .genui-card-root[data-site-theme='dark'] .genui-assumption-input,
 .genui-card-root[data-site-theme='dark'] .genui-assumption-select {
@@ -1651,10 +1349,6 @@
   color: #ffcf7a;
   border-color: rgba(255, 207, 122, 0.45);
   background: rgba(255, 207, 122, 0.1);
-}
-
-.genui-card-root[data-site-theme='dark'] .genui-plan-feedback {
-  color: #7cb8ff;
 }
 
 .genui-card-root[data-site-theme='dark'] .genui-basis-alert,

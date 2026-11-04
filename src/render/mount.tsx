@@ -1,9 +1,8 @@
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import type { GenuiDocument } from '../protocol/types';
-import type { CardUiState, PlanClearResult, PlanSaveResult } from '../runtime/card-state';
+import type { CardUiState } from '../runtime/card-state';
 import type { CardStateStore } from '../runtime/card-state-store';
-import type { ScenarioPort } from '../runtime/scenario';
 import cardCss from './card.css?inline';
 import { CardErrorBoundary } from './boundaries';
 import { Card } from './Card';
@@ -40,15 +39,8 @@ export interface MountCardOptions {
   /** 稳定卡片身份与页面内状态仓库（issue #2）；缺省时 Card 退化为内部状态。 */
   cardKey?: string;
   stateStore?: CardStateStore;
-  /** 从保存方案恢复出的初始状态（已按文档兼容性校验）。 */
+  /** 从页面内状态仓库恢复出的初始状态。 */
   initialState?: CardUiState;
-  /** 已保存方案的时间；null 表示没有可恢复的本机方案。 */
-  savedPlanAt?: number | null;
-  /** 用户主动「保存方案」/清除本机方案。 */
-  onSavePlan?: (state: CardUiState) => Promise<PlanSaveResult>;
-  onClearPlan?: () => Promise<PlanClearResult>;
-  /** 方案工作台端口（issue #6）；缺省时不渲染方案面板。 */
-  scenarioPort?: ScenarioPort | null;
 }
 
 export interface MountedCard {
@@ -85,10 +77,6 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
           cardKey={options.cardKey}
           stateStore={options.stateStore}
           initialState={options.initialState}
-          savedPlanAt={options.savedPlanAt}
-          onSavePlan={options.onSavePlan}
-          onClearPlan={options.onClearPlan}
-          scenarioPort={options.scenarioPort}
         />
       </CardErrorBoundary>,
     );

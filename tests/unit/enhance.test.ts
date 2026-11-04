@@ -7,8 +7,6 @@ import {
   createEnhancementManager,
   enhanceDocument,
 } from '../../src/content/enhance';
-import { UNKNOWN_SESSION_ID } from '../../src/content/identity';
-import { createPlanStore, type PlanStorageArea } from '../../src/content/plan-store';
 import { createCardStateStore } from '../../src/runtime/card-state-store';
 import { ElementRegistry } from '../../src/render/registry';
 
@@ -268,9 +266,8 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
   });
 });
 
-describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () => {
+describe('阶段 8：页面内卡片状态保留（issue #2）', () => {
   const SESSION = '/a/chat/s/session-1';
-  const ACCOUNT = 'user-1';
 
   const BUDGET_V2 = JSON.stringify({
     type: 'genui',
@@ -351,28 +348,6 @@ describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () 
     const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
     descriptor?.set?.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-  }
-
-  class MemoryArea implements PlanStorageArea {
-    readonly items = new Map<string, unknown>();
-
-    async get(keys: string | string[] | null): Promise<Record<string, unknown>> {
-      if (keys === null) return Object.fromEntries(this.items);
-      const list = typeof keys === 'string' ? [keys] : keys;
-      const result: Record<string, unknown> = {};
-      for (const key of list) {
-        if (this.items.has(key)) result[key] = this.items.get(key);
-      }
-      return result;
-    }
-
-    async set(items: Record<string, unknown>): Promise<void> {
-      for (const [key, value] of Object.entries(items)) this.items.set(key, value);
-    }
-
-    async remove(keys: string | string[]): Promise<void> {
-      for (const key of typeof keys === 'string' ? [keys] : keys) this.items.delete(key);
-    }
   }
 
   /** 带虚拟列表消息键的真实容器结构，避免身份退化为文本指纹。 */
@@ -506,186 +481,4 @@ describe('阶段 8：卡片状态保留与「保存方案」（issue #2）', () 
     manager.dispose();
   });
 
-  it('主动保存写入本机，清除后移除记录并恢复入口文案', async () => {
-    const area = new MemoryArea();
-    const planStore = createPlanStore(area);
-    const doc = budgetDoc();
-    enhanceDocument(doc, { planStore, sessionId: SESSION, accountId: ACCOUNT });
-
-    const host = doc.querySelector<HTMLElement>('.genui-card-host');
-    expect(host).not.toBeNull();
-    if (!host) return;
-    setInputValue(sliderOf(host), '7000');
-    await flushUi();
-
-    const save = host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save');
-    expect(save?.textContent).toBe('保存方案');
-    await flushUi();
-    save?.click();
-    await flushUi();
-
-    expect(area.items.size).toBe(1);
-    const [storageKey] = [...area.items.keys()];
-    expect(storageKey?.startsWith('genuiPlan:')).toBe(true);
-    expect(host.shadowRoot?.querySelector('.genui-card-plan-feedback')?.textContent).toContain(
-      '已保存到本机',
-    );
-    expect(save?.textContent).toBe('更新保存的方案');
-
-    const clear = host.shadowRoot?.querySelector<HTMLButtonElement>(
-      'button.genui-card-clear-plan',
-    );
-    expect(clear).not.toBeNull();
-    clear?.click();
-    await flushUi();
-
-    expect(area.items.size).toBe(0);
-    expect(host.shadowRoot?.querySelector('.genui-card-plan-feedback')?.textContent).toContain(
-      '已清除',
-    );
-    expect(save?.textContent).toBe('保存方案');
-    expect(host.shadowRoot?.querySelector('button.genui-card-clear-plan')).toBeNull();
-  });
-
-  it('会话或消息身份不可靠时拒绝写入本机并给出说明', async () => {
-    const area = new MemoryArea();
-    const doc = budgetDoc();
-    enhanceDocument(doc, { planStore: createPlanStore(area), sessionId: UNKNOWN_SESSION_ID });
-
-    const host = doc.querySelector<HTMLElement>('.genui-card-host');
-    expect(host).not.toBeNull();
-    if (!host) return;
-    const save = host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save');
-    expect(save).not.toBeNull();
-    await flushUi();
-    save?.click();
-    await flushUi();
-
-    expect(area.items.size).toBe(0);
-    expect(host.shadowRoot?.querySelector('.genui-card-plan-feedback')?.textContent).toContain(
-      '无法可靠确认',
-    );
-  });
-
-  it('账号标记缺失时仍按会话作用域保存，并在刷新后恢复', async () => {
-    const area = new MemoryArea();
-    const firstDoc = budgetDoc();
-    const first = createEnhancementManager(firstDoc, {
-      planStore: createPlanStore(area),
-      sessionId: SESSION,
-    });
-    await first.loadSavedPlans();
-    first.reconcile(true);
-
-    const host = firstDoc.querySelector<HTMLElement>('.genui-card-host');
-    expect(host).not.toBeNull();
-    if (!host) return;
-    setInputValue(sliderOf(host), '7000');
-    await flushUi();
-    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save')?.click();
-    await flushUi();
-
-    expect(area.items.size).toBe(1);
-    const [savedKey] = [...area.items.keys()];
-    expect(savedKey).toContain('acct-unknown');
-    expect(host.shadowRoot?.querySelector('.genui-card-plan-feedback')?.textContent).toContain(
-      '已保存到本机',
-    );
-    first.dispose();
-
-    const secondDoc = budgetDoc();
-    const second = createEnhancementManager(secondDoc, {
-      planStore: createPlanStore(area),
-      sessionId: SESSION,
-    });
-    await second.loadSavedPlans();
-    second.reconcile(true);
-
-    const restored = secondDoc.querySelector<HTMLElement>('.genui-card-host');
-    expect(restored).not.toBeNull();
-    if (!restored) return;
-    expect(sliderOf(restored).value).toBe('7000');
-    second.dispose();
-  });
-
-  it('账号作用域不同的保存记录不会被读取', async () => {
-    const area = new MemoryArea();
-    const firstDoc = budgetDoc();
-    enhanceDocument(firstDoc, {
-      planStore: createPlanStore(area),
-      sessionId: SESSION,
-      accountId: ACCOUNT,
-    });
-
-    const firstHost = firstDoc.querySelector<HTMLElement>('.genui-card-host');
-    expect(firstHost).not.toBeNull();
-    if (!firstHost) return;
-    setInputValue(sliderOf(firstHost), '7000');
-    await flushUi();
-    firstHost.shadowRoot
-      ?.querySelector<HTMLButtonElement>('button.genui-card-save')
-      ?.click();
-    await flushUi();
-    expect(area.items.size).toBe(1);
-
-    const secondDoc = budgetDoc();
-    const second = createEnhancementManager(secondDoc, {
-      planStore: createPlanStore(area),
-      sessionId: SESSION,
-      accountId: 'user-2',
-    });
-    await second.loadSavedPlans();
-    second.reconcile(true);
-
-    const restored = secondDoc.querySelector<HTMLElement>('.genui-card-host');
-    expect(restored).not.toBeNull();
-    if (!restored) return;
-    expect(sliderOf(restored).value).toBe('5000');
-    expect(
-      restored.shadowRoot?.querySelector('button.genui-card-save')?.textContent,
-    ).toBe('保存方案');
-
-    second.dispose();
-  });
-
-  it('刷新后由新管理器加载保存记录并恢复方案', async () => {
-    const area = new MemoryArea();
-    const firstDoc = budgetDoc();
-    const first = createEnhancementManager(firstDoc, {
-      planStore: createPlanStore(area),
-      sessionId: SESSION,
-      accountId: ACCOUNT,
-    });
-    await first.loadSavedPlans();
-    first.reconcile(true);
-
-    const host = firstDoc.querySelector<HTMLElement>('.genui-card-host');
-    expect(host).not.toBeNull();
-    if (!host) return;
-    setInputValue(sliderOf(host), '7000');
-    await flushUi();
-    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save')?.click();
-    await flushUi();
-    expect(area.items.size).toBe(1);
-    first.dispose();
-
-    const secondDoc = budgetDoc();
-    const second = createEnhancementManager(secondDoc, {
-      planStore: createPlanStore(area),
-      sessionId: SESSION,
-      accountId: ACCOUNT,
-    });
-    await second.loadSavedPlans();
-    second.reconcile(true);
-
-    const restored = secondDoc.querySelector<HTMLElement>('.genui-card-host');
-    expect(restored).not.toBeNull();
-    if (!restored) return;
-    expect(sliderOf(restored).value).toBe('7000');
-    expect(
-      restored.shadowRoot?.querySelector('button.genui-card-save')?.textContent,
-    ).toBe('更新保存的方案');
-
-    second.dispose();
-  });
 });

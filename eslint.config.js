@@ -5,7 +5,17 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     // .agents/** 是其他 agent 会话的嵌套工作树（含各自的配置根），不参与本仓库的 lint。
-    ignores: ['dist/**', 'node_modules/**', '.tmp/**', 'test-results/**', 'playwright-report/**', '.agents/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      '.tmp/**',
+      'test-results/**',
+      'playwright-report/**',
+      '.agents/**',
+      // 构建期生成的 Ajv standalone 校验器：超长单行，由 gen-validator 与
+      // generated-validator 测试负责正确性；ESLint 解析该文件需要数分钟。
+      'src/protocol/genui-validator.generated.ts',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

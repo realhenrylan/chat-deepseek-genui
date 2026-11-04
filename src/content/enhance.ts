@@ -9,26 +9,14 @@ import {
   type GenuiDiagnostic,
 } from '../protocol/diagnose';
 import {
-  CARD_STATE_VERSION,
   createCardUiState,
-  documentStateSignature,
-  isCompatibleSavedPlan,
-  restoreCardUiState,
-  sanitizeCardValues,
-  sanitizeTableViews,
   type CardUiState,
-  type PlanClearResult,
-  type PlanSaveResult,
-  type SavedCardPlan,
 } from '../runtime/card-state';
 import { createCardStateStore, type CardStateStore } from '../runtime/card-state-store';
 import { GenuiStatusPanel, STATUS_ATTR, STATUS_HOST_ATTR, type BlockStatus } from './failure-ui';
 import type { RepairDeliveryResult } from './repair';
 import { mountCard, type MountedCard } from '../render/mount';
 import type { ElementRegistry } from '../render/registry';
-import type { PlanStore } from './plan-store';
-import type { ScenarioPort } from '../runtime/scenario';
-import { createScenarioPort, type ScenarioStore } from './scenario-store';
 
 /**
  * 识别 → 解析 → 挂载的单块链路，以及供页面生命周期控制器使用的可清理管理器。
@@ -66,16 +54,8 @@ export interface EnhanceOptions {
   sessionId?: string;
   /** 账号标记覆盖（测试注入）；缺省读取页面稳定标记，缺失时禁止本机保存。 */
   accountId?: string;
-  /** 本机「保存方案」存储；null/缺省表示不提供持久化入口。 */
-  planStore?: PlanStore | null;
-  /** 方案工作台存储（issue #6）；null/缺省表示不提供方案面板。 */
-  scenarioStore?: ScenarioStore | null;
   /** 页面内状态仓库覆盖（测试注入）；缺省新建且有上限。 */
   stateStore?: CardStateStore;
-  /** 测试直接注入已加载的保存方案；与 planStore 结果合并时以此为准。 */
-  savedPlans?: Record<string, SavedCardPlan>;
-  /** 保存时间源（测试可控）。 */
-  now?: () => number;
   /**
    * 「生成修复请求」投递：生产接线 content/repair.deliverRepairRequest
    * （写入可见草稿或复制到剪贴板，绝不自动发送）。
@@ -148,36 +128,12 @@ export class EnhancementManager {
   private readonly statuses = new Map<HTMLElement, StatusRecord>();
   private enabled = true;
   private readonly stateStore: CardStateStore;
-  private readonly now: () => number;
-  /** 已加载到内存的保存方案；键与卡片身份一致。 */
-  private savedPlans: Record<string, SavedCardPlan>;
-  private plansLoaded = false;
 
   constructor(
     private readonly doc: Document,
     private readonly options: EnhanceOptions = {},
   ) {
     this.stateStore = options.stateStore ?? createCardStateStore();
-    this.savedPlans = options.savedPlans ? { ...options.savedPlans } : {};
-    this.now = options.now ?? Date.now;
-  }
-
-  /**
-   * 预载本机保存方案。控制器在首次扫描前等待，保证恢复先于挂载；
-   * 存储不可用或读取失败时只记录日志，页面内恢复仍然有效。
-   */
-  async loadSavedPlans(): Promise<void> {
-    if (this.plansLoaded) return;
-    this.plansLoaded = true;
-    const store = this.options.planStore;
-    if (!store) return;
-    try {
-      const saved = await store.loadAll();
-      // 测试注入的记录优先，避免异步读取覆盖预期夹具。
-      this.savedPlans = { ...saved, ...this.savedPlans };
-    } catch (error) {
-      console.warn(`${LOG_PREFIX} failed to load saved plans`, error);
-    }
   }
 
   private ensureStatus(
@@ -390,121 +346,16 @@ export class EnhancementManager {
   }
 
   /**
-   * 首次挂载状态优先级：页面内仓库 > 兼容的保存方案 > 文档初始值。
-   * 保存记录只在身份可持久化（账号、会话可验证且无歧义）时读取，
-   * 避免在账号切换或消息身份不清时串用别人的方案。
+   * 首次挂载优先沿用页面内仓库：同一文档的节点替换/重新挂载保留已调整值。
+   * 仓库缺失时按文档初始值新建，并写回仓库供后续挂载使用。
    */
-  private resolveInitialState(
-    identity: CardIdentity,
-    doc: GenuiDocument,
-  ): { state: CardUiState; savedPlanAt: number | null } {
+  private resolveInitialState(identity: CardIdentity, doc: GenuiDocument): CardUiState {
     const existing = this.stateStore.get(identity.key);
-    const plan = identity.persistable ? this.savedPlans[identity.key] : undefined;
-    const compatible =
-      plan && isCompatibleSavedPlan(plan, doc, identity.documentHash) ? plan : null;
+    if (existing) return existing;
 
-    if (existing) {
-      return { state: existing, savedPlanAt: compatible?.savedAt ?? null };
-    }
-    if (compatible) {
-      const restored = restoreCardUiState(doc, compatible);
-      this.stateStore.set(identity.key, restored.state);
-      return { state: restored.state, savedPlanAt: compatible.savedAt };
-    }
     const fresh = createCardUiState(doc);
     this.stateStore.set(identity.key, fresh);
-    return { state: fresh, savedPlanAt: null };
-  }
-
-  /** 显式保存：仅在用户点击时调用；身份不可靠时拒绝写入本机。 */
-  private async savePlan(
-    identity: CardIdentity,
-    doc: GenuiDocument,
-    state: CardUiState,
-  ): Promise<PlanSaveResult> {
-    const store = this.options.planStore;
-    if (!store) {
-      return { ok: false, message: '保存失败：当前环境不支持本机存储。' };
-    }
-    if (!identity.persistable) {
-      return {
-        ok: false,
-        message: '保存失败：当前会话或消息身份无法可靠确认，未保存到本机。',
-      };
-    }
-
-    const plan: SavedCardPlan = {
-      stateVersion: CARD_STATE_VERSION,
-      documentHash: identity.documentHash,
-      stateSignature: documentStateSignature(doc),
-      accountId: identity.accountId,
-      sessionId: identity.sessionId,
-      messageKey: identity.messageKey,
-      duplicateIndex: identity.duplicateIndex,
-      savedAt: this.now(),
-      values: sanitizeCardValues(doc, state.values).values,
-      tables: sanitizeTableViews(state.tables),
-    };
-    const previous = this.savedPlans[identity.key];
-    this.savedPlans[identity.key] = plan;
-    const result = await store.save(identity.key, plan);
-    if (!result.ok) {
-      if (previous) this.savedPlans[identity.key] = previous;
-      else delete this.savedPlans[identity.key];
-    }
-    return result;
-  }
-
-  private async clearPlan(identity: CardIdentity): Promise<PlanClearResult> {
-    const store = this.options.planStore;
-    if (!store) {
-      return { ok: false, message: '清除失败：当前环境不支持本机存储。' };
-    }
-    const previous = this.savedPlans[identity.key];
-    delete this.savedPlans[identity.key];
-    const result = await store.remove(identity.key);
-    if (!result.ok && previous) this.savedPlans[identity.key] = previous;
-    return result;
-  }
-
-  private createScenarioPortFor(
-    store: ScenarioStore,
-    identity: CardIdentity,
-    doc: GenuiDocument,
-  ): ScenarioPort {
-    const port = createScenarioPort({
-      store,
-      document: doc,
-      documentHash: identity.documentHash,
-      source: {
-        sessionId: identity.sessionId,
-        messageKey: identity.messageKey,
-        duplicateIndex: identity.duplicateIndex,
-        title: doc.title ?? '',
-      },
-      now: this.now,
-    });
-    return {
-      documentHash: port.documentHash,
-      list: () => port.list(),
-      save: async (request) => {
-        if (identity.ambiguous) {
-          return {
-            ok: false,
-            message: '保存失败：当前会话或消息身份无法可靠确认，未保存到本机。',
-          };
-        }
-        return port.save(request);
-      },
-      remove: (id, name) => port.remove(id, name),
-      clear: () => port.clear(),
-      importText: async (text) => {
-        if (identity.ambiguous) {
-          return { ok: false, message: '导入失败：当前会话或消息身份无法可靠确认，未写入本机。' };
-        }
-        return port.importText(text);
-      },
-    };
+    return fresh;
   }
 
   private mountCandidate(
@@ -566,13 +417,6 @@ export class EnhancementManager {
     let fatalDuringInitialRender = false;
     let record: MountedRecord | null = null;
 
-    // 方案工作台端口：绑定当前文档与身份；身份不可靠时拒绝写入本机
-    // （与 plan 路径同一口径），但保留删除/清理等移除能力。
-    const scenarioStore = this.options.scenarioStore;
-    const scenarioPort = scenarioStore
-      ? this.createScenarioPortFor(scenarioStore, identity, parsed.document)
-      : undefined;
-
     try {
       mountedCard = mountCard(host, {
         document: parsed.document,
@@ -581,13 +425,7 @@ export class EnhancementManager {
         onContinue: this.options.onContinue,
         cardKey: identity.key,
         stateStore: this.stateStore,
-        initialState: resolved.state,
-        savedPlanAt: resolved.savedPlanAt,
-        onSavePlan: this.options.planStore
-          ? (state) => this.savePlan(identity, parsed.document, state)
-          : undefined,
-        onClearPlan: this.options.planStore ? () => this.clearPlan(identity) : undefined,
-        scenarioPort,
+        initialState: resolved,
         onToggleRaw: (showRaw) => {
           // 卡片保持可见，否则「收起原始 JSON」将没有可点的入口。
           block.style.display = showRaw ? originalDisplay : 'none';

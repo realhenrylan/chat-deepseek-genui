@@ -7,11 +7,6 @@ import type {
   StateVariable,
   TextElement,
 } from '../protocol/types';
-import {
-  PLAN_MAX_LENGTH,
-  parsePlanImport,
-  serializePlan,
-} from '../protocol/plan';
 import { todayLocalDate } from '../protocol/provenance';
 import { isStepAligned } from '../protocol/step';
 import { hasOwn } from '../runtime/records';
@@ -23,14 +18,10 @@ import {
 } from '../runtime/evaluate';
 import {
   createCardUiState,
-  restoreCardUiState,
   type CardUiState,
-  type PlanClearResult,
-  type PlanSaveResult,
   type TableViewState,
 } from '../runtime/card-state';
 import type { CardStateStore } from '../runtime/card-state-store';
-import type { ScenarioPort } from '../runtime/scenario';
 import { ElementErrorBoundary } from './boundaries';
 import { CompositeElementsView } from './composite';
 import { createContinueSnapshot } from './continue-snapshot';
@@ -47,7 +38,6 @@ import {
   type ContinueSummaryInput,
 } from './summarize';
 import { ProvenancePanel } from './provenance';
-import { ScenarioPanel } from './scenario-panel';
 import { getBrandMarkUrl } from '../branding';
 
 /**
@@ -96,26 +86,11 @@ export interface CardProps {
    */
   cardKey?: string;
   stateStore?: CardStateStore;
-  /** 首次挂载的已校验状态（来自保存方案恢复或上层预置）。 */
+  /** 首次挂载的已校验状态（来自页面内状态仓库或上层预置）。 */
   initialState?: CardUiState;
-  /** 已保存到本机的方案时间；null 表示当前没有可恢复方案。 */
-  savedPlanAt?: number | null;
-  /** 用户主动「保存方案」；未接线时不显示入口，也绝不自动保存。 */
-  onSavePlan?: (state: CardUiState) => Promise<PlanSaveResult>;
-  /** 清除本机保存的方案。 */
-  onClearPlan?: () => Promise<PlanClearResult>;
-  /**
-   * 方案工作台端口（issue #6）：具名方案的保存/比较/导入导出。
-   * 未接线或 v1 静态文档时不渲染面板。
-   */
-  scenarioPort?: ScenarioPort | null;
 }
 
 const EMPTY_CALCULATION: DerivedCalculation = { values: {}, errors: {}, operations: 0 };
-
-function readErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function Card({
   document: initialDocument,
@@ -126,20 +101,11 @@ export function Card({
   cardKey,
   stateStore,
   initialState,
-  savedPlanAt,
-  onSavePlan,
-  onClearPlan,
-  scenarioPort,
 }: CardProps) {
   const brandMarkUrl = getBrandMarkUrl();
-  const [doc, setDoc] = useState<GenuiDocument>(initialDocument);
+  const [doc] = useState<GenuiDocument>(initialDocument);
   const [today] = useState(() => todayLocalDate());
-  const [importedPlan, setImportedPlan] = useState<{
-    fileName: string;
-    exportedAt: string;
-  } | null>(null);
   const [editedState, setEditedState] = useState<Record<string, true>>({});
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editedIds = Object.keys(editedState).sort();
   const hasEdits = editedIds.length > 0;
   const [showRaw, setShowRaw] = useState(false);
@@ -160,9 +126,6 @@ export function Card({
   const hasFieldErrors = Object.keys(fieldErrors).length > 0;
   // 表格的筛选/排序由外部状态驱动，重置时递增该计数器强制重新挂载表格。
   const [resetToken, setResetToken] = useState(0);
-  const [savedAt, setSavedAt] = useState<number | null>(savedPlanAt ?? null);
-  const [planFeedback, setPlanFeedback] = useState<string | null>(null);
-  const [planBusy, setPlanBusy] = useState(false);
   const [preview, setPreview] = useState<FollowupPreview | null>(null);
   const previewTextRef = useRef<HTMLTextAreaElement | null>(null);
   const bodyId = useId();
@@ -389,147 +352,6 @@ export function Card({
     closePreview();
   };
 
-  /** 应用已保存方案：参数与表格视图经文档清洗后整体替换当前状态。 */
-  const handleApplyScenario = (values: Record<string, number | string>, nextTables: Record<string, TableViewState>) => {
-    if (doc.version === 1) return;
-    const restored = restoreCardUiState(doc, { values, tables: nextTables });
-    setState(restored.state.values);
-    setDrafts({});
-    setFieldErrors({});
-    setTables(restored.state.tables);
-    writeState(restored.state.values, restored.state.tables);
-    setResetToken((previous) => previous + 1);
-    // 参数整体替换后，旧预览快照不再代表当前结果。
-    closePreview();
-  };
-
-  // 「保存方案」只在用户显式点击时写入本机；交互本身绝不自动持久化。
-  const handleSavePlan = async () => {
-    if (!onSavePlan || planBusy) return;
-    setPlanBusy(true);
-    setPlanFeedback(null);
-    try {
-      const result = await onSavePlan({ values: state, tables });
-      if (result.ok) {
-        setSavedAt(result.savedAt);
-        setPlanFeedback(
-          result.evicted > 0
-            ? `已保存到本机，刷新后可恢复；超出容量上限，已清理最早 ${result.evicted} 条保存。`
-            : '已保存到本机，刷新后可恢复。',
-        );
-      } else {
-        setPlanFeedback(result.message);
-      }
-    } catch (error) {
-      setPlanFeedback(`保存失败：${readErrorMessage(error)}`);
-    } finally {
-      setPlanBusy(false);
-    }
-  };
-
-  const handleClearPlan = async () => {
-    if (!onClearPlan || planBusy) return;
-    setPlanBusy(true);
-    setPlanFeedback(null);
-    try {
-      const result = await onClearPlan();
-      if (result.ok) {
-        setSavedAt(null);
-        setPlanFeedback('已清除本机保存的方案。');
-      } else {
-        setPlanFeedback(result.message);
-      }
-    } catch (error) {
-      setPlanFeedback(`清除失败：${readErrorMessage(error)}`);
-    } finally {
-      setPlanBusy(false);
-    }
-  };
-
-  const readFileText = async (file: File): Promise<string> => {
-    if (typeof file.text === 'function') return file.text();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ''));
-      reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
-      reader.readAsText(file);
-    });
-  };
-
-  const handleExportPlan = () => {
-    if (doc.version === 1) return;
-    if (hasFieldErrors) {
-      setPlanFeedback('存在未确认的输入：请先修正或恢复有效值，再导出方案。');
-      return;
-    }
-    try {
-      const text = serializePlan(doc, state, new Date(), editedIds);
-      if (typeof URL.createObjectURL !== 'function') {
-        setPlanFeedback('当前环境不支持文件下载；方案未写出。');
-        return;
-      }
-      const blob = new Blob([text], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = window.document.createElement('a');
-      anchor.href = url;
-      anchor.download = `genui-plan-${today}.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      setPlanFeedback('方案已导出：包含界面、来源/依据与当前状态。');
-    } catch (error) {
-      setPlanFeedback(`导出失败：${readErrorMessage(error)}`);
-    }
-  };
-
-  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-    if (file.size > PLAN_MAX_LENGTH) {
-      setPlanFeedback('导入失败：方案文件超过大小上限。');
-      return;
-    }
-    try {
-      const parsed = parsePlanImport(await readFileText(file));
-      if (!parsed.ok) {
-        setPlanFeedback(`导入失败：${parsed.detail}`);
-        return;
-      }
-      const plan = parsed.plan;
-      setDoc(plan.document);
-      setState(plan.state);
-      setDrafts({});
-      setFieldErrors({});
-      setTables({});
-      const restoredEdited = plan.editedState ?? [];
-      setEditedState(Object.fromEntries(restoredEdited.map((id) => [id, true as const])));
-      writeState(plan.state, {});
-      setResetToken((previous) => previous + 1);
-      setImportedPlan({ fileName: file.name, exportedAt: plan.exportedAt });
-      setPlanFeedback('已恢复方案与当前状态；来源、依据和适用时间随方案载入。');
-      closePreview();
-    } catch (error) {
-      setPlanFeedback(`导入失败：${readErrorMessage(error)}`);
-    }
-  };
-
-  const handleRestoreOriginal = () => {
-    setDoc(initialDocument);
-    const next = initialDocument.version === 1
-      ? {}
-      : createInitialState(initialDocument);
-    setState(next);
-    setDrafts({});
-    setFieldErrors({});
-    setTables({});
-    setEditedState({});
-    writeState(next, {});
-    setResetToken((previous) => previous + 1);
-    setImportedPlan(null);
-    setPlanFeedback(null);
-    closePreview();
-  };
 
   const renderLegacyElement = (element: TextElement | InteractiveElement, index: number) => {
     if (element.kind === 'text') {
@@ -564,7 +386,6 @@ export function Card({
       className="genui-card"
       data-genui-card=""
       data-genui-version={doc.version}
-      data-plan-imported={importedPlan ? 'true' : undefined}
     >
       <header className="genui-card-header">
         {brandMarkUrl ? (
@@ -583,47 +404,9 @@ export function Card({
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
-        {doc.version === 1 ? null : (
-          <div className="genui-plan-bar">
-            <span className="genui-plan-label">方案文件</span>
-            <button type="button" className="genui-plan-export" onClick={handleExportPlan}>
-              导出方案文件
-            </button>
-            <button
-              type="button"
-              className="genui-plan-import"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              导入方案文件
-            </button>
-            {importedPlan ? (
-              <button type="button" className="genui-plan-restore" onClick={handleRestoreOriginal}>
-                恢复原始界面
-              </button>
-            ) : null}
-            <input
-              ref={fileInputRef}
-              className="genui-plan-file"
-              type="file"
-              accept="application/json,.json"
-              hidden
-              onChange={(event) => void handleImportFile(event)}
-            />
-            {importedPlan ? (
-              <span className="genui-plan-origin">
-                已载入 {importedPlan.fileName} · 导出于 {importedPlan.exportedAt}
-              </span>
-            ) : null}
-            {planFeedback ? (
-              <span className="genui-plan-feedback" role="status">
-                {planFeedback}
-              </span>
-            ) : null}
-          </div>
-        )}
         {hasEdits ? (
           <p className="genui-edit-banner">
-            输入已修改：静态文字/说明按初始条件生成，可能已过时；当前值与导出会标注「用户修改」并保留原依据。
+            输入已修改：静态文字/说明按初始条件生成，可能已过时；当前值会标注「用户修改」并保留原依据。
           </p>
         ) : null}
         {doc.version === 3 || doc.version === 4 || doc.version === 5 || doc.version === 6 ? (
@@ -666,17 +449,6 @@ export function Card({
             today={today}
           />
         ) : null}
-        {doc.version === 1 || !scenarioPort ? null : (
-          <ScenarioPanel
-            document={doc}
-            port={scenarioPort}
-            values={state}
-            tables={tables}
-            results={{ values: calculation.values, errors: calculation.errors }}
-            onContinue={onContinue}
-            onApply={handleApplyScenario}
-          />
-        )}
       </div>
       {preview ? (
         <section
@@ -759,37 +531,12 @@ export function Card({
             继续讨论
           </button>
         )}
-        {doc.version === 1 || !onSavePlan ? null : (
-          <button
-            type="button"
-            className="genui-card-save"
-            disabled={planBusy}
-            onClick={() => void handleSavePlan()}
-          >
-            {savedAt !== null ? '更新保存的方案' : '保存方案'}
-          </button>
-        )}
-        {savedAt !== null && onClearPlan ? (
-          <button
-            type="button"
-            className="genui-card-clear-plan"
-            disabled={planBusy}
-            onClick={() => void handleClearPlan()}
-          >
-            清除保存
-          </button>
-        ) : null}
         <button type="button" className="genui-card-toggle" onClick={handleToggle}>
           {showRaw ? '收起原始 JSON' : '查看原始 JSON'}
         </button>
         {followupFeedback ? (
           <p className="genui-card-followup-feedback" role="status">
             {followupFeedback}
-          </p>
-        ) : null}
-        {planFeedback ? (
-          <p className="genui-card-plan-feedback" role="status">
-            {planFeedback}
           </p>
         ) : null}
         <span className="genui-card-note">

@@ -3,8 +3,6 @@ import { createEnhancementManager, type EnhanceOptions } from './enhance';
 import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
 import { ASSISTANT_SELECTOR, findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
-import { createChromePlanStore } from './plan-store';
-import { createChromeScenarioStore } from './scenario-store';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
 import {
@@ -98,15 +96,9 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   // 视口门控：块首次进入视口前不把瞬时解析失败当真实失败；进入后立即重扫。
   const gate: ViewportGateAdapter | null =
     options.enableViewportGate === true ? createViewportGateAdapter(win, () => scheduleScan(0)) : null;
-  // 本机保存方案：仅由用户在卡片内显式保存时写入；测试可注入或传 null 关闭。
-  const planStore =
-    options.planStore === undefined ? createChromePlanStore() : options.planStore;
-  // 方案工作台（issue #6）：与 planStore 同一注入模式。
-  const scenarioStore =
-    options.scenarioStore === undefined ? createChromeScenarioStore() : options.scenarioStore;
   const managerOptions: EnhanceOptions = gate
-    ? { ...options, planStore, scenarioStore, isBlockUnverifiable: gate.isBlockUnverifiable }
-    : { ...options, planStore, scenarioStore };
+    ? { ...options, isBlockUnverifiable: gate.isBlockUnverifiable }
+    : options;
   const manager = createEnhancementManager(doc, managerOptions);
   const store = options.store === undefined ? createExtensionSettingsStore() : options.store;
   const debounceMs = options.debounceMs ?? 100;
@@ -303,10 +295,6 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     } catch (error) {
       console.warn(`${LOG_PREFIX} could not load GenUI setting; defaulting to enabled`, error);
     }
-    if (!started) return;
-
-    // 先载入用户主动保存的方案，保证首次挂载就能恢复；读取失败只告警。
-    await manager.loadSavedPlans();
     if (!started) return;
 
     settingsLoaded = true;

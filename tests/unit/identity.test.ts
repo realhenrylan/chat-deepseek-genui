@@ -98,12 +98,10 @@ describe('卡片身份：会话与消息', () => {
     const unknown = identitiesFor(doc)[0];
     expect(unknown?.sessionId).toBe(UNKNOWN_SESSION_ID);
     expect(unknown?.ambiguous).toBe(false);
-    expect(unknown?.persistable).toBe(false);
 
     // 账号标记存在也不能弥补会话未知。
     const unknownWithAccount = identitiesFor(doc, { accountId: 'u1' })[0];
     expect(unknownWithAccount?.sessionId).toBe(UNKNOWN_SESSION_ID);
-    expect(unknownWithAccount?.persistable).toBe(false);
   });
 
   it('消息键优先虚拟列表 key，其次 data-message-id', () => {
@@ -131,7 +129,6 @@ describe('卡片身份：会话与消息', () => {
     // 元素级键仍在同一元素上跨扫描稳定（WeakMap），但节点替换后即失效。
     expect(first[0]?.key).toBe(second[0]?.key);
     expect(first[1]?.key).toBe(second[1]?.key);
-    expect(first[0]?.persistable).toBe(false);
   });
 
   it('删除前面的重复卡不会让后面的卡片继承状态', () => {
@@ -174,7 +171,6 @@ describe('卡片身份：不可靠标记的保守处理', () => {
     expect(identity?.messageKey.startsWith('fp:')).toBe(true);
     expect(identity?.ambiguous).toBe(true);
     expect(identity?.key.startsWith('amb|')).toBe(true);
-    expect(identity?.persistable).toBe(false);
   });
 
   it('文本指纹会忽略空白差异，但消息内容变化会更换指纹', () => {
@@ -222,7 +218,6 @@ describe('卡片身份：账号作用域', () => {
     const identity = identitiesFor(doc, { sessionId: '/a/chat/s/s' })[0];
     expect(identity?.accountId).toBe(accountScope(ACCOUNT));
     expect(identity?.accountId).not.toContain(ACCOUNT);
-    expect(identity?.persistable).toBe(true);
   });
 
   it('账号标记缺失时仍按会话作用域保存，页面内键稳定', () => {
@@ -233,7 +228,6 @@ describe('卡片身份：账号作用域', () => {
     const identity = identitiesFor(doc, { sessionId: '/a/chat/s/s' })[0];
     expect(identity?.accountId).toBe(UNKNOWN_ACCOUNT_ID);
     expect(identity?.ambiguous).toBe(false);
-    expect(identity?.persistable).toBe(true);
     expect(identity?.key).toContain(`|${UNKNOWN_ACCOUNT_ID}|`);
     expect(identitiesFor(doc, { sessionId: '/a/chat/s/s' })[0]?.key).toBe(identity?.key);
   });
@@ -246,7 +240,6 @@ describe('卡片身份：账号作用域', () => {
     const first = identitiesFor(doc, { sessionId: '/a/chat/s/s', accountId: 'u1' })[0];
     const second = identitiesFor(doc, { sessionId: '/a/chat/s/s', accountId: 'u2' })[0];
     expect(first?.key).not.toBe(second?.key);
-    expect(first?.persistable).toBe(true);
   });
 });
 
