@@ -44,7 +44,7 @@ Edge 与 Chrome 可以共用大部分 Chromium 扩展代码，但部分 API 存�
 
 - 页面匹配范围限定为 https://chat.deepseek.com/*，不申请所有网站访问权限。
 - 按实际 API 调用声明权限，不为尚未实现的功能预先申请权限。
-- 本项目目前仅为可见增强开关声明 `storage`，通过 `chrome.storage.local` 保存 `genuiEnabled` 布尔值；不存储聊天正文、代码块或输入内容。Edge API 支持列表已复核 `storage`，Chrome 官方参考说明使用该 API 需声明 `storage` 权限。
+- 本项目仅为可见增强开关与用户主动保存的卡片设置声明 `storage`，通过 `chrome.storage.local` 保存 `genuiEnabled` 布尔值及 `genuiSavedState:` 前缀的单卡记录；未保存的交互状态只在页面内存，不存储聊天正文、代码块或输入内容。Edge API 支持列表已复核 `storage`，Chrome 官方参考说明使用该 API 需声明 `storage` 权限。
 - 不申请 Cookie、历史记录、调试器或与 UI 增强无关的访问能力。
 - 不调用 DeepSeek 非公开 API，不读取或使用认证信息，不批量读取历史聊天。
 - 权限清单逐项记录使用位置、必要性和用户可见说明。

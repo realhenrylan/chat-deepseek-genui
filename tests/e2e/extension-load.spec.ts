@@ -1348,4 +1348,89 @@ for (const { label, channel } of CHANNELS) {
       rmSync(profileDir, { recursive: true, force: true });
     }
   });
+
+  test(`阶段 14 · ${label} 主动保存后刷新恢复与清除（模拟页）`, async () => {
+    test.skip(REAL_SITE, '保存与刷新恢复使用本地模拟页面；真实网页需人工验收');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    try {
+      // 每次导航都注入同一张可交互卡片，模拟刷新后同一条回复重新出现。
+      await context.addInitScript((raw) => {
+        const insert = () => {
+          if (!document.body || document.getElementById('e2e-saved-interactive')) return;
+          const message = document.createElement('div');
+          message.className = 'ds-assistant-message-main-content';
+          message.id = 'e2e-saved-message';
+          message.setAttribute('data-virtual-list-item-key', 'e2e-saved-msg-1');
+          const block = document.createElement('div');
+          block.className = 'md-code-block md-code-block-light';
+          block.id = 'e2e-saved-interactive';
+          block.innerHTML =
+            '<div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>';
+          const pre = document.createElement('pre');
+          const content = document.createElement('span');
+          content.textContent = raw;
+          pre.append(content);
+          block.append(pre);
+          message.append(block);
+          document.body.append(message);
+        };
+        if (document.body) {
+          insert();
+          return;
+        }
+        const observer = new MutationObserver(() => {
+          if (!document.body) return;
+          observer.disconnect();
+          insert();
+        });
+        observer.observe(document, { childList: true, subtree: true });
+      }, INTERACTIVE_RAW);
+
+      await gotoAndAwaitMarker(page);
+      const card = page.locator('.genui-card-host').filter({ hasText: '本地预算计算' });
+      await expect(card).toHaveCount(1);
+      const slider = card.locator('input[type="range"]');
+      await slider.focus();
+      await slider.press('ArrowRight');
+      await expect(card.locator('.genui-control-current')).toHaveText('110 元');
+
+      await card.locator('.genui-card-save').click();
+      await expect(card.locator('.genui-card-save-feedback')).toContainText(
+        '已保存到本机，刷新后可恢复',
+      );
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
+        timeout: 30_000,
+      });
+
+      const restored = page.locator('.genui-card-host').filter({ hasText: '本地预算计算' });
+      await expect(restored).toHaveCount(1);
+      await expect(restored.locator('.genui-card-restored')).toContainText('已恢复');
+      await expect(restored.locator('input[type="range"]')).toHaveValue('110');
+      await expect(restored.locator('.genui-control-current')).toHaveText('110 元');
+
+      await restored.locator('.genui-card-clear-saved').click();
+      await expect(restored.locator('.genui-card-save-feedback')).toContainText(
+        '已清除本机保存的设置',
+      );
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
+        timeout: 30_000,
+      });
+      const reset = page.locator('.genui-card-host').filter({ hasText: '本地预算计算' });
+      await expect(reset).toHaveCount(1);
+      await expect(reset.locator('input[type="range"]')).toHaveValue('100');
+      await expect(reset.locator('.genui-card-restored')).toHaveCount(0);
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
 }

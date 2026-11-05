@@ -18,6 +18,8 @@ import {
 import {
   createCardUiState,
   type CardUiState,
+  type SavedStateClearResult,
+  type SavedStateSaveResult,
   type TableViewState,
 } from '../runtime/card-state';
 import type { CardStateStore } from '../runtime/card-state-store';
@@ -86,9 +88,32 @@ export interface CardProps {
   stateStore?: CardStateStore;
   /** 首次挂载的已校验状态（来自页面内状态仓库或上层预置）。 */
   initialState?: CardUiState;
+  /** 本机已保存记录的时间戳；非空时按钮改为「更新已保存的设置」并显示「清除保存」。 */
+  savedAt?: number | null;
+  /** 本次挂载从本机保存记录恢复的时间戳；非空时显示恢复提示。 */
+  restoredAt?: number | null;
+  /**
+   * 「保存当前界面」（issue #2 收尾）：只写入扩展本地存储，不发送任何请求。
+   * 未接线时（环境无扩展存储）不渲染保存/清除入口。
+   */
+  onSaveState?: (state: CardUiState) => Promise<SavedStateSaveResult>;
+  /** 「清除保存」：移除本机记录，当前页面内的调整值不受影响。 */
+  onClearSavedState?: () => Promise<SavedStateClearResult>;
 }
 
 const EMPTY_CALCULATION: DerivedCalculation = { values: {}, errors: {}, operations: 0 };
+
+/** 保存时间戳 → 「MM-DD HH:mm」（本地时区）。 */
+function formatSavedAt(timestamp: number): string {
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** 保存/清除异常 → 可读文案；不把异常对象渲染到页面上。 */
+function describeSaveError(error: unknown): string {
+  return error instanceof Error && error.message.trim() !== '' ? error.message : '未知错误';
+}
 
 export function Card({
   document: initialDocument,
@@ -99,6 +124,10 @@ export function Card({
   cardKey,
   stateStore,
   initialState,
+  savedAt,
+  restoredAt,
+  onSaveState,
+  onClearSavedState,
 }: CardProps) {
   const brandMarkUrl = getBrandMarkUrl();
   const [doc] = useState<GenuiDocument>(initialDocument);
@@ -121,6 +150,11 @@ export function Card({
   // 表格的筛选/排序由外部状态驱动，重置时递增该计数器强制重新挂载表格。
   const [resetToken, setResetToken] = useState(0);
   const [preview, setPreview] = useState<FollowupPreview | null>(null);
+  // issue #2 收尾：保存只在用户点击时发生；restoredTime 固定记录本次挂载的恢复结果。
+  const [savedTime, setSavedTime] = useState<number | null>(savedAt ?? null);
+  const [restoredTime] = useState<number | null>(restoredAt ?? null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [saveBusy, setSaveBusy] = useState(false);
   const previewTextRef = useRef<HTMLTextAreaElement | null>(null);
   const bodyId = useId();
   const followupPanelId = useId();
@@ -336,6 +370,49 @@ export function Card({
     closePreview();
   };
 
+  // issue #2 收尾：保存/清除都只发生在用户点击时，本地操作不触发模型请求。
+  const handleSave = async () => {
+    if (!onSaveState || saveBusy) return;
+    setSaveBusy(true);
+    setSaveFeedback(null);
+    try {
+      const result = await onSaveState({ values: state, tables });
+      if (result.ok) {
+        setSavedTime(result.savedAt);
+        setSaveFeedback(
+          result.evicted > 0
+            ? `已保存到本机，刷新后可恢复。超出容量上限，已清理最早 ${result.evicted} 条保存。`
+            : '已保存到本机，刷新后可恢复。',
+        );
+      } else {
+        setSaveFeedback(result.message);
+      }
+    } catch (error) {
+      setSaveFeedback(`保存失败：${describeSaveError(error)}`);
+    } finally {
+      setSaveBusy(false);
+    }
+  };
+
+  const handleClearSaved = async () => {
+    if (!onClearSavedState || saveBusy) return;
+    setSaveBusy(true);
+    setSaveFeedback(null);
+    try {
+      const result = await onClearSavedState();
+      if (result.ok) {
+        setSavedTime(null);
+        setSaveFeedback('已清除本机保存的设置；当前界面保持不变。');
+      } else {
+        setSaveFeedback(result.message);
+      }
+    } catch (error) {
+      setSaveFeedback(`清除失败：${describeSaveError(error)}`);
+    } finally {
+      setSaveBusy(false);
+    }
+  };
+
 
   const renderLegacyElement = (element: TextElement | InteractiveElement, index: number) => {
     if (element.kind === 'text') {
@@ -388,6 +465,11 @@ export function Card({
         </button>
       </header>
       <div className="genui-card-body" id={bodyId} hidden={!expanded}>
+        {restoredTime !== null ? (
+          <p className="genui-card-restored" role="status">
+            已恢复 {formatSavedAt(restoredTime)} 保存的设置；之后的调整不会自动保存。
+          </p>
+        ) : null}
         {doc.version === 3 || doc.version === 4 || doc.version === 5 ? (
           <CompositeElementsView
             context={{
@@ -478,6 +560,21 @@ export function Card({
             重置当前界面
           </button>
         )}
+        {onSaveState ? (
+          <button type="button" className="genui-card-save" disabled={saveBusy} onClick={handleSave}>
+            {savedTime === null ? '保存当前界面' : '更新已保存的设置'}
+          </button>
+        ) : null}
+        {onClearSavedState && savedTime !== null ? (
+          <button
+            type="button"
+            className="genui-card-clear-saved"
+            disabled={saveBusy}
+            onClick={handleClearSaved}
+          >
+            清除保存
+          </button>
+        ) : null}
         {doc.version === 1 ? null : (
           <button
             type="button"
@@ -495,6 +592,11 @@ export function Card({
         {followupFeedback ? (
           <p className="genui-card-followup-feedback" role="status">
             {followupFeedback}
+          </p>
+        ) : null}
+        {saveFeedback ? (
+          <p className="genui-card-save-feedback" role="status">
+            {saveFeedback}
           </p>
         ) : null}
         <span className="genui-card-note">

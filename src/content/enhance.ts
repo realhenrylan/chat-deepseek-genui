@@ -15,10 +15,23 @@ import {
   type GenuiDiagnostic,
 } from '../protocol/diagnose';
 import {
+  CARD_STATE_VERSION,
   createCardUiState,
+  documentStateSignature,
+  isCompatibleSavedState,
+  restoreCardUiState,
+  sanitizeCardValues,
+  sanitizeTableViews,
   type CardUiState,
+  type SavedCardState,
+  type SavedStateClearResult,
+  type SavedStateSaveResult,
 } from '../runtime/card-state';
 import { createCardStateStore, type CardStateStore } from '../runtime/card-state-store';
+import {
+  createChromeSavedStateStore,
+  type SavedStateStore,
+} from '../runtime/saved-card-state-store';
 import { GenuiStatusPanel, STATUS_ATTR, STATUS_HOST_ATTR, type BlockStatus } from './failure-ui';
 import type { RepairDeliveryResult } from './repair';
 import { mountCard, type MountedCard } from '../render/mount';
@@ -81,6 +94,15 @@ export interface EnhanceOptions {
   adapter?: SiteAdapter;
   /** 脱敏诊断记录器；缺省不记录，生产由页面控制器注入。 */
   diagnostics?: DiagnosticRecorder;
+  /**
+   * 用户主动保存的卡片状态存储覆盖；缺省使用 chrome.storage.local，
+   * 环境缺少扩展存储 API（单测/普通页面）时为 null，卡片不显示保存入口。
+   */
+  savedStateStore?: SavedStateStore | null;
+  /** 已保存状态的预载结果（测试注入）；与存储读取结果合并，注入项优先。 */
+  savedStates?: Record<string, SavedCardState>;
+  /** 保存时间戳的时间源（测试注入）；缺省 Date.now。 */
+  now?: () => number;
 }
 
 export interface EnhanceResult {
@@ -112,6 +134,19 @@ interface MountedRecord {
   mountedCard: MountedCard;
   /** 稳定卡片身份键；节点被改写时据此丢弃旧文档的页面内状态。 */
   key: string;
+}
+
+/** 与候选块匹配上的本机保存记录及其 storage 键（可能是兜底匹配的旧键）。 */
+interface SavedMatch {
+  key: string;
+  record: SavedCardState;
+}
+
+/** 首次挂载的初始状态，以及「是否存在保存记录 / 本次是否从保存记录恢复」。 */
+interface ResolvedInitialState {
+  state: CardUiState;
+  savedAt: number | null;
+  restoredAt: number | null;
 }
 
 function markFailed(block: Element, reason: EnhanceFailureReason): void {
@@ -150,6 +185,9 @@ export class EnhancementManager {
   private readonly stateStore: CardStateStore;
   private readonly adapter: SiteAdapter;
   private readonly diagnostics?: DiagnosticRecorder;
+  private readonly savedStateStore: SavedStateStore | null;
+  private savedStates: Record<string, SavedCardState>;
+  private readonly now: () => number;
 
   constructor(
     private readonly doc: Document,
@@ -158,6 +196,26 @@ export class EnhancementManager {
     this.stateStore = options.stateStore ?? createCardStateStore();
     this.adapter = options.adapter ?? DEEPSEEK_SITE_ADAPTER;
     this.diagnostics = options.diagnostics;
+    this.savedStateStore =
+      options.savedStateStore === undefined ? createChromeSavedStateStore() : options.savedStateStore;
+    this.savedStates = { ...options.savedStates };
+    this.now = options.now ?? Date.now;
+  }
+
+  /**
+   * 读取本机保存的卡片设置；生命周期在首次扫描前 await，避免卡片先以初始值
+   * 挂载、随后再被恢复值替换。读取失败只记录警告：保存是增强路径，不阻塞页面。
+   */
+  async preloadSavedStates(): Promise<void> {
+    const store = this.savedStateStore;
+    if (!store) return;
+    try {
+      const loaded = await store.loadAll();
+      // 已在本页保存/注入的记录优先，避免预载结果覆盖本次会话产生的新值。
+      this.savedStates = { ...loaded, ...this.savedStates, ...this.options.savedStates };
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} could not load saved card states`, error);
+    }
   }
 
   /** 当前已挂载/已判失败的块数，供诊断上下文与测试观察。 */
@@ -268,6 +326,7 @@ export class EnhancementManager {
             document: this.doc,
           })
         : null;
+    const savedMatches = identities ? this.matchSavedStates(identities) : null;
 
     for (const [block, record] of this.mounted) {
       const candidate = byBlock.get(block);
@@ -335,7 +394,12 @@ export class EnhancementManager {
       // A stale marker can remain after external code removes our host. Clear it
       // before retrying so the block never becomes stuck in a hidden state.
       removeState(block);
-      const outcome = this.mountCandidate(candidate, signature, identity);
+      const outcome = this.mountCandidate(
+        candidate,
+        signature,
+        identity,
+        savedMatches?.get(block) ?? null,
+      );
       if (outcome === 'mounted') result.mounted += 1;
       // deferred（视口门控）与 failed 都不算数：前者等待可验证性，后者已被
       // markFailed 记入 Map，下一轮扫描靠签名比对决定是否重试。
@@ -385,22 +449,155 @@ export class EnhancementManager {
   }
 
   /**
-   * 首次挂载优先沿用页面内仓库：同一文档的节点替换/重新挂载保留已调整值。
-   * 仓库缺失时按文档初始值新建，并写回仓库供后续挂载使用。
+   * 找到每个候选块对应的本机保存记录。精确身份键优先；刷新后消息键可能变化，
+   * 此时仅在「同一账号/会话内该文档唯一，且匹配的保存记录也唯一」时才按文档
+   * 回退匹配。任一条件不满足都不恢复：宁可回到初始值，也不把别人的设置串进来。
    */
-  private resolveInitialState(identity: CardIdentity, doc: GenuiDocument): CardUiState {
+  private matchSavedStates(
+    identities: Map<HTMLElement, CardIdentity>,
+  ): Map<HTMLElement, SavedMatch> {
+    const matched = new Map<HTMLElement, SavedMatch>();
+    const fallbackGroups = new Map<string, Array<{ block: HTMLElement; identity: CardIdentity }>>();
+
+    for (const [block, identity] of identities) {
+      if (identity.ambiguous) continue;
+      const exact = this.savedStates[identity.key];
+      if (exact) {
+        matched.set(block, { key: identity.key, record: exact });
+        continue;
+      }
+      const groupKey = `${identity.accountId}|${identity.sessionId}|${identity.documentHash}`;
+      const group = fallbackGroups.get(groupKey);
+      if (group) group.push({ block, identity });
+      else fallbackGroups.set(groupKey, [{ block, identity }]);
+    }
+
+    for (const group of fallbackGroups.values()) {
+      // 当前页面上同一文档有多个候选（重复回答）时，无法判断哪条记录属于谁。
+      if (group.length !== 1) continue;
+      const [{ block, identity }] = group;
+      const candidates = Object.entries(this.savedStates).filter(
+        ([key, record]) =>
+          key !== identity.key &&
+          record.accountId === identity.accountId &&
+          record.sessionId === identity.sessionId &&
+          record.documentHash === identity.documentHash,
+      );
+      if (candidates.length !== 1) continue;
+      matched.set(block, { key: candidates[0][0], record: candidates[0][1] });
+    }
+
+    return matched;
+  }
+
+  /**
+   * 首次挂载优先沿用页面内仓库：同一文档的节点替换/重新挂载保留已调整值。
+   * 仓库缺失时按「兼容的本机保存记录」恢复，最后才用文档初始值；任何恢复
+   * 都要通过文档哈希与状态结构签名校验，并重新清洗字段。
+   */
+  private resolveInitialState(
+    identity: CardIdentity,
+    doc: GenuiDocument,
+    saved: SavedMatch | null,
+  ): ResolvedInitialState {
+    const compatible =
+      saved && isCompatibleSavedState(saved.record, doc, identity.documentHash) ? saved : null;
+    const savedAt = compatible ? compatible.record.savedAt : null;
+
     const existing = this.stateStore.get(identity.key);
-    if (existing) return existing;
+    if (existing) return { state: existing, savedAt, restoredAt: null };
+
+    if (compatible) {
+      const restored = restoreCardUiState(doc, compatible.record);
+      this.stateStore.set(identity.key, restored.state);
+      return { state: restored.state, savedAt, restoredAt: savedAt };
+    }
 
     const fresh = createCardUiState(doc);
     this.stateStore.set(identity.key, fresh);
-    return fresh;
+    return { state: fresh, savedAt: null, restoredAt: null };
+  }
+
+  /**
+   * 用户点击保存：把当前界面写成本机记录。身份不可靠时拒绝，避免恢复阶段
+   * 靠猜测把设置应用到错误的消息；写入失败回滚内存副本，界面状态保持可用。
+   */
+  private async saveState(
+    identity: CardIdentity,
+    doc: GenuiDocument,
+    state: CardUiState,
+    previousKey: string | null,
+  ): Promise<SavedStateSaveResult> {
+    const store = this.savedStateStore;
+    if (!store) return { ok: false, message: '保存失败：当前环境不支持本机存储。' };
+    if (identity.ambiguous) {
+      return { ok: false, message: '保存失败：当前消息身份无法可靠确认，未保存到本机。' };
+    }
+
+    const record: SavedCardState = {
+      stateVersion: CARD_STATE_VERSION,
+      documentHash: identity.documentHash,
+      stateSignature: documentStateSignature(doc),
+      accountId: identity.accountId,
+      sessionId: identity.sessionId,
+      messageKey: identity.messageKey,
+      duplicateIndex: identity.duplicateIndex,
+      savedAt: this.now(),
+      values: sanitizeCardValues(doc, state.values).values,
+      tables: sanitizeTableViews(state.tables),
+    };
+
+    const previous = this.savedStates[identity.key];
+    this.savedStates[identity.key] = record;
+    const result = await store.save(identity.key, record);
+    if (!result.ok) {
+      if (previous) this.savedStates[identity.key] = previous;
+      else delete this.savedStates[identity.key];
+      return result;
+    }
+
+    // 兜底匹配到的旧键（消息键已变化）在保存成功后清理，避免同一文档留两份记录。
+    if (previousKey && previousKey !== identity.key) {
+      delete this.savedStates[previousKey];
+      await store.remove(previousKey);
+    }
+    return result;
+  }
+
+  /** 用户点击清除：只移除本机保存；当前页面内的调整值保持不变。 */
+  private async clearSavedState(
+    identity: CardIdentity,
+    previousKey: string | null,
+  ): Promise<SavedStateClearResult> {
+    const store = this.savedStateStore;
+    if (!store) return { ok: false, message: '清除失败：当前环境不支持本机存储。' };
+
+    const keys = new Set<string>([identity.key]);
+    if (previousKey) keys.add(previousKey);
+    const snapshots = new Map<string, SavedCardState>();
+    for (const key of keys) {
+      const record = this.savedStates[key];
+      if (record) snapshots.set(key, record);
+      delete this.savedStates[key];
+    }
+
+    let failure: SavedStateClearResult | null = null;
+    for (const key of keys) {
+      const result = await store.remove(key);
+      if (!result.ok) failure = result;
+    }
+    if (failure) {
+      for (const [key, record] of snapshots) this.savedStates[key] = record;
+      return failure;
+    }
+    return { ok: true };
   }
 
   private mountCandidate(
     candidate: GenuiBlockCandidate,
     signature: string,
     identity: CardIdentity,
+    saved: SavedMatch | null,
   ): 'mounted' | 'failed' | 'deferred' {
     const { block } = candidate;
 
@@ -453,7 +650,7 @@ export class EnhancementManager {
       return reject(parsed.code, parsed.detail, diagnoseParseFailure(parsed, raw));
     }
 
-    const resolved = this.resolveInitialState(identity, parsed.document);
+    const resolved = this.resolveInitialState(identity, parsed.document, saved);
     block.before(host);
     let mountedCard: MountedCard;
     let fatalDuringInitialRender = false;
@@ -467,7 +664,17 @@ export class EnhancementManager {
         onContinue: this.options.onContinue,
         cardKey: identity.key,
         stateStore: this.stateStore,
-        initialState: resolved,
+        initialState: resolved.state,
+        savedAt: resolved.savedAt,
+        restoredAt: resolved.restoredAt,
+        // 没有本机存储时不渲染保存入口，避免按钮只能给出失败反馈。
+        ...(this.savedStateStore
+          ? {
+              onSaveState: (state: CardUiState) =>
+                this.saveState(identity, parsed.document, state, saved?.key ?? null),
+              onClearSavedState: () => this.clearSavedState(identity, saved?.key ?? null),
+            }
+          : {}),
         onToggleRaw: (showRaw) => {
           // 卡片保持可见，否则「收起原始 JSON」将没有可点的入口。
           block.style.display = showRaw ? originalDisplay : 'none';

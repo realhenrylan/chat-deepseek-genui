@@ -339,3 +339,30 @@
 - 文档：新增 [side-panel-evaluation.md](side-panel-evaluation.md)；[compatibility-investigation.md](compatibility-investigation.md) 增第 8 节（接口契约、选择器清单、变更策略、变体样本、诊断边界）；[privacy.md](privacy.md) 增本地诊断数据行与说明；[state-storage.md](state-storage.md) 说明诊断独立于卡片状态；README/CHANGELOG 同步。
 - 验证：`npm run typecheck`、`npm run lint` 通过；`npm test` 41 个文件 497 项全部通过（较 issue #9 前新增 39 项）；`npm run build` 通过，`dist/content.js` 855349 B（855.35 kB，gzip 152.49 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions`/background；默认 Edge/Chrome e2e 通过（24 passed / 6 skipped，真实 origin 用例按默认跳过）。
 - 未执行：真实 DeepSeek 页面人工复核（沿用既有快照）；侧栏实施不在本轮范围。站点改版后按 [compatibility-investigation.md](compatibility-investigation.md) 第 8.2 节流程先探针、补样本、再升版本。
+
+## 阶段 13：卡片状态保存与跨刷新恢复（issue #2 收尾，issue #10 第一阶段）
+
+### 目标与范围
+
+- 让页面内已调整的卡片状态可以有意识地保存到本机，刷新后恢复，并可随时清除；默认仍不写入存储。
+- 保存与恢复都必须以稳定身份为前提：文档哈希、状态结构签名与账号/会话一致才恢复；刷新后消息键变化时只做「唯一匹配」兜底。
+- 不覆盖用户草稿、不改变原回答与复制/滚动行为，不新增网络请求、权限或后台脚本。
+
+### 交付物与通过条件
+
+- [x] `src/runtime/card-state.ts`：`SavedCardState`、`SavedStateSaveResult`/`SavedStateClearResult`、`documentStateSignature`、`sanitizeCardValues`、`sanitizeTableViews`、`restoreCardUiState`、`isCompatibleSavedState`；恢复前按当前文档重新清洗字段。
+- [x] `src/runtime/saved-card-state-store.ts`：`genuiSavedState:` 前缀、一条记录一个键、50 条上限、单条 32 KB、逐字段校验、配额错误可读文案；无 `chrome.storage.local` 时返回 `null`。
+- [x] `EnhancementManager` 预载与匹配：控制器在首次扫描前 `await preloadSavedStates()`；精确键优先，消息键变化时按 `${accountId}|${sessionId}|${documentHash}` 唯一匹配；歧义身份不恢复、不允许保存。
+- [x] 卡片 UI：`.genui-card-save`（保存当前界面/更新已保存的设置）、`.genui-card-clear-saved`（清除保存）、恢复提示 `.genui-card-restored` 与反馈 `.genui-card-save-feedback`；无存储注入时不渲染入口，保持既有 `null` 断言。
+- [x] 测试：`card-state.test.ts` 14 项、`saved-card-state-store.test.ts` 11 项、enhance 6 项保存/恢复用例、card 6 项保存入口用例、controller 1 项首扫前预载用例。
+- [x] 文档：重写 [state-storage.md](state-storage.md)（两层存储、恢复优先级、零串值、上限、验证清单）；[privacy.md](privacy.md) 增保存数据行、权限与用户控制、审计线索；CHANGELOG 增条目。
+
+### 设计决定
+
+- 复用 issue #2 早期实现的清洗与签名逻辑，但不恢复「方案」「方案工作台」概念；保存只针对单张卡片的界面状态，方案快照留给 issue #6。
+- 保存动作完全由用户触发；恢复后的调整不自动覆写记录，避免拖动滑块时反复写存储。
+- 兜底匹配要求「当前文档候选唯一 + 保存记录唯一」，任一不满足宁可回到初始值，保证零串值。
+
+### 待补验证
+
+- 真实 DeepSeek 页面：保存 → 刷新恢复、原文改写不恢复、两条同文档消息互不串值、清除后回到初始值、配额失败路径。（本地模拟页的 Edge/Chrome e2e 已覆盖保存 → 刷新 → 恢复 → 清除链路，仍不能替代真实页面。）

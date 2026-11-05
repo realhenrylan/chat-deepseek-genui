@@ -8,6 +8,10 @@ import {
   enhanceDocument,
 } from '../../src/content/enhance';
 import { createCardStateStore } from '../../src/runtime/card-state-store';
+import {
+  createSavedStateStore,
+  type SavedStateStorageArea,
+} from '../../src/runtime/saved-card-state-store';
 import { ElementRegistry } from '../../src/render/registry';
 
 /**
@@ -481,4 +485,285 @@ describe('阶段 8：页面内卡片状态保留（issue #2）', () => {
     manager.dispose();
   });
 
+  /** 内存版 chrome.storage.local：get(null) 返回全部条目。 */
+  function memoryArea(): SavedStateStorageArea & { data: Record<string, unknown> } {
+    const data: Record<string, unknown> = {};
+    return {
+      data,
+      async get(keys) {
+        if (keys === null) return { ...data };
+        const list = Array.isArray(keys) ? keys : [keys];
+        const result: Record<string, unknown> = {};
+        for (const key of list) {
+          if (Object.hasOwn(data, key)) result[key] = data[key];
+        }
+        return result;
+      },
+      async set(items) {
+        Object.assign(data, items);
+      },
+      async remove(keys) {
+        for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
+      },
+    };
+  }
+
+  function saveButton(host: HTMLElement): HTMLButtonElement | null {
+    return host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save') ?? null;
+  }
+
+  /** 点保存并等待异步写入、React 重渲染完成。 */
+  async function saveCurrent(host: HTMLElement): Promise<void> {
+    saveButton(host)?.click();
+    await flushUi();
+    await flushUi();
+  }
+
+  function messageDoc(key: string, raw: string = BUDGET_V2): Document {
+    return buildDoc(message(codeBlock({ raw }), key));
+  }
+
+  it('保存当前界面后，新文档与新管理器自动恢复并提示来源', async () => {
+    const area = memoryArea();
+    const savedStore = createSavedStateStore(area);
+    const now = 1_700_000_000_000;
+
+    const firstDoc = budgetDoc();
+    const first = createEnhancementManager(firstDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => now,
+    });
+    first.reconcile(true);
+
+    const firstHost = firstDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(firstHost).not.toBeNull();
+    if (!firstHost) return;
+    expect(saveButton(firstHost)?.textContent).toContain('保存当前界面');
+
+    setInputValue(sliderOf(firstHost), '7000');
+    await flushUi();
+    await saveCurrent(firstHost);
+
+    expect(firstHost.shadowRoot?.querySelector('.genui-card-save-feedback')?.textContent).toContain(
+      '已保存到本机，刷新后可恢复。',
+    );
+    expect(Object.keys(area.data)).toHaveLength(1);
+
+    // 模拟刷新：新的文档树、新的页面内仓库，只有本机保存记录延续。
+    const reloadedDoc = budgetDoc();
+    const reloaded = createEnhancementManager(reloadedDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => now,
+    });
+    await reloaded.preloadSavedStates();
+    reloaded.reconcile(true);
+
+    const reloadedHost = reloadedDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(reloadedHost).not.toBeNull();
+    if (!reloadedHost) return;
+    expect(sliderOf(reloadedHost).value).toBe('7000');
+    expect(reloadedHost.shadowRoot?.querySelector('.genui-card-restored')?.textContent).toContain(
+      '保存的设置',
+    );
+    expect(saveButton(reloadedHost)?.textContent).toContain('更新已保存的设置');
+    expect(
+      reloadedHost.shadowRoot?.querySelector('button.genui-card-clear-saved'),
+    ).not.toBeNull();
+
+    first.dispose();
+    reloaded.dispose();
+  });
+
+  it('清除保存后回到未保存文案，当前界面值保持不变', async () => {
+    const area = memoryArea();
+    const savedStore = createSavedStateStore(area);
+    const doc = budgetDoc();
+    const manager = createEnhancementManager(doc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    manager.reconcile(true);
+
+    const host = doc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+    if (!host) return;
+    setInputValue(sliderOf(host), '7000');
+    await flushUi();
+    await saveCurrent(host);
+
+    const clear = host.shadowRoot?.querySelector<HTMLButtonElement>(
+      'button.genui-card-clear-saved',
+    );
+    expect(clear).not.toBeNull();
+    clear?.click();
+    await flushUi();
+    await flushUi();
+
+    expect(host.shadowRoot?.querySelector('.genui-card-save-feedback')?.textContent).toContain(
+      '已清除本机保存的设置',
+    );
+    expect(saveButton(host)?.textContent).toContain('保存当前界面');
+    expect(host.shadowRoot?.querySelector('button.genui-card-clear-saved')).toBeNull();
+    expect(area.data).toEqual({});
+    // 清除保存不等于重置界面：用户当前调好的值继续可用。
+    expect(sliderOf(host).value).toBe('7000');
+
+    manager.dispose();
+  });
+
+  it('文档被改写后不恢复旧保存记录', async () => {
+    const savedStore = createSavedStateStore(memoryArea());
+    const firstDoc = budgetDoc();
+    const first = createEnhancementManager(firstDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    first.reconcile(true);
+
+    const firstHost = firstDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(firstHost).not.toBeNull();
+    if (!firstHost) return;
+    setInputValue(sliderOf(firstHost), '7000');
+    await flushUi();
+    await saveCurrent(firstHost);
+
+    // 同一消息位置但文档内容被改写：哈希不符，应按新文档初始值挂载。
+    const changedDoc = buildDoc(message(codeBlock({ raw: CHANGED_V2 })));
+    const reloaded = createEnhancementManager(changedDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    await reloaded.preloadSavedStates();
+    reloaded.reconcile(true);
+
+    const host = changedDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+    if (!host) return;
+    expect(
+      host.shadowRoot?.querySelector<HTMLInputElement>('input[type="number"]')?.value,
+    ).toBe('5000');
+    expect(host.shadowRoot?.querySelector('.genui-card-restored')).toBeNull();
+
+    first.dispose();
+    reloaded.dispose();
+  });
+
+  it('消息键变化时按文档与会话唯一匹配恢复，避免输入丢失', async () => {
+    const savedStore = createSavedStateStore(memoryArea());
+    const firstDoc = messageDoc('v1');
+    const first = createEnhancementManager(firstDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    first.reconcile(true);
+
+    const firstHost = firstDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(firstHost).not.toBeNull();
+    if (!firstHost) return;
+    setInputValue(sliderOf(firstHost), '7000');
+    await flushUi();
+    await saveCurrent(firstHost);
+
+    // 虚拟列表换了一批 item key：identity 键不再相同，但同会话内该文档唯一。
+    const renamedDoc = messageDoc('v9');
+    const reloaded = createEnhancementManager(renamedDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    await reloaded.preloadSavedStates();
+    reloaded.reconcile(true);
+
+    const host = renamedDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+    if (!host) return;
+    expect(sliderOf(host).value).toBe('7000');
+    expect(host.shadowRoot?.querySelector('.genui-card-restored')).not.toBeNull();
+
+    first.dispose();
+    reloaded.dispose();
+  });
+
+  it('同一文档出现两条消息时不按兜底匹配，避免串值', async () => {
+    const savedStore = createSavedStateStore(memoryArea());
+    const firstDoc = buildDoc(
+      message(codeBlock({ raw: BUDGET_V2 }), 'k1') + message(codeBlock({ raw: BUDGET_V2 }), 'k2'),
+    );
+    const first = createEnhancementManager(firstDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    first.reconcile(true);
+
+    const firstHost = firstDoc.querySelector<HTMLElement>('.genui-card-host');
+    expect(firstHost).not.toBeNull();
+    if (!firstHost) return;
+    setInputValue(sliderOf(firstHost), '7000');
+    await flushUi();
+    await saveCurrent(firstHost);
+
+    const changedKeysDoc = buildDoc(
+      message(codeBlock({ raw: BUDGET_V2 }), 'k3') + message(codeBlock({ raw: BUDGET_V2 }), 'k4'),
+    );
+    const reloaded = createEnhancementManager(changedKeysDoc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    await reloaded.preloadSavedStates();
+    reloaded.reconcile(true);
+
+    const hosts = [...changedKeysDoc.querySelectorAll<HTMLElement>('.genui-card-host')];
+    expect(hosts).toHaveLength(2);
+    for (const host of hosts) {
+      expect(sliderOf(host).value).toBe('5000');
+      expect(host.shadowRoot?.querySelector('.genui-card-restored')).toBeNull();
+    }
+
+    first.dispose();
+    reloaded.dispose();
+  });
+
+  it('身份无法可靠确认时拒绝保存并说明原因', async () => {
+    const area = memoryArea();
+    const savedStore = createSavedStateStore(area);
+    // 同一条消息里两个完全相同的文档：无法判断保存记录属于哪一块。
+    const doc = buildDoc(message(codeBlock({ raw: BUDGET_V2 }) + codeBlock({ raw: BUDGET_V2 })));
+    const manager = createEnhancementManager(doc, {
+      stateStore: createCardStateStore(),
+      sessionId: SESSION,
+      savedStateStore: savedStore,
+      now: () => 1_700_000_000_000,
+    });
+    manager.reconcile(true);
+
+    const hosts = [...doc.querySelectorAll<HTMLElement>('.genui-card-host')];
+    expect(hosts).toHaveLength(2);
+    const host = hosts[0];
+    if (!host) return;
+    await saveCurrent(host);
+
+    expect(host.shadowRoot?.querySelector('.genui-card-save-feedback')?.textContent).toContain(
+      '无法可靠确认',
+    );
+    expect(area.data).toEqual({});
+
+    manager.dispose();
+  });
 });

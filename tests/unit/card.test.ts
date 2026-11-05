@@ -4,6 +4,11 @@ import type { GenuiDocument, TableElement } from '../../src/protocol/types';
 import { ElementRegistry } from '../../src/render/registry';
 import { mountCard, type MountedCard } from '../../src/render/mount';
 import { createCardStateStore } from '../../src/runtime/card-state-store';
+import type {
+  CardUiState,
+  SavedStateClearResult,
+  SavedStateSaveResult,
+} from '../../src/runtime/card-state';
 
 /**
  * 阶段 2：Card 渲染与 Shadow DOM 样式隔离（Red → Green）。
@@ -55,7 +60,15 @@ let mounted: MountedCard | null = null;
 
 function mount(
   doc: GenuiDocument,
-  options: { registry?: ElementRegistry; onToggleRaw?: (show: boolean) => void; onFatal?: (error: Error) => void } = {},
+  options: {
+    registry?: ElementRegistry;
+    onToggleRaw?: (show: boolean) => void;
+    onFatal?: (error: Error) => void;
+    savedAt?: number | null;
+    restoredAt?: number | null;
+    onSaveState?: (state: CardUiState) => Promise<SavedStateSaveResult>;
+    onClearSavedState?: () => Promise<SavedStateClearResult>;
+  } = {},
   rawJson = RAW,
 ): HTMLElement {
   const host = document.createElement('div');
@@ -840,4 +853,165 @@ it('表格筛选与排序通过状态仓库在重新挂载后保留', async () =
   expect(restoredFilter?.value).toBe('房租');
   expect(secondHost.shadowRoot?.textContent).toContain('显示 1 / 2 行');
   second.unmount();
+});
+
+describe('阶段 13 · 保存当前界面（issue #2 收尾）', () => {
+  const SAVED_AT = 1_700_000_000_000;
+
+  const TABLE_DOC: GenuiDocument = {
+    type: 'genui',
+    version: 3,
+    title: '支出明细',
+    state: [],
+    derived: [],
+    elements: [
+      {
+        kind: 'table',
+        title: '支出',
+        sortable: true,
+        columns: [
+          { key: 'name', label: '项目' },
+          { key: 'amount', label: '金额', numeric: true, unit: '元' },
+        ],
+        rows: [
+          { cells: { name: '房租', amount: 3000 } },
+          { cells: { name: '餐饮', amount: 1200 } },
+        ],
+      },
+    ],
+  };
+
+  const saveOk = (): Promise<SavedStateSaveResult> =>
+    Promise.resolve({ ok: true, savedAt: SAVED_AT, evicted: 0 });
+
+  it('点击保存把当前值交给回调，成功后切换为「更新已保存的设置」并提供清除入口', async () => {
+    const onSaveState = vi.fn(async (state: CardUiState) => {
+      void state;
+      return saveOk();
+    });
+    const host = mount(INTERACTIVE_DOC, {
+      onSaveState,
+      onClearSavedState: vi.fn(async (): Promise<SavedStateClearResult> => ({ ok: true })),
+    });
+    const shadow = host.shadowRoot;
+    const slider = shadow?.querySelector<HTMLInputElement>('input[type="range"]');
+    if (!slider) throw new Error('滑块未渲染');
+    fireEvent.change(slider, { target: { value: '7000' } });
+    await flushUi();
+
+    const save = shadow?.querySelector<HTMLButtonElement>('button.genui-card-save');
+    expect(save?.textContent).toBe('保存当前界面');
+    save?.click();
+    await flushUi();
+    await flushUi();
+
+    expect(onSaveState).toHaveBeenCalledTimes(1);
+    const saved = (onSaveState.mock.calls[0] as [CardUiState] | undefined)?.[0];
+    expect(saved?.values.budget).toBe(7000);
+    expect(saved?.values.category).toBe('food');
+    expect(shadow?.querySelector('.genui-card-save-feedback')?.textContent).toContain(
+      '已保存到本机，刷新后可恢复。',
+    );
+    expect(shadow?.querySelector('button.genui-card-save')?.textContent).toBe('更新已保存的设置');
+    expect(shadow?.querySelector('button.genui-card-clear-saved')).not.toBeNull();
+  });
+
+  it('保存时一并带上表格筛选与排序视图', async () => {
+    const onSaveState = vi.fn(async (state: CardUiState) => {
+      void state;
+      return saveOk();
+    });
+    const host = mount(TABLE_DOC, { onSaveState, savedAt: null });
+    const filter = host.shadowRoot?.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!filter) throw new Error('筛选框未渲染');
+    fireEvent.change(filter, { target: { value: '房租' } });
+    await flushUi();
+
+    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save')?.click();
+    await flushUi();
+    await flushUi();
+
+    const saved = (onSaveState.mock.calls[0] as [CardUiState] | undefined)?.[0];
+    const views = Object.values(saved?.tables ?? {});
+    expect(views[0]?.filter).toBe('房租');
+  });
+
+  it('保存失败时如实显示原因，按钮文案保持未保存', async () => {
+    const onSaveState = vi.fn(
+      async (state: CardUiState): Promise<SavedStateSaveResult> => {
+        void state;
+        return { ok: false, message: '保存失败：本机存储不可用' };
+      },
+    );
+    const host = mount(INTERACTIVE_DOC, { onSaveState });
+    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-save')?.click();
+    await flushUi();
+    await flushUi();
+
+    expect(host.shadowRoot?.querySelector('.genui-card-save-feedback')?.textContent).toContain(
+      '本机存储不可用',
+    );
+    expect(host.shadowRoot?.querySelector('button.genui-card-save')?.textContent).toBe(
+      '保存当前界面',
+    );
+    expect(host.shadowRoot?.querySelector('button.genui-card-clear-saved')).toBeNull();
+  });
+
+  it('恢复保存记录时提示来源与「不会自动保存」', () => {
+    const host = mount(INTERACTIVE_DOC, {
+      savedAt: SAVED_AT,
+      restoredAt: SAVED_AT,
+      onSaveState: vi.fn(async (state: CardUiState) => {
+      void state;
+      return saveOk();
+    }),
+      onClearSavedState: vi.fn(async (): Promise<SavedStateClearResult> => ({ ok: true })),
+    });
+
+    const notice = host.shadowRoot?.querySelector('.genui-card-restored');
+    expect(notice?.textContent).toContain('已恢复');
+    expect(notice?.textContent).toContain('不会自动保存');
+    expect(host.shadowRoot?.querySelector('button.genui-card-save')?.textContent).toBe(
+      '更新已保存的设置',
+    );
+    expect(host.shadowRoot?.querySelector('button.genui-card-clear-saved')).not.toBeNull();
+  });
+
+  it('清除保存后回到未保存文案，当前界面值保持不变', async () => {
+    const onClearSavedState = vi.fn(
+      async (): Promise<SavedStateClearResult> => ({ ok: true }),
+    );
+    const host = mount(INTERACTIVE_DOC, {
+      savedAt: SAVED_AT,
+      onSaveState: vi.fn(async (state: CardUiState) => {
+      void state;
+      return saveOk();
+    }),
+      onClearSavedState,
+    });
+    const slider = host.shadowRoot?.querySelector<HTMLInputElement>('input[type="range"]');
+    if (!slider) throw new Error('滑块未渲染');
+    fireEvent.change(slider, { target: { value: '7000' } });
+    await flushUi();
+
+    host.shadowRoot?.querySelector<HTMLButtonElement>('button.genui-card-clear-saved')?.click();
+    await flushUi();
+    await flushUi();
+
+    expect(onClearSavedState).toHaveBeenCalledTimes(1);
+    expect(host.shadowRoot?.querySelector('.genui-card-save-feedback')?.textContent).toContain(
+      '已清除本机保存的设置；当前界面保持不变。',
+    );
+    expect(host.shadowRoot?.querySelector('button.genui-card-save')?.textContent).toBe(
+      '保存当前界面',
+    );
+    expect(host.shadowRoot?.querySelector('button.genui-card-clear-saved')).toBeNull();
+    expect(slider.value).toBe('7000');
+  });
+
+  it('未提供保存回调时不渲染保存与清除入口', () => {
+    const host = mount(INTERACTIVE_DOC);
+    expect(host.shadowRoot?.querySelector('button.genui-card-save')).toBeNull();
+    expect(host.shadowRoot?.querySelector('button.genui-card-clear-saved')).toBeNull();
+  });
 });

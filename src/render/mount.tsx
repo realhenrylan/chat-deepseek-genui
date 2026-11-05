@@ -1,7 +1,7 @@
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import type { GenuiDocument } from '../protocol/types';
-import type { CardUiState } from '../runtime/card-state';
+import type { CardUiState, SavedStateClearResult, SavedStateSaveResult } from '../runtime/card-state';
 import type { CardStateStore } from '../runtime/card-state-store';
 import cardCss from './card.css?inline';
 import { CardErrorBoundary } from './boundaries';
@@ -41,6 +41,14 @@ export interface MountCardOptions {
   stateStore?: CardStateStore;
   /** 从页面内状态仓库恢复出的初始状态。 */
   initialState?: CardUiState;
+  /** 本机已保存记录的时间戳；存在时显示「更新/清除保存」。 */
+  savedAt?: number | null;
+  /** 本次挂载从本机保存记录恢复的时间戳；非空时显示恢复提示。 */
+  restoredAt?: number | null;
+  /** 用户点击「保存当前界面」；未提供时不渲染保存入口。 */
+  onSaveState?: (state: CardUiState) => Promise<SavedStateSaveResult>;
+  /** 用户点击「清除保存」；未提供时不渲染清除入口。 */
+  onClearSavedState?: () => Promise<SavedStateClearResult>;
 }
 
 export interface MountedCard {
@@ -77,6 +85,10 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
           cardKey={options.cardKey}
           stateStore={options.stateStore}
           initialState={options.initialState}
+          savedAt={options.savedAt}
+          restoredAt={options.restoredAt}
+          onSaveState={options.onSaveState}
+          onClearSavedState={options.onClearSavedState}
         />
       </CardErrorBoundary>,
     );

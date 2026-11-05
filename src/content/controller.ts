@@ -389,6 +389,11 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     }
     if (!started) return;
 
+    // 本机保存的卡片设置在首次扫描前读取：避免卡片先以初始值挂载，
+    // 随后又被恢复值替换，造成可见的闪动。读取失败由管理器自行降级。
+    await manager.preloadSavedStates();
+    if (!started) return;
+
     settingsLoaded = true;
     applyEnabled(pendingStorageValue ?? pendingUserValue ?? saved ?? true);
     pendingStorageValue = undefined;

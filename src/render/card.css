@@ -95,7 +95,9 @@
   padding: 3px 10px;
 }
 
-.genui-card-reset {
+.genui-card-reset,
+.genui-card-save,
+.genui-card-clear-saved {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -106,12 +108,22 @@
   padding: 3px 10px;
 }
 
-.genui-card-reset:hover {
+.genui-card-reset:hover,
+.genui-card-save:hover,
+.genui-card-clear-saved:hover {
   background: rgba(127, 127, 127, 0.12);
+}
+
+.genui-card-save:disabled,
+.genui-card-clear-saved:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .genui-card-toggle:focus-visible,
 .genui-card-reset:focus-visible,
+.genui-card-save:focus-visible,
+.genui-card-clear-saved:focus-visible,
 .genui-card-expand:focus-visible,
 .genui-card-followup:focus-visible,
 .genui-number-input:focus-visible,
@@ -119,6 +131,23 @@
 .genui-slider:focus-visible {
   outline: 2px solid #3988ff;
   outline-offset: 2px;
+}
+
+/* issue #2 收尾：恢复提示只说明来源与「不会自动保存」，不阻挡后续调整。 */
+.genui-card-restored {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-left: 3px solid #3988ff;
+  border-radius: 6px;
+  background: rgba(57, 136, 255, 0.08);
+  font-size: 12px;
+}
+
+.genui-card-save-feedback {
+  margin: 0;
+  flex-basis: 100%;
+  color: #3988ff;
+  font-size: 12px;
 }
 
 .genui-control {
@@ -889,6 +918,8 @@
 
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset,
+.genui-card-root[data-site-theme='dark'] .genui-card-save,
+.genui-card-root[data-site-theme='dark'] .genui-card-clear-saved,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup {
   border-color: rgba(255, 255, 255, 0.26);
@@ -896,6 +927,8 @@
 
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-save:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-clear-saved:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -948,8 +981,13 @@
   color: #ff9b91;
 }
 
-.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback {
+.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback,
+.genui-card-root[data-site-theme='dark'] .genui-card-save-feedback {
   color: #7cb8ff;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-restored {
+  background: rgba(57, 136, 255, 0.16);
 }
 
 
@@ -998,6 +1036,8 @@
 
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset,
+.genui-card-root[data-site-theme='dark'] .genui-card-save,
+.genui-card-root[data-site-theme='dark'] .genui-card-clear-saved,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup {
   border-color: rgba(255, 255, 255, 0.26);
@@ -1005,6 +1045,8 @@
 
 .genui-card-root[data-site-theme='dark'] .genui-card-toggle:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-reset:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-save:hover,
+.genui-card-root[data-site-theme='dark'] .genui-card-clear-saved:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-expand:hover,
 .genui-card-root[data-site-theme='dark'] .genui-card-followup:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -1057,6 +1099,11 @@
   color: #ff9b91;
 }
 
-.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback {
+.genui-card-root[data-site-theme='dark'] .genui-card-followup-feedback,
+.genui-card-root[data-site-theme='dark'] .genui-card-save-feedback {
   color: #7cb8ff;
+}
+
+.genui-card-root[data-site-theme='dark'] .genui-card-restored {
+  background: rgba(57, 136, 255, 0.16);
 }

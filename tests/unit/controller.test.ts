@@ -1,6 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPageLifecycle, isGenerationActive, STOP_GENERATION_PATH_PREFIX } from '../../src/content/controller';
 import type { ExtensionSettingsStore } from '../../src/content/settings';
+import { hashString } from '../../src/runtime/hash';
+import type { GenuiDocument } from '../../src/protocol/types';
+import {
+  UNKNOWN_ACCOUNT_ID,
+  UNKNOWN_SESSION_ID,
+  createCardKey,
+} from '../../src/content/identity';
+import {
+  CARD_STATE_VERSION,
+  documentStateSignature,
+  type SavedCardState,
+} from '../../src/runtime/card-state';
+import {
+  SAVED_STATE_KEY_PREFIX,
+  createSavedStateStore,
+  type SavedStateStorageArea,
+} from '../../src/runtime/saved-card-state-store';
 
 const VALID = (value: string): string =>
   JSON.stringify({ type: 'genui', version: 1, elements: [{ kind: 'text', value }] });
@@ -338,5 +355,81 @@ describe('页面生命周期控制器', () => {
 
     lifecycle.dispose();
     expect(store.subscriberCount()).toBe(0);
+  });
+
+  it('首次扫描前预载本机保存记录，首帧即恢复并提示来源', async () => {
+    const document: GenuiDocument = {
+      type: 'genui',
+      version: 2,
+      title: '预算复核',
+      state: [
+        {
+          id: 'budget',
+          label: '总预算',
+          kind: 'number',
+          initial: 5000,
+          min: 0,
+          max: 10000,
+          step: 100,
+          unit: '元',
+        },
+      ],
+      derived: [],
+      elements: [
+        { kind: 'slider', bind: 'budget' },
+        { kind: 'value', label: '当前预算', source: { kind: 'state', id: 'budget' } },
+      ],
+    };
+    const raw = JSON.stringify(document);
+    const doc = buildDoc(
+      `<div data-virtual-list-item-key="msg-1">${assistant('saved', raw)}</div>`,
+    );
+
+    const documentHash = hashString(raw);
+    const saved: SavedCardState = {
+      stateVersion: CARD_STATE_VERSION,
+      documentHash,
+      stateSignature: documentStateSignature(document),
+      accountId: UNKNOWN_ACCOUNT_ID,
+      sessionId: UNKNOWN_SESSION_ID,
+      messageKey: 'msg-1',
+      duplicateIndex: 0,
+      savedAt: 1_700_000_000_000,
+      values: { budget: 7000 },
+      tables: {},
+    };
+    const cardKey = createCardKey({
+      accountId: UNKNOWN_ACCOUNT_ID,
+      sessionId: UNKNOWN_SESSION_ID,
+      messageKey: 'msg-1',
+      duplicateIndex: 0,
+      documentHash,
+    });
+    const area: SavedStateStorageArea = {
+      async get() {
+        return { [`${SAVED_STATE_KEY_PREFIX}${cardKey}`]: saved };
+      },
+      async set() {},
+      async remove() {},
+    };
+
+    const lifecycle = createPageLifecycle(doc, {
+      store: makeStore(),
+      window,
+      savedStateStore: createSavedStateStore(area),
+      debounceMs: 10,
+      settleMs: 40,
+    });
+    await lifecycle.start();
+    await advance(100);
+
+    const host = doc.querySelector<HTMLElement>('.genui-card-host');
+    expect(host).not.toBeNull();
+    const root = host?.shadowRoot ?? null;
+    // 若预载晚于首次扫描，这里会是初始值 5000 且没有恢复提示。
+    expect(root?.querySelector<HTMLInputElement>('input[type="range"]')?.value).toBe('7000');
+    expect(root?.querySelector('.genui-card-restored')?.textContent).toContain('保存的设置');
+
+    lifecycle.dispose();
   });
 });
