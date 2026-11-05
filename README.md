@@ -108,11 +108,11 @@ npm run build
 
 工作流 [Build extension and prepare release draft](.github/workflows/build-release.yml) 在推送到 `main` 时，自动检查、测试、构建，并在 Actions 页面提供 ZIP 和 SHA256 校验文件（保留 30 天）。准备发布时，在 Actions 点 **Run workflow** 并填写最终插件版本号，工作流会按你填写的版本打包，只创建附带这两个文件的 **Release 草稿**。
 
-**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v2.9` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
+**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v3.0` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
 
 Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、更改、修复、移除等类别展示，并附 GitHub 自动生成的变更记录；发布前可在草稿页继续编辑。
 
-当前 main 的 0.1.1 + Unreleased 已通过完整检查（43 个测试文件、532 项单测通过、3 项跳过，类型检查、lint、构建与生产包校验）及 Edge/Chrome 默认端到端测试（26 通过、6 个真实 origin 用例按模式跳过）。历史真实网页验收与本轮自动化结果分别记录在 [分层报告](docs/phase8-verification.md)。
+当前 main 的 0.1.1 + Unreleased 已通过完整检查（45 个测试文件、551 项单测通过，类型检查、lint、构建与生产包校验）；Edge/Chrome 默认端到端测试最近一次为 26 通过、6 个真实 origin 用例按模式跳过。历史真实网页验收与本轮自动化结果分别记录在 [分层验证报告](docs/phase8-verification.md)。
 
 **卸载**：在扩展管理页移除扩展，本地开关设置与已保存的卡片设置随之删除；刷新或关闭已打开的 DeepSeek 标签页后，页面上的卡片、浮标和注入标记消失。
 

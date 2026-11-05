@@ -49,8 +49,8 @@
       "columns": [
         [ { "kind": "slider", "bind": "months" }, { "kind": "slider", "bind": "visits" } ],
         [
-          { "kind": "value", "label": "最低单次成本", "source": { "kind": "model", "model": "membership", "key": "lowestUnitCost" }, "unit": "元/次" },
-          { "kind": "value", "label": "最低总成本", "source": { "kind": "model", "model": "membership", "key": "lowestTotalCost" }, "unit": "元" }
+          { "kind": "value", "label": "最低单次成本", "source": { "kind": "model", "model": "membership", "key": "lowestUnitCost" }, "unit": "元/次", "emphasis": "primary" },
+          { "kind": "value", "label": "最低总成本", "source": { "kind": "model", "model": "membership", "key": "lowestTotalCost" }, "unit": "元", "emphasis": "primary" }
         ]
       ]
     },

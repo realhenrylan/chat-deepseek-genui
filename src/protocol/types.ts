@@ -431,12 +431,17 @@ export interface ModelChartElement {
   source: ModelChartSource;
 }
 
+/** 数值展示的展示强调级别；只影响排版，不改变求值或计算依据。 */
+export type ValueEmphasis = 'normal' | 'primary';
+
 /** 数值展示直接读取模型标量；null 显示为不可用，而不是 0。 */
 export interface ModelValueElement {
   kind: 'value';
   label: string;
   source: { kind: 'model'; model: string; key: string };
   unit?: string;
+  /** v5 起支持：仅影响展示层级，省略即 normal。 */
+  emphasis?: ValueEmphasis;
 }
 
 /** 本地生成的计算依据/诊断说明，不引入任何脚本能力。 */
@@ -449,7 +454,7 @@ export interface ExplainElement {
 
 /** v5 组合元素：v4 元素 + 模型表格/图表/数值 + 本地解释。 */
 export type GenuiV5Element =
-  | InteractiveElement
+  | ComposableInteractiveElement
   | ModelValueElement
   | NoteElement
   | ChartElementV4
@@ -471,21 +476,38 @@ export interface ColumnsElement<C = GenuiV3Element> {
   columns: C[][];
 }
 
-export type InteractiveElement =
-  | TextElement
+export interface ValueElement {
+  kind: 'value';
+  label: string;
+  source: { kind: 'state' | 'derived'; id: string };
+  unit?: string;
+}
+
+/** v3 起支持展示强调；v2 的 value 保持关闭字段集合。 */
+export interface ComposableValueElement extends ValueElement {
+  /** 仅影响展示层级；文档顺序中前两个显式 primary 获得强调。 */
+  emphasis?: ValueEmphasis;
+}
+
+export type InteractiveControlElement =
   | { kind: 'number-input'; bind: string }
   | { kind: 'slider'; bind: string }
-  | { kind: 'select'; bind: string }
-  | {
-      kind: 'value';
-      label: string;
-      source: { kind: 'state' | 'derived'; id: string };
-      unit?: string;
-    };
+  | { kind: 'select'; bind: string };
+
+export type InteractiveElement =
+  | TextElement
+  | InteractiveControlElement
+  | ValueElement;
+
+/** v3/v4/v5 的交互元素：value 增加可选展示强调。 */
+export type ComposableInteractiveElement =
+  | TextElement
+  | InteractiveControlElement
+  | ComposableValueElement;
 
 /** v3 组合元素：v2 叶子 + 条件说明 + 图表 + 表格 + 布局容器（可嵌套）。 */
 export type GenuiV3Element =
-  | InteractiveElement
+  | ComposableInteractiveElement
   | NoteElement
   | ChartElement
   | TableElement
@@ -494,7 +516,7 @@ export type GenuiV3Element =
 
 /** v4 组合元素：与 v3 相同的元素集合，折线图允许函数曲线系列。 */
 export type GenuiV4Element =
-  | InteractiveElement
+  | ComposableInteractiveElement
   | NoteElement
   | ChartElementV4
   | TableElement

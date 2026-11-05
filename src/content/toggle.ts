@@ -47,7 +47,7 @@ export interface ToggleOptions {
   promptText?: string;
   /** 各本轮模式的完整面板文本；auto 取 promptText，tool 为 genUI tool 变体，plain 为简短说明。 */
   promptTexts?: Partial<Record<GenuiPromptMode, string>>;
-  promptVersion?: number;
+  promptVersion?: string;
   initialStatus?: AugmentStatus;
   initialMode?: GenuiPromptMode;
   /** 用户通过浮标循环按钮显式选择本轮模式。 */
@@ -247,7 +247,7 @@ export function createToggleControl(
   heading.textContent = 'GenUI 增强说明';
   const version = doc.createElement('span');
   version.className = 'version';
-  version.textContent = `v${options.promptVersion ?? 1}`;
+  version.textContent = `v${options.promptVersion ?? '1'}`;
   heading.append(version);
 
   const description = doc.createElement('p');

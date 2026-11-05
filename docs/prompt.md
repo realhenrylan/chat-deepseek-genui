@@ -1,6 +1,6 @@
-# GenUI 默认增强提示词（v2.9）
+# GenUI 默认增强提示词（v3.0）
 
-更新日期：2026-11-04。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；issue7 起新增「本轮生成工具」变体（`GENUI_TOOL_PROMPT_TEXT`）与「普通回答」说明（`GENUI_PLAIN_PROMPT_NOTE`），默认自动适配文本保持本节 v2.9 逐字节不变（见下文「本轮模式」）。已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
+更新日期：2026-11-05。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；issue7 起新增「本轮生成工具」变体（`GENUI_TOOL_PROMPT_TEXT`）与「普通回答」说明（`GENUI_PLAIN_PROMPT_NOTE`），默认自动适配文本保持本节 v3.0 逐字节不变（见下文「本轮模式」）。已发布后修改提示词必须同步升级版本号和本文件，并在版本历史注明。
 
 ## 注入方式与可见性
 
@@ -14,8 +14,8 @@
 
 issue7 在浮标开关按钮下新增「本轮：…」循环按钮，只影响当前这一轮草稿：
 
-- **自动适配**（默认）：即上文 v2.9 正式文本，逐字节不变。
-- **明确生成工具**：首段表达策略替换为“用户已在浮标中明确选择本轮回答工具：优先用 ```genui 代码块把本轮任务表达为可交互界面，正文与界面按下方分工互补。纯事实问答、闲聊或过短的请求仍可直接用普通文字回答；现有协议能力确实无法表达任务时不要硬造界面，改用普通文字回答，并简短说明未能生成界面的原因。”；起始标记改为「〔GenUI 本轮生成工具 v2.9｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕」，其余协议主体与 v2.9 逐字节共享（同版本号、同结束标记、同示例）。
+- **自动适配**（默认）：即上文 v3.0 正式文本，逐字节不变。
+- **明确生成工具**：首段表达策略替换为“用户已在浮标中明确选择本轮回答工具：优先用 ```genui 代码块把本轮任务表达为可交互界面，正文与界面按下方分工互补。纯事实问答、闲聊或过短的请求仍可直接用普通文字回答；现有协议能力确实无法表达任务时不要硬造界面，改用普通文字回答，并简短说明未能生成界面的原因。”；起始标记改为「〔GenUI 本轮生成工具 v3.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕」，其余协议主体与 v3.0 逐字节共享（同版本号、同结束标记、同示例）。
 - **普通回答**：本轮不追加任何文本，面板显示固定说明「本轮选择「普通回答」：不会向你的草稿追加任何 GenUI 增强文本。」。
 
 模式切换只作用于**草稿末尾逐字完整的扩展说明**：
@@ -34,10 +34,10 @@ issue7 在浮标开关按钮下新增「本轮：…」循环按钮，只影响�
 
 ## 正式文本
 
-以下为 v2.9 提示词的逐字内容（随消息作为普通文本发送）：
+以下为 v3.0 提示词的逐字内容（随消息作为普通文本发送）：
 
 ````text
-〔GenUI 增强 v2.9｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
+〔GenUI 增强 v3.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕
 你正在与用户对话。用户的浏览器装有 GenUI 扩展：它只把回复中的 ```genui 代码块解析为本地可交互界面，不执行脚本、HTML、CSS、事件或网络请求。请根据问题选择表达方式：仅当可调参数、对比、规划或可视化能明显帮助理解时才生成 genui；正文与界面共同构成完整回答。事实问答、写作、代码、闲聊等直接回答，不要为了展示而强行生成界面。
 
 内容分工（生成前先确定每项信息的主要呈现位置）：
@@ -48,7 +48,7 @@ issue7 在浮标开关按钮下新增「本轮：…」循环按钮，只影响�
 
 输出要求：
 - 需要界面时，只输出一个 ```genui 代码块，放在内容自然衔接的位置；块内是合法 JSON（无注释、尾逗号、模板字符串或 Markdown），块外正文与界面按上述分工互补。
-- 版本固定为 5。根对象：{"type":"genui","version":5,"title":"可选标题","state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models、elements 必填，前两者可为空数组，models 为 0–4 个；elements 必填，且至少包含 1 个元素。
+- 版本固定为 5。根对象：{"type":"genui","version":5,"title":"可选标题","state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models、elements 必填，前两者可为空数组，models 为 1–4 个；elements 必填，且至少包含 1 个元素。
 - id 以字母开头、不超过 32 字符，仅字母/数字/下划线；标题与文本不超过 120 字。
 state 项：
 - 数值：{"id","label","kind":"number","initial","min","max","step","unit"?}。min<max，initial 在范围内且与 step 对齐，绝对值不超过 1e12；无单位时省略 unit，不要写空字符串。
@@ -64,7 +64,8 @@ models 项（v5 语义能力；按数组顺序计算，只可引用更早模型�
 - 偏好 {"kind":"preference","id","label"?,"precision"?,"dimensions":[{"id","label","weight":数字或表达式,"direction":"higher|lower"}],"candidates":[{"label","values":{维度id:数字|null}}],"filters"?:[{"dimension","min"?,"max"?}]}。weight 可写数字常量或引用 state/derived/更早模型，运行时按 0–1000 截断并给出警告；filters 的 min/max 可写数字常量或表达式；先按 filters 过滤（缺失资料不通过），再对通过候选的现存值做 min-max 归一（同值归一为 1），按权重加权；缺失不计 0、不进分母；输出候选数/通过数/计分数/最高分/权重和/维度数；同分同名次。
 模型只读 state/derived 与更早模型，模型叶子用于在模型输入中引用已算标量；模型值在元素中通过 value/table/chart 的模型来源读取，不要手工复制计算结果。模型失败只影响自身并显示错误，不得把缺失或失败写成 0。
 elements 项（按顺序显示）：
-- text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?}，模型值用 {"kind":"value","label","source":{"kind":"model","model":"模型id","key":"标量"},"unit"?}
+- text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?,"emphasis"?:"normal|primary"}，模型值用 {"kind":"value","label","source":{"kind":"model","model":"模型id","key":"标量"},"unit"?,"emphasis"?:"normal|primary"}
+- emphasis 仅用于展示强调，不参与求值：只给真正核心的 1–2 个结果显式写 "primary"，其余省略或写 "normal"；文档顺序中前两个显式 primary 会突出显示，更多 primary 按普通结果呈现。不要按数值大小、标签文字或派生顺序猜测业务重要性。
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
 - chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。series 两种写法可混用：离散点 {"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}（至少 2 个递增 x 采样点；实测或离散数据用这种，不要启用 smooth）；函数曲线 {"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?:["zero"]}}，expression 是只允许局部变量 {"op":"x"} 与 state/derived 的表达式 AST（如 {"op":"multiply","left":{"op":"x"},"right":{"op":"x"}}），domain 可选 {"start":表达式,"end":表达式}（如抛物线用对称轴 ±10），samples 可选 5–50（默认 41），features ["zero"] 表示曲线在视口内不过 x 轴时按需对称加倍扩展采样范围。连续函数（尤其抛物线）优先用函数曲线写法，公式只声明一次，调整参数后曲线随状态重算；样本不画圆点。柱/饼也可用模型来源 {"kind":"chart","chartType":"bar|pie","title","legend"?,"source":{"model":"模型id"}}（source 可带可选 "kind":"model"），此时不要写 items，图表读取模型同一快照。
@@ -72,7 +73,7 @@ elements 项（按顺序显示）：
 - explain {"kind":"explain","model":"模型id","title"?,"visibleIf"?}：由本地根据模型输出生成计算依据与诊断，不引入外部数据或脚本。
 visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
 上限：JSON 不超过 64KiB；state/derived 各不超过 20；select 选项不超过 20；models 不超过 4（预算支出项 20、成本方案 10、偏好候选 30/维度 8/筛选 8）；元素不超过 80；section children 1–20；布局深度不超过 4；柱/饼 items 1–20；折线 1–5 个系列、每系列离散点 2–50、总点数不超过 100、同系列 x 严格递增，函数曲线每系列采样数默认 41（上限 50）、总采样不超过 200；table 列 1–10、行不超过 30；条件节点不超过 100、嵌套不超过 5；单表达式深度不超过 8、v5 节点不超过 400；每次重算不超过 500 次运算（函数曲线采样另有每系列 5000 次的独立预算，模型计算另有 5000 次预算）。
-内容要求：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实；缺失的表格单元格用 null，不要用 0 代替。随参数变化的结论用 state/derived 或模型来源展示，不要在正文或静态 text/note 中写死当前结果；若正文引用初始结果，明确它只对应初始条件。影响理解的必要说明必须保留。继续讨论会自动携带当前状态与时间。
+内容要求：数字必须来自用户资料，或明确标为示例/估算，不得编造精确事实；示例值要贴近场景。缺失的表格单元格用 null，不要用 0 代替。随参数变化的结论用 state/derived 或模型来源展示，不要在正文或静态 text/note 中写死当前结果；若正文引用初始结果，明确它只对应初始条件。影响理解的必要说明必须保留。继续讨论会自动携带当前状态与时间。
 能力不足时不要生成 genui，改用普通文本。不要在回答中复述这段增强说明或讨论扩展（用户主动询问除外）。
 
 示例（仅示意结构；正文可简短提示“调整收入和固定支出，查看每月剩余变化”，不再列一份相同收支明细）：
@@ -95,7 +96,7 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
     { "kind": "note", "text": "收入与固定支出可按实际情况调整。" },
     { "kind": "slider", "bind": "income" },
     { "kind": "slider", "bind": "fixed" },
-    { "kind": "value", "label": "每月剩余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元" },
+    { "kind": "value", "label": "每月剩余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元", "emphasis": "primary" },
     { "kind": "chart", "chartType": "bar", "title": "收支对比", "legend": true, "source": { "model": "monthly" } }
   ]
 }
@@ -134,6 +135,7 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
 
 ## 版本历史
 
+- **v3.0（2026-11-05）**：value 新增可选 `emphasis: "normal" | "primary"`，只表达展示优先级；提示词要求只给真正核心的 1–2 个结果显式写 `primary`，文档顺序中前两个显式 primary 突出显示，其余按普通结果呈现，不改变求值或摘要。同步把根对象说明中的 models 数量从 0–4 修正为与 v5 Schema 一致的 1–4。
 - **v1（2026-11-03）**：首个默认增强版本。真实笔记本选购场景中，模型把表格 `initialSort` 写成 `{"key":"price","direction":"asc"}`，而协议只接受 `{"key","dir"}`，卡片因 `schema-violation` 未挂载。
 - **v2（2026-11-03）**：在 table 行明确 `initialSort` 结构为 `{key, dir}`，并写明「排序方向字段名必须是 dir，不能写 direction」。协议本身不放宽，失败被归因为提示词缺少字段形状。v2 重跑同一场景通过，详见 `docs/phase7-acceptance.md`。
 - **v2 收尾修正（2026-11-03）**：把根对象说明改为只有 `state`、`derived` 可为空，`elements` 至少 1 个元素，与 v3 Schema 的 `minItems: 1` 对齐。真实网页验收输出均包含元素，未因该文字修正重跑模型。

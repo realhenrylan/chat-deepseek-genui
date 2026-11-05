@@ -55,7 +55,7 @@
           { "kind": "slider", "bind": "saving" }
         ],
         [
-          { "kind": "value", "label": "月结余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元" },
+          { "kind": "value", "label": "月结余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元", "emphasis": "primary" },
           { "kind": "value", "label": "支出占收入", "source": { "kind": "model", "model": "monthly", "key": "usage" }, "unit": "%" },
           { "kind": "value", "label": "距储蓄目标", "source": { "kind": "derived", "id": "goalGap" }, "unit": "元" }
         ]

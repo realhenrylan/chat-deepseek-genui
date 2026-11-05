@@ -9,6 +9,8 @@ const idSchema = {
 
 const labelSchema = { type: 'string', minLength: 1, maxLength: LIMITS.maxLabelLength };
 const unitSchema = { type: 'string', minLength: 1, maxLength: LIMITS.maxUnitLength };
+/** v3 起数值展示支持的可选强调级别；只影响排版，不参与求值。 */
+const emphasisSchema = { type: 'string', enum: ['normal', 'primary'] };
 const boundedNumberSchema = {
   type: 'number',
   minimum: -LIMITS.maxNumberMagnitude,
@@ -723,6 +725,7 @@ const valueElementSchemaV5 = {
       ],
     },
     unit: unitSchema,
+    emphasis: emphasisSchema,
   },
 };
 
@@ -1033,6 +1036,7 @@ const makeElementDefinition = (chartLine: object, selfRef: { $ref: string }) => 
           ],
         },
         unit: unitSchema,
+        emphasis: emphasisSchema,
       },
     },
     noteSchema,

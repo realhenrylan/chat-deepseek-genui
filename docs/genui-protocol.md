@@ -1,6 +1,6 @@
 # GenUI JSON 协议
 
-更新日期：2026-11-04。协议供 `chat.deepseek.com` AI 回复中的 `genui` 代码块使用。模型输出是不可信数据；扩展只解析和渲染声明式字段，不执行脚本、HTML、CSS、事件名、网络目标或浏览器 API。
+更新日期：2026-11-05。协议供 `chat.deepseek.com` AI 回复中的 `genui` 代码块使用。模型输出是不可信数据；扩展只解析和渲染声明式字段，不执行脚本、HTML、CSS、事件名、网络目标或浏览器 API。
 
 ## 版本
 
@@ -41,7 +41,9 @@ v2–v5 均允许以下叶元素：
 | `number-input` | `bind` | 编辑绑定的数值状态 |
 | `slider` | `bind` | 按范围和步长调整数值状态 |
 | `select` | `bind` | 选择绑定状态中的一个选项 |
-| `value` | `label`、`source: { "kind": "state" | "derived", "id" }` 或 v5 的 `{ "kind": "model", "model", "key" }`、可选 `unit` | 显示当前状态、派生结果或模型标量 |
+| `value` | `label`、`source: { "kind": "state" | "derived", "id" }` 或 v5 的 `{ "kind": "model", "model", "key" }`、可选 `unit`、v3–v5 可选 `emphasis: "normal" \| "primary"` | 显示当前状态、派生结果或模型标量 |
+
+`emphasis` 只表达展示优先级，不参与求值，也不改变摘要、排序或模型快照。省略等同 `normal`；v3–v5 按文档顺序只强调前两个显式 `primary`，超出的 `primary` 按普通结果显示，卡片不会因显示数量失败。v1/v2 的字段集合仍为封闭白名单，不接受 `emphasis`。
 
 控件绑定必须引用存在且类型匹配的状态。不同控件可绑定同一个状态，例如同时提供滑块和数字输入；同一 Card 内共享状态。多个 Card 的状态彼此隔离。
 

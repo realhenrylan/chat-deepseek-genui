@@ -23,11 +23,17 @@ const USER_DRAFT = '帮我算一下每月能存多少钱';
 
 describe('默认增强提示词', () => {
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe(2.9);
+    expect(GENUI_PROMPT_VERSION).toBe('3.0');
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
     expect(hasGenuiPrompt(GENUI_PROMPT_TEXT)).toBe(true);
+  });
+
+  it('只把显式 primary 描述为展示强调', () => {
+    expect(GENUI_PROMPT_TEXT).toContain('前两个显式 primary');
+    expect(GENUI_PROMPT_TEXT).toContain('不参与求值');
+    expect(GENUI_PROMPT_TEXT).toContain('不要按数值大小、标签文字或派生顺序猜测业务重要性');
   });
 
   it('包含真实协议的核心组件、绑定、运算与限制说明', () => {
@@ -47,6 +53,8 @@ describe('默认增强提示词', () => {
       'slider',
       'number-input',
       'value',
+      'emphasis',
+      'primary',
       'visibleIf',
       'section',
       'columns',

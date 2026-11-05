@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, useMemo } from 'react';
 import type {
   ExplainElement,
   GenuiV3Document,
@@ -67,6 +67,40 @@ function gatedVisible(
   return result.ok ? { visible: result.value } : { visible: true, error: result.error };
 }
 
+/**
+ * 按渲染顺序遍历组合元素并生成与 ElementList 完全一致的路径。
+ * 强调资格只看文档顺序和显式 primary，不读取数值、标签或业务状态。
+ */
+function* walkElements(
+  elements: readonly AnyElement[],
+  path: string,
+): Generator<{ element: AnyElement; path: string }> {
+  for (const [index, element] of elements.entries()) {
+    const elementPath = `${path}-${index}`;
+    yield { element, path: elementPath };
+    if (element.kind === 'section') {
+      yield* walkElements(element.children, `${elementPath}-section`);
+    } else if (element.kind === 'columns') {
+      for (const [columnIndex, column] of element.columns.entries()) {
+        yield* walkElements(column, `${elementPath}-col-${columnIndex}`);
+      }
+    }
+  }
+}
+
+/** 文档顺序中前两个显式 primary 获得强调；其余 primary 保持普通展示。 */
+function collectEmphasizedValuePaths(elements: readonly AnyElement[]): ReadonlySet<string> {
+  const emphasized = new Set<string>();
+  let remaining = 2;
+  for (const { element, path } of walkElements(elements, 'root')) {
+    if (element.kind === 'value' && element.emphasis === 'primary' && remaining > 0) {
+      emphasized.add(path);
+      remaining -= 1;
+    }
+  }
+  return emphasized;
+}
+
 function ExplainView({
   element,
   context,
@@ -127,10 +161,12 @@ function ElementContent({
   element,
   context,
   path,
+  emphasizedPaths,
 }: {
   element: AnyElement;
   context: CompositeContext;
   path: string;
+  emphasizedPaths: ReadonlySet<string>;
 }) {
   switch (element.kind) {
     case 'explain':
@@ -193,6 +229,7 @@ function ElementContent({
               elements={element.children}
               context={context}
               path={`${path}-section`}
+              emphasizedPaths={emphasizedPaths}
             />
           </div>
         </section>
@@ -206,6 +243,7 @@ function ElementContent({
                 elements={column}
                 context={context}
                 path={`${path}-col-${index}`}
+                emphasizedPaths={emphasizedPaths}
               />
             </div>
           ))}
@@ -223,6 +261,7 @@ function ElementContent({
           fieldErrors={context.fieldErrors}
           onValueChange={context.onValueChange}
           onNumberInput={context.onNumberInput}
+          emphasized={emphasizedPaths.has(path)}
         />
       );
   }
@@ -232,10 +271,12 @@ export function ElementList({
   elements,
   context,
   path,
+  emphasizedPaths = new Set<string>(),
 }: {
   elements: AnyElement[];
   context: CompositeContext;
   path: string;
+  emphasizedPaths?: ReadonlySet<string>;
 }) {
   return (
     <>
@@ -245,6 +286,7 @@ export function ElementList({
             element={element}
             context={context}
             path={`${path}-${index}`}
+            emphasizedPaths={emphasizedPaths}
           />
         </ElementErrorBoundary>
       ))}
@@ -253,5 +295,16 @@ export function ElementList({
 }
 
 export function CompositeElementsView({ context }: { context: CompositeContext }) {
-  return <ElementList elements={context.document.elements} context={context} path="root" />;
+  const emphasizedPaths = useMemo(
+    () => collectEmphasizedValuePaths(context.document.elements),
+    [context.document],
+  );
+  return (
+    <ElementList
+      elements={context.document.elements}
+      context={context}
+      path="root"
+      emphasizedPaths={emphasizedPaths}
+    />
+  );
 }

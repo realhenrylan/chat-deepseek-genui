@@ -1,6 +1,8 @@
 /**
- * 阶段 7：默认增强提示词（v2.9）。
+ * 阶段 7：默认增强提示词（v3.0）。
  *
+ * v3.0 修订：value 新增可选 emphasis（normal|primary），只表达展示优先级；
+ * 文档顺序中前两个显式 primary 获得强调，不改变求值、协议版本或字段集合。
  * v2.9 修订：移除来源/依据（sources/basis）能力，协议回到 v5；提示词不再
  * 要求未核验声明、依据条目或时效标注。
  * v2.8 修订：移除本地方案文件与方案工作台后，提示词不再提「导出方案」。
@@ -36,13 +38,13 @@
 /** 本轮模式：auto=自动适配（默认）；tool=本轮明确生成工具；plain=普通回答（不追加）。 */
 export type GenuiPromptMode = 'auto' | 'tool' | 'plain';
 
-export const GENUI_PROMPT_VERSION = 2.9;
+export const GENUI_PROMPT_VERSION = '3.0';
 
 export const GENUI_PROMPT_START =
-  '〔GenUI 增强 v2.9｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 增强 v3.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 
 export const GENUI_PROMPT_TOOL_START =
-  '〔GenUI 本轮生成工具 v2.9｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+  '〔GenUI 本轮生成工具 v3.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
 
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 
@@ -56,7 +58,7 @@ const PROMPT_BODY = `你正在与用户对话。用户的浏览器装有 GenUI �
 
 输出要求：
 - 需要界面时，只输出一个 \`\`\`genui 代码块，放在内容自然衔接的位置；块内是合法 JSON（无注释、尾逗号、模板字符串或 Markdown），块外正文与界面按上述分工互补。
-- 版本固定为 5。根对象：{"type":"genui","version":5,"title":"可选标题","state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models、elements 必填，前两者可为空数组，models 为 0–4 个；elements 必填，且至少包含 1 个元素。
+- 版本固定为 5。根对象：{"type":"genui","version":5,"title":"可选标题","state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models、elements 必填，前两者可为空数组，models 为 1–4 个；elements 必填，且至少包含 1 个元素。
 - id 以字母开头、不超过 32 字符，仅字母/数字/下划线；标题与文本不超过 120 字。
 state 项：
 - 数值：{"id","label","kind":"number","initial","min","max","step","unit"?}。min<max，initial 在范围内且与 step 对齐，绝对值不超过 1e12；无单位时省略 unit，不要写空字符串。
@@ -72,7 +74,8 @@ models 项（v5 语义能力；按数组顺序计算，只可引用更早模型�
 - 偏好 {"kind":"preference","id","label"?,"precision"?,"dimensions":[{"id","label","weight":数字或表达式,"direction":"higher|lower"}],"candidates":[{"label","values":{维度id:数字|null}}],"filters"?:[{"dimension","min"?,"max"?}]}。weight 可写数字常量或引用 state/derived/更早模型，运行时按 0–1000 截断并给出警告；filters 的 min/max 可写数字常量或表达式；先按 filters 过滤（缺失资料不通过），再对通过候选的现存值做 min-max 归一（同值归一为 1），按权重加权；缺失不计 0、不进分母；输出候选数/通过数/计分数/最高分/权重和/维度数；同分同名次。
 模型只读 state/derived 与更早模型，模型叶子用于在模型输入中引用已算标量；模型值在元素中通过 value/table/chart 的模型来源读取，不要手工复制计算结果。模型失败只影响自身并显示错误，不得把缺失或失败写成 0。
 elements 项（按顺序显示）：
-- text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?}，模型值用 {"kind":"value","label","source":{"kind":"model","model":"模型id","key":"标量"},"unit"?}
+- text {"kind":"text","value"}；number-input/slider/select {"kind":"...","bind":状态id}（控件类型必须与状态类型匹配）；value {"kind":"value","label","source":{"kind":"state|derived","id"},"unit"?,"emphasis"?:"normal|primary"}，模型值用 {"kind":"value","label","source":{"kind":"model","model":"模型id","key":"标量"},"unit"?,"emphasis"?:"normal|primary"}
+- emphasis 仅用于展示强调，不参与求值：只给真正核心的 1–2 个结果显式写 "primary"，其余省略或写 "normal"；文档顺序中前两个显式 primary 会突出显示，更多 primary 按普通结果呈现。不要按数值大小、标签文字或派生顺序猜测业务重要性。
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，窄屏自动单列）
 - chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。series 两种写法可混用：离散点 {"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}（至少 2 个递增 x 采样点；实测或离散数据用这种，不要启用 smooth）；函数曲线 {"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?:["zero"]}}，expression 是只允许局部变量 {"op":"x"} 与 state/derived 的表达式 AST（如 {"op":"multiply","left":{"op":"x"},"right":{"op":"x"}}），domain 可选 {"start":表达式,"end":表达式}（如抛物线用对称轴 ±10），samples 可选 5–50（默认 41），features ["zero"] 表示曲线在视口内不过 x 轴时按需对称加倍扩展采样范围。连续函数（尤其抛物线）优先用函数曲线写法，公式只声明一次，调整参数后曲线随状态重算；样本不画圆点。柱/饼也可用模型来源 {"kind":"chart","chartType":"bar|pie","title","legend"?,"source":{"model":"模型id"}}（source 可带可选 "kind":"model"），此时不要写 items，图表读取模型同一快照。
@@ -103,7 +106,7 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
     { "kind": "note", "text": "收入与固定支出可按实际情况调整。" },
     { "kind": "slider", "bind": "income" },
     { "kind": "slider", "bind": "fixed" },
-    { "kind": "value", "label": "每月剩余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元" },
+    { "kind": "value", "label": "每月剩余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元", "emphasis": "primary" },
     { "kind": "chart", "chartType": "bar", "title": "收支对比", "legend": true, "source": { "model": "monthly" } }
   ]
 }

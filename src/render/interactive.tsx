@@ -1,8 +1,8 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import type {
+  ComposableInteractiveElement,
   DerivedCalculation,
   DerivedValue,
-  InteractiveElement,
   InteractiveStateValues,
   ModelValueElement,
   StateVariable,
@@ -19,7 +19,7 @@ import { formatNumber, stateDisplay } from './format';
  */
 export interface InteractiveElementProps {
   document: { state: StateVariable[]; derived: DerivedValue[] };
-  element: Exclude<InteractiveElement, TextElement> | ModelValueElement;
+  element: Exclude<ComposableInteractiveElement, TextElement> | ModelValueElement;
   state: InteractiveStateValues;
   calculation: DerivedCalculation;
   /** v5 语义模型结果；value 元素可读取模型标量。 */
@@ -28,6 +28,68 @@ export interface InteractiveElementProps {
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
   onNumberInput: (id: string, raw: string) => void;
+  /** 展示层计算出的强调资格；省略时按普通结果呈现。 */
+  emphasized?: boolean;
+}
+
+/** 数值与单位分开排版，textContent 仍保留“数值 空格 单位”的完整文本。 */
+function NumericValueOutput({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: number;
+  unit?: string;
+}) {
+  const numberText = formatNumber(value);
+  const unitText = unit ? ` ${unit}` : '';
+  return (
+    <output
+      className="genui-value-output"
+      aria-label={`${label}：${numberText}${unitText}`}
+    >
+      <span className="genui-value-number">{numberText}</span>
+      {unit ? <span className="genui-value-unit">{unitText}</span> : null}
+    </output>
+  );
+}
+
+function TextValueOutput({ label, display }: { label: string; display: string }) {
+  return (
+    <output className="genui-value-output" aria-label={`${label}：${display}`}>
+      {display}
+    </output>
+  );
+}
+
+/** 结果卡片的共同外壳：强调只改展示层级；错误就地显示，绝不伪装成 0。 */
+function ValueRow({
+  label,
+  emphasized,
+  error,
+  children,
+}: {
+  label: string;
+  emphasized: boolean;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={emphasized ? 'genui-value genui-value-primary' : 'genui-value'}
+      data-emphasis={emphasized ? 'primary' : undefined}
+    >
+      <div className="genui-value-head">
+        <span className="genui-value-label">{label}</span>
+      </div>
+      {error ? (
+        <span className="genui-runtime-error" role="status">无法计算：{error}</span>
+      ) : (
+        children
+      )}
+    </div>
+  );
 }
 
 export function InteractiveElementView({
@@ -40,6 +102,7 @@ export function InteractiveElementView({
   fieldErrors,
   onValueChange,
   onNumberInput,
+  emphasized = false,
 }: InteractiveElementProps) {
   const controlId = useId();
 
@@ -137,18 +200,13 @@ export function InteractiveElementView({
     const definition = document.derived.find((item) => item.id === source.id);
     const unit = element.unit ?? definition?.unit;
     return (
-      <div className="genui-value">
-        <div className="genui-value-head">
-          <span className="genui-value-label">{element.label}</span>
-        </div>
-        {error ? (
-          <span className="genui-runtime-error" role="status">无法计算：{error}</span>
-        ) : (
-          <output className="genui-value-output" aria-label={element.label}>
-            {formatNumber(value ?? Number.NaN)}{unit ? ` ${unit}` : ''}
-          </output>
-        )}
-      </div>
+      <ValueRow label={element.label} emphasized={emphasized} error={error}>
+        <NumericValueOutput
+          label={element.label}
+          value={value ?? Number.NaN}
+          unit={unit}
+        />
+      </ValueRow>
     );
   }
 
@@ -163,18 +221,13 @@ export function InteractiveElementView({
           ? '该模型值在当前数据下不可用'
           : null;
     return (
-      <div className="genui-value">
-        <div className="genui-value-head">
-          <span className="genui-value-label">{element.label}</span>
-        </div>
-        {error ? (
-          <span className="genui-runtime-error" role="status">无法计算：{error}</span>
-        ) : (
-          <output className="genui-value-output" aria-label={element.label}>
-            {formatNumber(value as number)}{element.unit ? ` ${element.unit}` : ''}
-          </output>
-        )}
-      </div>
+      <ValueRow label={element.label} emphasized={emphasized} error={error ?? undefined}>
+        <NumericValueOutput
+          label={element.label}
+          value={value as number}
+          unit={element.unit}
+        />
+      </ValueRow>
     );
   }
 
@@ -182,16 +235,14 @@ export function InteractiveElementView({
   const value = getOwn(state, source.id);
   if (!variable || value === undefined) return <UnknownElementView element={{ kind: 'value' }} />;
   const unit = element.unit ?? (variable.kind === 'number' ? variable.unit : undefined);
-  const display = variable.kind === 'number'
-    ? `${formatNumber(Number(value))}${unit ? ` ${unit}` : ''}`
-    : stateDisplay(variable, value);
 
   return (
-    <div className="genui-value">
-      <div className="genui-value-head">
-        <span className="genui-value-label">{element.label}</span>
-      </div>
-      <output className="genui-value-output" aria-label={element.label}>{display}</output>
-    </div>
+    <ValueRow label={element.label} emphasized={emphasized}>
+      {variable.kind === 'number' ? (
+        <NumericValueOutput label={element.label} value={Number(value)} unit={unit} />
+      ) : (
+        <TextValueOutput label={element.label} display={stateDisplay(variable, value)} />
+      )}
+    </ValueRow>
   );
 }

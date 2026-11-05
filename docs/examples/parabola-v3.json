@@ -98,7 +98,8 @@
                 "source": {
                   "kind": "derived",
                   "id": "discriminant"
-                }
+                },
+                "emphasis": "primary"
               },
               {
                 "kind": "note",

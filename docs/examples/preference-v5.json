@@ -45,7 +45,7 @@
       ]
     },
     { "kind": "value", "label": "符合预算的候选", "source": { "kind": "model", "model": "pick", "key": "eligibleCount" }, "unit": "款" },
-    { "kind": "value", "label": "最高得分", "source": { "kind": "model", "model": "pick", "key": "topScore" }, "unit": "分" },
+    { "kind": "value", "label": "最高得分", "source": { "kind": "model", "model": "pick", "key": "topScore" }, "unit": "分", "emphasis": "primary" },
     { "kind": "table", "title": "综合排名", "source": { "model": "pick", "view": "ranking" } },
     {
       "kind": "columns",
