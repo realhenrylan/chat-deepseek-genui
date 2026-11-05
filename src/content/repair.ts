@@ -1,4 +1,5 @@
 import { appendDraftIntoInput } from './followup';
+import { DEEPSEEK_SITE_ADAPTER, type SiteAdapter } from './site-adapter';
 
 /**
  * 修复请求投递：优先写入已有聊天输入框，找不到输入框时复制到剪贴板。
@@ -38,8 +39,9 @@ export async function copyText(doc: Document, text: string): Promise<boolean> {
 export async function deliverRepairRequest(
   doc: Document,
   prompt: string,
+  adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER,
 ): Promise<RepairDeliveryResult> {
-  const result = appendDraftIntoInput(doc, prompt);
+  const result = appendDraftIntoInput(doc, prompt, adapter);
   if (result === 'no-input') {
     return (await copyText(doc, prompt)) ? 'copied' : 'copy-failed';
   }

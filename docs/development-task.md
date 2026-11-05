@@ -301,3 +301,41 @@
 ## 阶段 11：依据可追溯（issue8，已移除）
 
 2026-11-04 按产品决定移除 issue8 的来源/依据能力：协议 v6 与根级 `sources`/`basis`、依据面板与徽标、用户修改与时效标记、提示词中的来源要求全部删除；提示词回到 v2.9 与协议 v5。旧 v6 文档按不支持版本保留原始代码块。
+
+## 阶段 12：站点适配与本地诊断（issue #9）
+
+### 目标与范围
+
+- 形成统一站点适配接口：识别回答、提取候选内容、识别输入框、感知生成与导航、提供可用身份；页面变化主要影响适配层。
+- 将 DOM 识别与卡片运行时、状态存储、计算和方案逻辑分离，渲染层不再直接依赖站点选择器。
+- 建立脱敏本地诊断：识别失败、等待完整内容、协议失败、挂载失败分开记录；用户主动导出时先预览。
+- 维护页面结构变体与延迟渲染回归样本；侧栏只形成可评审方案，不实施。
+
+### 交付物与通过条件
+
+- [x] `src/content/site-adapter.ts`：`SiteAdapter` 契约与 `DEEPSEEK_SITE_ADAPTER`，集中全部站点选择器；`detect`/`identity`/`followup`/`controller` 改为经适配器调用，默认参数保持旧签名可用。
+- [x] 找不到确定输入框（`textarea[name="search"]` 或 placeholder 含「发送消息」）时返回 `null`，不猜测其他文本框；多个候选、隐藏或禁用项同样不写入。
+- [x] 节点替换、会话切换、离屏延迟与生成状态沿用既有生命周期处理，并由适配器 `probe()` 暴露只读计数用于诊断；已挂载卡片在路由/会话变化时重新校验身份。
+- [x] `src/runtime/diagnostics.ts`：四类信号（识别/等待/协议/挂载）、固定代码表、冷却计数、40 条上限；快照只含版本、适配器与页面计数、条目，不含聊天/草稿/账号/会话。
+- [x] 浮标新增「本地诊断」按钮与独立 `#genui-diagnostics` 面板：预览、刷新、复制、下载 JSON、关闭；用户手势触发，不自动上传、不写入存储。
+- [x] 变体样本 `tests/fixtures/site-variants/{rotated-label,empty-pre,orphan-label}.html` 与 `site-adapter.test.ts`、`diagnostics.test.ts`、`controller-diagnostics.test.ts`、`toggle-diagnostics.test.ts`。
+- [x] 侧栏评审稿 [side-panel-evaluation.md](side-panel-evaluation.md)：内联 + 用户主动打开的侧栏、共享会话身份、`sidePanel` 权限、Chrome/Edge 114+、内联回退、service worker 生命周期注意项；本轮不实现。
+- [x] 隐私/状态文档补充诊断数据行与内存边界；未新增权限或存储行为，无需商店权限变更。
+- [x] 原始代码块回退、页面滚动/复制/输入行为未改动；`#genui-panel` 结构与既有 e2e 断言保持兼容。
+
+### 复核修复（2026-11-05，issue #9 评审）
+
+- **[P1] 会话切换复用节点仍沿用旧状态键**：`reconcile` 在挂载清理前按当前账号/会话重算身份；`identityChanged` 时先撤下已挂载卡片并按新身份重挂，旧状态保留在内存，切回原会话可恢复。适配器新增 `readNavigationKey(doc)`；控制器监听 `popstate`/`hashchange` 并按 `navigationPollMs`（默认 1000）轮询，发现变化立即清空稳定快照、撤下挂载并安排扫描。
+- **[P1] 输入框多候选仍写入**：`findChatInput` 改为合并 `textarea[name="search"]` 与 placeholder 候选、去重并过滤隐藏/禁用/只读项，只有恰好一个可用候选时返回，否则 `null`；探针新增 `inputCandidates`，`inputFound` 表示唯一可用。
+- **[P2] 适配器未贯穿输入路径**：`DraftAugmentOptions.adapter`、`appendDraftIntoInput`、`fillContinueIntoInput`、`deliverRepairRequest` 均接受适配器；控制器默认的继续讨论/修复请求与草稿增强器统一使用选定适配器，`index.ts` 不再注入默认适配器的闭包。
+- **[P2] 正常启动的输入框失败未记录**：控制器在启用且处于聊天路由、启动时探针无唯一输入框即记录；继续讨论 `no-input`、修复请求 `copied`/`copy-failed` 以及草稿增强器 `no-input` 都接入诊断；多候选记录 `detection/input-ambiguous`。
+- 回归：新增节点复用仅路由变化、启动无输入框、双输入框歧义、注入适配器输入路径 4 组用例；`tests/unit/site-adapter.test.ts` 16 项、`controller-diagnostics.test.ts` 10 项，合计 41 个测试文件 497 项单测全绿；typecheck 与 lint 通过。
+
+### 完成记录（2026-11-04）
+
+- 适配器：新增 `src/content/site-adapter.ts`（id `deepseek-chat`，version `2026-11-02`），集中回答容器、代码块、banner/语言标签、停止生成、输入框、会话路由、账号标记与消息键；`findGenuiBlocks(root, adapter?)`、`findChatInput(doc, adapter?)`、`readSessionId/readAccountId(doc, adapter?)`、`isGenerationActive(doc, adapter?)` 保留兼容签名。
+- 诊断：新增 `src/runtime/diagnostics.ts`（schema `genui-diagnostics/v1`），识别 `no-assistant-container`/`no-input`/`missing-pre`，等待 `streaming`/`settling`/`deferred-offscreen`，协议复用 `GenuiFailureCode`，挂载 `mount-failed`/`render-error`；`enhance.ts` 在拒绝/致命分支记录，`controller.ts` 在扫描、生成、settling 与 augmenter `no-input` 时记录；`buildDiagnostics()` 可从生命周期句柄读取。
+- UI：`toggle.ts` 增加第四个按钮「本地诊断」与独立面板；`#genui-panel` 的单个 `pre`/单个按钮结构未变，既有单测与 e2e 定位不受影响；jsdom 无 `URL.createObjectURL` 时退化为复制提示。
+- 文档：新增 [side-panel-evaluation.md](side-panel-evaluation.md)；[compatibility-investigation.md](compatibility-investigation.md) 增第 8 节（接口契约、选择器清单、变更策略、变体样本、诊断边界）；[privacy.md](privacy.md) 增本地诊断数据行与说明；[state-storage.md](state-storage.md) 说明诊断独立于卡片状态；README/CHANGELOG 同步。
+- 验证：`npm run typecheck`、`npm run lint` 通过；`npm test` 41 个文件 497 项全部通过（较 issue #9 前新增 39 项）；`npm run build` 通过，`dist/content.js` 855349 B（855.35 kB，gzip 152.49 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions`/background；默认 Edge/Chrome e2e 通过（24 passed / 6 skipped，真实 origin 用例按默认跳过）。
+- 未执行：真实 DeepSeek 页面人工复核（沿用既有快照）；侧栏实施不在本轮范围。站点改版后按 [compatibility-investigation.md](compatibility-investigation.md) 第 8.2 节流程先探针、补样本、再升版本。

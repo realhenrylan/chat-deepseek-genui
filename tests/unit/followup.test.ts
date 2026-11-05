@@ -74,16 +74,26 @@ describe('fillContinueIntoInput', () => {
     expect(textarea.value).toBe(`  \n  \n\n${SUMMARY_A}`);
   });
 
-  it('优先 name=search，回退 placeholder 含「发送消息」的 textarea', () => {
+  it('name=search 与 placeholder 候选并存时视为歧义，不猜测写入', () => {
     const search = createTextarea('');
     const fallback = document.createElement('textarea');
     fallback.setAttribute('placeholder', '给 DeepSeek 发送消息');
     document.body.append(fallback);
 
     const status = fillContinueIntoInput(document, SUMMARY_A);
-    expect(status).toBe('filled');
-    expect(search.value).toBe(SUMMARY_A);
+    expect(status).toBe('no-input');
+    expect(search.value).toBe('');
     expect(fallback.value).toBe('');
+  });
+
+  it('唯一 placeholder「发送消息」的 textarea 可作为回退目标', () => {
+    const fallback = document.createElement('textarea');
+    fallback.setAttribute('placeholder', '给 DeepSeek 发送消息');
+    document.body.append(fallback);
+
+    const status = fillContinueIntoInput(document, SUMMARY_A);
+    expect(status).toBe('filled');
+    expect(fallback.value).toBe(SUMMARY_A);
   });
 
   it('无确定标记（无 name、placeholder 不含「发送消息」）时返回 no-input，不猜测最后一个 textarea', () => {

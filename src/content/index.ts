@@ -1,7 +1,5 @@
 import { initContentScript, LOG_PREFIX, type ContentScope } from './lifecycle';
 import { createPageLifecycle } from './controller';
-import { fillContinueIntoInput } from './followup';
-import { deliverRepairRequest } from './repair';
 
 // 内容脚本入口：仅在阶段 0 确认的匹配范围（https://chat.deepseek.com/*）内注入。
 // 阶段 3：幂等初始化后启动动态生命周期控制、保守挂载和本地增强开关。
@@ -10,10 +8,9 @@ import { deliverRepairRequest } from './repair';
 try {
   const init = initContentScript(globalThis as unknown as ContentScope, document);
   if (!init.alreadyLoaded) {
+    // 继续讨论/修复请求的默认投递由控制器用同一个站点适配器完成；
+    // 这里不传回调，避免自定义适配器时卡片识别与输入框识别分叉。
     const lifecycle = createPageLifecycle(document, {
-      onContinue: (summary) => fillContinueIntoInput(document, summary),
-      // 修复请求只写入可见草稿或复制；不自动发送，也不读取会话内容。
-      onRepairRequest: (prompt) => deliverRepairRequest(document, prompt),
       // 生产开启视口门控：离屏代码块的瞬时 invalid-json 不误标失败（限制 2 缓解）。
       enableViewportGate: true,
     });

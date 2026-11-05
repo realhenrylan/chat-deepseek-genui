@@ -1,6 +1,12 @@
 import { LOG_PREFIX } from './lifecycle';
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { computeCardIdentities, readSessionId, type CardIdentity } from './identity';
+import { DEEPSEEK_SITE_ADAPTER, type SiteAdapter } from './site-adapter';
+import {
+  type DiagnosticCategory,
+  type DiagnosticCode,
+  type DiagnosticRecorder,
+} from '../runtime/diagnostics';
 import { parseGenui } from '../protocol/validate';
 import type { GenuiDocument, GenuiFailureCode } from '../protocol/types';
 import {
@@ -36,6 +42,16 @@ export const HOST_CLASS = 'genui-card-host';
 /** 失败原因 = 协议失败码 ∪ 链路级原因。 */
 export type EnhanceFailureReason = GenuiFailureCode | 'missing-pre' | 'mount-failed' | 'render-error';
 
+/** 失败原因到脱敏诊断信号的映射；deferred 不是失败，单独记为等待。 */
+export function diagnosticForEnhanceFailure(
+  reason: EnhanceFailureReason,
+): { category: DiagnosticCategory; code: DiagnosticCode } {
+  if (reason === 'missing-pre') return { category: 'detection', code: 'missing-pre' };
+  if (reason === 'mount-failed') return { category: 'mount', code: 'mount-failed' };
+  if (reason === 'render-error') return { category: 'mount', code: 'render-error' };
+  return { category: 'protocol', code: reason };
+}
+
 export interface EnhanceOptions {
   /** 元素注册表覆盖（测试与后续阶段扩展用）。 */
   registry?: ElementRegistry;
@@ -61,6 +77,10 @@ export interface EnhanceOptions {
    * （写入可见草稿或复制到剪贴板，绝不自动发送）。
    */
   onRepairRequest?: (prompt: string) => RepairDeliveryResult | Promise<RepairDeliveryResult>;
+  /** 站点适配层覆盖；缺省使用 DeepSeek 适配器（测试注入变体）。 */
+  adapter?: SiteAdapter;
+  /** 脱敏诊断记录器；缺省不记录，生产由页面控制器注入。 */
+  diagnostics?: DiagnosticRecorder;
 }
 
 export interface EnhanceResult {
@@ -128,12 +148,21 @@ export class EnhancementManager {
   private readonly statuses = new Map<HTMLElement, StatusRecord>();
   private enabled = true;
   private readonly stateStore: CardStateStore;
+  private readonly adapter: SiteAdapter;
+  private readonly diagnostics?: DiagnosticRecorder;
 
   constructor(
     private readonly doc: Document,
     private readonly options: EnhanceOptions = {},
   ) {
     this.stateStore = options.stateStore ?? createCardStateStore();
+    this.adapter = options.adapter ?? DEEPSEEK_SITE_ADAPTER;
+    this.diagnostics = options.diagnostics;
+  }
+
+  /** 当前已挂载/已判失败的块数，供诊断上下文与测试观察。 */
+  counts(): { mounted: number; failed: number } {
+    return { mounted: this.mounted.size, failed: this.failed.size };
   }
 
   private ensureStatus(
@@ -225,8 +254,20 @@ export class EnhancementManager {
    */
   reconcile(allowMount = true): EnhanceResult {
     const result: EnhanceResult = { mounted: 0, skipped: 0, failed: 0 };
-    const candidates = findGenuiBlocks(this.doc);
+    const candidates = findGenuiBlocks(this.doc, this.adapter);
     const byBlock = new Map(candidates.map((candidate) => [candidate.block, candidate]));
+
+    // 身份只在真正要挂载时计算；已挂载块也要用当前会话/账号重新核对，
+    // 否则 SPA 切换会话而复用节点时，旧卡片会一直绑定上一个会话的状态键。
+    const identities =
+      this.enabled && allowMount
+        ? computeCardIdentities(candidates, {
+            sessionId: this.options.sessionId ?? readSessionId(this.doc, this.adapter),
+            accountId: this.options.accountId,
+            adapter: this.adapter,
+            document: this.doc,
+          })
+        : null;
 
     for (const [block, record] of this.mounted) {
       const candidate = byBlock.get(block);
@@ -236,7 +277,12 @@ export class EnhancementManager {
       const changedText =
         candidate !== undefined && candidateSignature(candidate) !== record.signature;
       const hostLost = !record.host.isConnected;
-      if (!block.isConnected || removed || changedText || hostLost) {
+      // 会话/账号/消息键变化时撤销旧绑定；旧状态留在内存仓库里，切回原会话
+      // 仍可按旧身份恢复，但绝不会串到新会话。
+      const currentKey = candidate !== undefined ? identities?.get(block)?.key : undefined;
+      const identityChanged =
+        identities !== null && currentKey !== undefined && currentKey !== record.key;
+      if (!block.isConnected || removed || changedText || hostLost || identityChanged) {
         if (changedText) this.stateStore.delete(record.key);
         disposeMounted(record, true);
         this.mounted.delete(block);
@@ -253,14 +299,7 @@ export class EnhancementManager {
 
     this.sweepStatuses(candidates);
 
-    if (!this.enabled || !allowMount) return result;
-
-    // 身份只在真正要挂载时计算；会话 id 每轮重读，兼容 SPA 内切换会话。
-    const identities = computeCardIdentities(candidates, {
-      sessionId: this.options.sessionId ?? readSessionId(this.doc),
-      accountId: this.options.accountId,
-      document: this.doc,
-    });
+    if (!this.enabled || !allowMount || !identities) return result;
 
     for (const candidate of candidates) {
       const { block } = candidate;
@@ -385,12 +424,15 @@ export class EnhancementManager {
         // 此刻的 missing-pre / invalid-json 只是文本尚未补齐，不能当真实失败。
         removeState(block);
         this.showStatus(candidate, signature, 'deferred');
+        this.diagnostics?.record('waiting', 'deferred-offscreen');
         console.debug(`${LOG_PREFIX} block deferred (offscreen)${suffix}`);
         return 'deferred';
       }
       if (this.enabled) {
         markFailed(block, reason);
         this.failed.set(block, { signature, reason });
+        const signal = diagnosticForEnhanceFailure(reason);
+        this.diagnostics?.record(signal.category, signal.code);
         if (diagnostic) {
           this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
         }
@@ -443,6 +485,7 @@ export class EnhancementManager {
           if (this.enabled) {
             this.failed.set(block, { signature, reason: 'render-error' });
             markFailed(block, 'render-error');
+            this.diagnostics?.record('mount', 'render-error');
             const diagnostic = diagnoseIncompatible('render-error');
             this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
           } else {

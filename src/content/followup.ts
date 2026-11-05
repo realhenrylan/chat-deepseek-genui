@@ -13,6 +13,8 @@
  * no-input 也不猜测页面上的其他 textarea（可能是反馈框等无关控件）。
  */
 
+import { DEEPSEEK_SITE_ADAPTER, type SiteAdapter } from './site-adapter';
+
 export type FillResult = 'filled' | 'appended' | 'no-input';
 
 export function setNativeValue(textarea: HTMLTextAreaElement, value: string): void {
@@ -22,25 +24,26 @@ export function setNativeValue(textarea: HTMLTextAreaElement, value: string): vo
 }
 
 /**
- * 选框顺序：name=search → placeholder 含「发送消息」。不确定时不猜测（null → no-input）。
- * 阶段 7 的默认增强复用同一选框，避免两套选择器对页面版本产生分歧。
+ * 选框顺序：name=search → placeholder 含「发送消息」（标记定义在站点适配层）。
+ * 不确定时不猜测（null → no-input）。
  */
-export function findChatInput(doc: Document): HTMLTextAreaElement | null {
-  const named = doc.querySelector<HTMLTextAreaElement>('textarea[name="search"]');
-  if (named) return named;
-  return (
-    Array.from(doc.querySelectorAll('textarea')).find((textarea) =>
-      (textarea.getAttribute('placeholder') ?? '').includes('发送消息'),
-    ) ?? null
-  );
+export function findChatInput(
+  doc: Document,
+  adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER,
+): HTMLTextAreaElement | null {
+  return adapter.findChatInput(doc);
 }
 
 /**
  * 追加一段文本到聊天草稿：保留现有草稿逐字节不变，相同内容不重复追加。
  * 找不到确定的输入框时返回 no-input，由调用方决定复制等退路。
  */
-export function appendDraftIntoInput(doc: Document, text: string): FillResult {
-  const textarea = findChatInput(doc);
+export function appendDraftIntoInput(
+  doc: Document,
+  text: string,
+  adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER,
+): FillResult {
+  const textarea = findChatInput(doc, adapter);
   if (!textarea) return 'no-input';
 
   const existing = textarea.value;
@@ -58,6 +61,10 @@ export function appendDraftIntoInput(doc: Document, text: string): FillResult {
   return 'appended';
 }
 
-export function fillContinueIntoInput(doc: Document, summary: string): FillResult {
-  return appendDraftIntoInput(doc, summary);
+export function fillContinueIntoInput(
+  doc: Document,
+  summary: string,
+  adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER,
+): FillResult {
+  return appendDraftIntoInput(doc, summary, adapter);
 }

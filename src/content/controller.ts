@@ -1,10 +1,19 @@
-import { LOG_PREFIX } from './lifecycle';
+import { LOG_PREFIX, resolveContentVersion } from './lifecycle';
 import { createEnhancementManager, type EnhanceOptions } from './enhance';
 import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
-import { ASSISTANT_SELECTOR, findGenuiBlocks, type GenuiBlockCandidate } from './detect';
+import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
+import { DEEPSEEK_SITE_ADAPTER, type SiteAdapter } from './site-adapter';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
+import { fillContinueIntoInput } from './followup';
+import { deliverRepairRequest } from './repair';
+import {
+  createDiagnosticRecorder,
+  summarizeDiagnostics,
+  type DiagnosticRecorder,
+  type DiagnosticsSnapshot,
+} from '../runtime/diagnostics';
 import {
   GENUI_PLAIN_PROMPT_NOTE,
   GENUI_PROMPT_TEXT,
@@ -12,8 +21,8 @@ import {
   GENUI_TOOL_PROMPT_TEXT,
 } from './prompt';
 
-/** 2026-11-02 真实调查记录的 DeepSeek「停止生成」图标路径前缀。 */
-export const STOP_GENERATION_PATH_PREFIX = 'M2 4.88C2 3.68009';
+/** 停止图标路径前缀由适配层维护；控制器保留导出以兼容既有测试与文档。 */
+export { STOP_GENERATION_PATH_PREFIX } from './site-adapter';
 
 export interface PageLifecycleOptions extends EnhanceOptions {
   /** 单元测试注入；生产环境自动使用 chrome.storage.local。 */
@@ -24,6 +33,8 @@ export interface PageLifecycleOptions extends EnhanceOptions {
   settleMs?: number;
   /** 草稿停止输入后追加默认增强的等待时间；生产默认 700ms。 */
   augmentDelayMs?: number;
+  /** 轮询路由/会话键的间隔，用于感知 SPA 纯 pushState 导航；生产默认 1000ms。 */
+  navigationPollMs?: number;
   /**
    * 视口门控（src/content/viewport-gate.ts）：生产开启，站点离屏代码块
    * 延迟渲染造成的瞬时 invalid-json/missing-pre 不再误标为 failed。
@@ -39,22 +50,14 @@ interface CandidateSnapshot {
 }
 
 /**
- * 用真实调查记录的停止按钮可见信号阻止流式挂载。
- * 按钮的哈希类名不参与识别；优先语义属性，回退到取证的方形停止图标路径。
+ * 生成状态信号：委托站点适配层（停止按钮语义属性、取证图标路径、tooltip）。
+ * 页面改版只影响适配层实现，不改变生命周期判断逻辑。
  */
-export function isGenerationActive(doc: Document): boolean {
-  const buttons = doc.querySelectorAll<HTMLElement>('button, [role="button"]');
-  for (const button of buttons) {
-    const label = `${button.getAttribute('aria-label') ?? ''} ${button.getAttribute('title') ?? ''}`;
-    if (label.includes('停止生成')) return true;
-    if (button.querySelector(`svg path[d^="${STOP_GENERATION_PATH_PREFIX}"]`)) return true;
-  }
-
-  // 实测停止按钮悬停后会显示此 tooltip；它只作为辅助信号。
-  for (const tooltip of doc.querySelectorAll('div.ds-tooltip')) {
-    if ((tooltip.textContent ?? '').trim() === '停止生成') return true;
-  }
-  return false;
+export function isGenerationActive(
+  doc: Document,
+  adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER,
+): boolean {
+  return adapter.isGenerationActive(doc);
 }
 
 function snapshotCandidates(candidates: GenuiBlockCandidate[]): CandidateSnapshot[] {
@@ -93,12 +96,48 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   if (!targetWindow) throw new Error('页面 window 不存在，无法启动生命周期监听');
   const win: Window & typeof globalThis = targetWindow as Window & typeof globalThis;
 
+  // 适配层与诊断记录器：页面结构差异收敛到 adapter，诊断只记录脱敏信号。
+  const adapter = options.adapter ?? DEEPSEEK_SITE_ADAPTER;
+  const recorder: DiagnosticRecorder = options.diagnostics ?? createDiagnosticRecorder();
+
   // 视口门控：块首次进入视口前不把瞬时解析失败当真实失败；进入后立即重扫。
   const gate: ViewportGateAdapter | null =
     options.enableViewportGate === true ? createViewportGateAdapter(win, () => scheduleScan(0)) : null;
-  const managerOptions: EnhanceOptions = gate
-    ? { ...options, isBlockUnverifiable: gate.isBlockUnverifiable }
-    : options;
+
+  // 输入框识别失败（缺失或歧义）统一进入诊断；继续讨论/修复请求也走这里。
+  const handleInputFailure = (): void => {
+    const probe = adapter.probe(doc);
+    recorder.record('detection', probe.inputCandidates > 1 ? 'input-ambiguous' : 'no-input');
+  };
+
+  // 默认投递路径也使用控制器选定的适配器；调用方显式注入回调时尊重其实现，
+  // 但仍观察 no-input 结果，避免诊断与实际输入识别分叉。
+  const continueInto = (summary: string): ReturnType<NonNullable<EnhanceOptions['onContinue']>> => {
+    const deliver =
+      options.onContinue ?? ((text: string) => fillContinueIntoInput(doc, text, adapter));
+    const result = deliver(summary);
+    if (result === 'no-input') handleInputFailure();
+    return result;
+  };
+  const repairInto = async (
+    prompt: string,
+  ): Promise<Awaited<ReturnType<NonNullable<EnhanceOptions['onRepairRequest']>>>> => {
+    const deliver =
+      options.onRepairRequest ?? ((text: string) => deliverRepairRequest(doc, text, adapter));
+    const result = await deliver(prompt);
+    // copied/copy-failed 表示找不到输入框后走了剪贴板退路，同样属于识别失败。
+    if (result === 'copied' || result === 'copy-failed') handleInputFailure();
+    return result;
+  };
+
+  const managerOptions: EnhanceOptions = {
+    ...options,
+    adapter,
+    diagnostics: recorder,
+    onContinue: continueInto,
+    onRepairRequest: repairInto,
+    ...(gate ? { isBlockUnverifiable: gate.isBlockUnverifiable } : {}),
+  };
   const manager = createEnhancementManager(doc, managerOptions);
   const store = options.store === undefined ? createExtensionSettingsStore() : options.store;
   const debounceMs = options.debounceMs ?? 100;
@@ -116,6 +155,23 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   let scanTimer: number | null = null;
   let settleTimer: number | null = null;
   let stableSnapshot: CandidateSnapshot[] | null = null;
+  let navigationKey = '';
+  let navigationTimer: number | null = null;
+
+  /**
+   * 当前页面的脱敏诊断快照：适配层自检只含数量/布尔值，页面段只含
+   * 路由归类与候选/挂载计数；不读取聊天文本、草稿或账号。
+   */
+  function buildDiagnostics(): DiagnosticsSnapshot {
+    const probe = adapter.probe(doc);
+    const { route, ...counts } = probe;
+    const { mounted, failed } = manager.counts();
+    return recorder.snapshot({
+      extensionVersion: resolveContentVersion(),
+      adapter: { id: adapter.id, version: adapter.version, probe: counts },
+      page: { route, candidates: probe.candidates, mounted, failed },
+    });
+  }
 
   const clearScanTimer = (): void => {
     if (scanTimer !== null) {
@@ -155,7 +211,16 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   const scan = (): void => {
     if (!started || !settingsLoaded) return;
 
-    const candidates = findGenuiBlocks(doc);
+    const candidates = findGenuiBlocks(doc, adapter);
+    // 页面上已有 genui 标签却找不到任何回答容器：站点改版导致识别失效的强信号。
+    // 仅在这种情况下做一次自检，避免正常聊天页每次扫描都记录。
+    if (
+      candidates.length === 0 &&
+      adapter.findAssistantContainers(doc).length === 0 &&
+      adapter.probe(doc).labelledBlocksOutsideContainers > 0
+    ) {
+      recorder.record('detection', 'no-assistant-container');
+    }
     // 先卸载被替换、改写或移除的旧卡片，即便仍在生成/尚未稳定。
     manager.reconcile(false);
 
@@ -164,16 +229,17 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
       clearSettleTimer();
       return;
     }
-    if (isGenerationActive(doc)) {
+    if (isGenerationActive(doc, adapter)) {
       // 生成中只显示等待状态；流式截断是暂态，不能写 failed。
       // 只撤下当前正在生成的回复内卡片，历史回答的已挂载卡片保持不变。
-      const containers = doc.querySelectorAll<HTMLElement>(ASSISTANT_SELECTOR);
+      const containers = adapter.findAssistantContainers(doc);
       const activeContainer = containers[containers.length - 1];
       const hasActiveBlock =
         activeContainer !== undefined &&
         candidates.some((candidate) => activeContainer.contains(candidate.block));
       if (hasActiveBlock) manager.suspendMounted(activeContainer);
       manager.markPending(candidates);
+      if (candidates.length > 0) recorder.record('waiting', 'streaming');
       stableSnapshot = null;
       clearSettleTimer();
       return;
@@ -227,19 +293,37 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   const onMutations = (records: MutationRecord[]): void => {
     if (!records.some((record) => !isOwnMutation(record))) return;
 
-    if (isGenerationActive(doc)) {
+    if (isGenerationActive(doc, adapter)) {
       stableSnapshot = null;
       clearSettleTimer();
     } else if (stableSnapshot !== null) {
-      const current = snapshotCandidates(findGenuiBlocks(doc));
+      const current = snapshotCandidates(findGenuiBlocks(doc, adapter));
       if (!sameSnapshot(stableSnapshot, current)) {
         // Candidate changes restart the stability window immediately; unrelated
         // page mutations leave its deadline alone.
+        recorder.record('waiting', 'settling');
         stableSnapshot = current;
         scheduleSettleScan();
       }
     }
     scheduleScan();
+  };
+
+  /** SPA 纯路由切换不会触发 DOM 变更；轮询导航键并立即重扫。 */
+  const checkNavigation = (): void => {
+    if (!started) return;
+    const next = adapter.readNavigationKey(doc);
+    if (next === navigationKey) return;
+    navigationKey = next;
+    stableSnapshot = null;
+    clearSettleTimer();
+    // 先撤销旧身份绑定，避免生成中/等待稳定期间旧会话卡片继续展示。
+    manager.suspendMounted();
+    scheduleScan(0);
+  };
+
+  const onPopState = (): void => {
+    checkNavigation();
   };
 
   const onPageHide = (): void => {
@@ -278,12 +362,20 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
       },
       promptVersion: GENUI_PROMPT_VERSION,
       onModeSelect: (mode) => augmenter?.setMode(mode),
+      diagnostics: {
+        summary: () => summarizeDiagnostics(buildDiagnostics()),
+        preview: () => JSON.stringify(buildDiagnostics(), null, 2),
+      },
     });
     augmenter = createDraftAugmenter(doc, {
       enabled,
+      adapter,
       debounceMs: options.augmentDelayMs ?? 700,
       window: win,
-      onStatus: (status) => control?.setAugmentStatus(status),
+      onStatus: (status) => {
+        control?.setAugmentStatus(status);
+        if (status === 'no-input') handleInputFailure();
+      },
       onModeChange: (mode) => control?.setAugmentMode(mode),
       onPlainNote: (note) => control?.setAugmentPlainNote(note),
     });
@@ -304,6 +396,15 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     // 设置读取完成后再开始监听草稿，避免已保存为关闭的用户被短暂追加。
     augmenter?.start();
     control?.setAugmentStatus(augmenter?.getStatus() ?? null);
+    // 启动时增强器只报 idle；在聊天路由上主动检查一次，覆盖输入框缺失/歧义。
+    if (enabled) {
+      const probe = adapter.probe(doc);
+      if (probe.route === 'chat' && !probe.inputFound) handleInputFailure();
+    }
+    navigationKey = adapter.readNavigationKey(doc);
+    win.addEventListener('popstate', onPopState);
+    win.addEventListener('hashchange', onPopState);
+    navigationTimer = win.setInterval(checkNavigation, options.navigationPollMs ?? 1000);
     scheduleScan(0);
   }
 
@@ -315,6 +416,12 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     pendingUserValue = undefined;
     clearScanTimer();
     clearSettleTimer();
+    if (navigationTimer !== null) {
+      win.clearInterval(navigationTimer);
+      navigationTimer = null;
+    }
+    win.removeEventListener('popstate', onPopState);
+    win.removeEventListener('hashchange', onPopState);
     observer?.disconnect();
     observer = null;
     unsubscribe?.();
@@ -343,5 +450,7 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     dispose,
     setEnabled: persistEnabled,
     isEnabled: () => enabled,
+    /** 供诊断面板/测试读取的脱敏快照。 */
+    buildDiagnostics,
   };
 }

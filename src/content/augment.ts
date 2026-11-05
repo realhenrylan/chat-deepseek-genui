@@ -22,6 +22,7 @@
  */
 
 import { findChatInput, setNativeValue } from './followup';
+import { DEEPSEEK_SITE_ADAPTER, type SiteAdapter } from './site-adapter';
 import {
   appendGenuiPrompt,
   describeGenuiDraftPrompt,
@@ -46,6 +47,8 @@ export const GENUI_PLAIN_RESIDUAL_NOTE =
 export interface DraftAugmentOptions {
   /** 与总开关同步的初始状态。 */
   enabled: boolean;
+  /** 站点适配器；注入时草稿接线与卡片识别使用同一套输入框规则。 */
+  adapter?: SiteAdapter;
   /** 停止输入后等待多久追加；生产默认 700ms。 */
   debounceMs?: number;
   window?: Window;
@@ -94,6 +97,7 @@ export function createDraftAugmenter(
   const win = options.window ?? doc.defaultView;
   if (!win) throw new Error('页面 window 不存在，无法启动默认增强');
   const pageWindow: Window = win;
+  const adapter = options.adapter ?? DEEPSEEK_SITE_ADAPTER;
 
   const debounceMs = options.debounceMs ?? 700;
   const listeners = new Set<(status: AugmentStatus) => void>();
@@ -223,7 +227,7 @@ export function createDraftAugmenter(
 
   function statusForCurrentDraft(): AugmentStatus {
     if (!enabled) return 'disabled';
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input) return 'no-input';
     // plain 是唯一的本轮不追加模式；状态恒为 plain，残留说明由面板提示如实交代。
     if (mode === 'plain') return 'plain';
@@ -235,7 +239,7 @@ export function createDraftAugmenter(
   function schedule(): void {
     if (!started || !enabled || composing) return;
     clearTimer();
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input) {
       setStatus('no-input');
       return;
@@ -274,7 +278,7 @@ export function createDraftAugmenter(
 
   function appendNow(target: PendingAppend): void {
     if (!started || !enabled || composing) return;
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input || input !== target.input || !target.input.isConnected) {
       setStatus(statusForCurrentDraft());
       return;
@@ -323,7 +327,7 @@ export function createDraftAugmenter(
   function applyModeSwitch(clearDismissed: boolean): void {
     if (!started || !enabled) return;
     clearTimer();
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input) {
       setStatus('no-input');
       return;
@@ -404,7 +408,7 @@ export function createDraftAugmenter(
 
   /** 关闭增强时移除自动追加的说明；只动扩展写入的尾部，不覆盖用户内容。 */
   function restoreDraft(): void {
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     const state = draft;
     if (!input || !state || state.input !== input) return;
     if (state.originalValue === null || state.appendedValue === null) return;
@@ -447,7 +451,7 @@ export function createDraftAugmenter(
 
   function handleInput(event: Event): void {
     if (writing) return;
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input || event.target !== input) return;
     if (composing) return;
 
@@ -506,7 +510,7 @@ export function createDraftAugmenter(
   }
 
   function handleFocusIn(event: FocusEvent): void {
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input || event.target !== input) return;
     // 切回输入框时若值已被外部替换（会话切换/草稿恢复），按新草稿重新判断。
     if (!draft || draft.input !== input || draft.lastValue !== input.value) {
@@ -526,13 +530,13 @@ export function createDraftAugmenter(
   }
 
   function handleCompositionStart(event: CompositionEvent): void {
-    if (event.target !== findChatInput(doc)) return;
+    if (event.target !== findChatInput(doc, adapter)) return;
     composing = true;
     clearTimer();
   }
 
   function handleCompositionEnd(event: CompositionEvent): void {
-    if (event.target !== findChatInput(doc)) return;
+    if (event.target !== findChatInput(doc, adapter)) return;
     composing = false;
     if (deferredModeApply) {
       deferredModeApply = false;
@@ -559,7 +563,7 @@ export function createDraftAugmenter(
     resetModeToAuto();
     clearPlainNote();
     if (draft) draft.dismissed = false;
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     if (!input) {
       setStatus('no-input');
       return;
@@ -586,7 +590,7 @@ export function createDraftAugmenter(
     doc.addEventListener('compositionstart', handleCompositionStart, true);
     doc.addEventListener('compositionend', handleCompositionEnd, true);
 
-    const input = findChatInput(doc);
+    const input = findChatInput(doc, adapter);
     setStatus(
       !enabled ? 'disabled' : hasGenuiPrompt(input?.value ?? '') ? 'appended' : 'idle',
       true,

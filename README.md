@@ -33,6 +33,7 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 | 状态保持 | 生成新回答、同页重新挂载时保留已调整的参数与筛选；刷新或关闭标签页后回到初始值 |
 | 继续讨论 | 把参数、表格筛选、排序与选中项汇总成可预览、可修改的摘要，确认后填入输入框；保留已有草稿，由你决定是否发送 |
 | 出错恢复 | 原始代码块下方区分等待、离屏补齐、需要修复或页面兼容；可展开原始内容并生成修复草稿 |
+| 本地诊断 | 浮标「本地诊断」面板按识别、等待、协议、挂载分类显示脱敏计数；只在需要时预览、复制或下载，不含聊天文本、草稿或账号 |
 | 主题与开关 | 跟随站点明暗主题，随时关闭增强并恢复原始代码块 |
 
 ### 功能截图
@@ -142,7 +143,7 @@ npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
 
-协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)及 [v5 真实模型对比](docs/phase9-model-comparison.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)、[v5 真实模型对比](docs/phase9-model-comparison.md)及 [侧栏承载评估](docs/side-panel-evaluation.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

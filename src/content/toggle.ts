@@ -2,6 +2,7 @@ import { attachThemeAttribute } from '../render/theme';
 import { getBrandMarkUrl } from '../branding';
 import type { AugmentStatus } from './augment';
 import type { GenuiPromptMode } from './prompt';
+import { copyText } from './repair';
 
 const CONTROL_ATTR = 'data-genui-control';
 
@@ -35,6 +36,12 @@ export interface ToggleControl {
   dispose(): void;
 }
 
+/** 诊断面板内容来源：只提供脱敏摘要与完整 JSON 预览文本。 */
+export interface DiagnosticsPanelSource {
+  summary(): string;
+  preview(): string;
+}
+
 export interface ToggleOptions {
   /** 实际参与对话的增强文本；面板逐字展示同一常量。 */
   promptText?: string;
@@ -45,6 +52,8 @@ export interface ToggleOptions {
   initialMode?: GenuiPromptMode;
   /** 用户通过浮标循环按钮显式选择本轮模式。 */
   onModeSelect?: (mode: GenuiPromptMode) => void;
+  /** 本地脱敏诊断来源；缺省时隐藏「本地诊断」按钮。 */
+  diagnostics?: DiagnosticsPanelSource;
 }
 
 /** 创建隔离样式、键盘可操作的页面级增强开关与可查看的增强说明面板。 */
@@ -215,6 +224,16 @@ export function createToggleControl(
   modeButton.type = 'button';
   modeButton.addEventListener('click', handleModeClick);
 
+  // issue #9：独立诊断入口，不放进 #genui-panel，避免改变说明面板的结构约定。
+  const diagnosticsButton = doc.createElement('button');
+  diagnosticsButton.type = 'button';
+  diagnosticsButton.textContent = '本地诊断';
+  diagnosticsButton.title = '查看本机脱敏诊断；只在你主动操作时复制或下载';
+  diagnosticsButton.setAttribute('aria-expanded', 'false');
+  diagnosticsButton.setAttribute('aria-controls', 'genui-diagnostics');
+  diagnosticsButton.hidden = !options.diagnostics;
+  diagnosticsButton.addEventListener('click', handleDiagnosticsClick);
+
   const panel = doc.createElement('section');
   panel.id = 'genui-panel';
   panel.className = 'panel';
@@ -258,8 +277,71 @@ export function createToggleControl(
 
   panel.append(heading, description, behavior, modeHint, statusLine, prompt, actions);
   actions.append(closeButton);
-  column.append(button, infoButton, modeButton);
-  wrap.append(column, panel);
+
+  // 诊断面板与说明面板并列，但同一时刻只打开一个；不读取聊天文本/草稿。
+  const diagnosticsPanel = doc.createElement('section');
+  diagnosticsPanel.id = 'genui-diagnostics';
+  diagnosticsPanel.className = 'panel';
+  diagnosticsPanel.hidden = true;
+  diagnosticsPanel.setAttribute('role', 'dialog');
+  diagnosticsPanel.setAttribute('aria-labelledby', 'genui-diagnostics-title');
+
+  const diagHeading = doc.createElement('h2');
+  diagHeading.id = 'genui-diagnostics-title';
+  diagHeading.textContent = '本地诊断';
+  const diagVersion = doc.createElement('span');
+  diagVersion.className = 'version';
+  diagVersion.textContent = 'local';
+  diagHeading.append(diagVersion);
+
+  const diagDescription = doc.createElement('p');
+  diagDescription.textContent =
+    '诊断完全在本机内存生成：只包含站点适配层的计数与脱敏信号，不包含聊天文本、草稿、账号或会话标识，也不会上传。只有你主动复制或下载时，内容才会离开页面。';
+
+  const diagSummary = doc.createElement('p');
+  diagSummary.className = 'status';
+  diagSummary.setAttribute('aria-live', 'polite');
+  diagSummary.textContent = '本地诊断：尚未读取';
+
+  const diagPreview = doc.createElement('pre');
+  diagPreview.className = 'diag-preview';
+  diagPreview.tabIndex = 0;
+
+  const diagFeedback = doc.createElement('p');
+  diagFeedback.className = 'status';
+  diagFeedback.setAttribute('aria-live', 'polite');
+
+  const diagActions = doc.createElement('div');
+  diagActions.className = 'actions';
+  const diagRefreshButton = doc.createElement('button');
+  diagRefreshButton.type = 'button';
+  diagRefreshButton.textContent = '刷新';
+  diagRefreshButton.addEventListener('click', handleDiagnosticsRefresh);
+  const diagCopyButton = doc.createElement('button');
+  diagCopyButton.type = 'button';
+  diagCopyButton.textContent = '复制';
+  diagCopyButton.addEventListener('click', handleDiagnosticsCopy);
+  const diagDownloadButton = doc.createElement('button');
+  diagDownloadButton.type = 'button';
+  diagDownloadButton.textContent = '下载 JSON';
+  diagDownloadButton.addEventListener('click', handleDiagnosticsDownload);
+  const diagCloseButton = doc.createElement('button');
+  diagCloseButton.type = 'button';
+  diagCloseButton.textContent = '关闭诊断';
+  diagCloseButton.addEventListener('click', handleDiagnosticsClose);
+  diagActions.append(diagRefreshButton, diagCopyButton, diagDownloadButton, diagCloseButton);
+
+  diagnosticsPanel.append(
+    diagHeading,
+    diagDescription,
+    diagSummary,
+    diagPreview,
+    diagFeedback,
+    diagActions,
+  );
+
+  column.append(button, infoButton, modeButton, diagnosticsButton);
+  wrap.append(column, panel, diagnosticsPanel);
   shadow.append(style, wrap);
   (doc.documentElement ?? doc.body).append(host);
   // 阶段 6：开关视觉跟随站点亮暗主题。
@@ -316,6 +398,8 @@ export function createToggleControl(
 
   function setPanelOpen(open: boolean): void {
     if (!options.promptText) return;
+    // 同一浮标旁只保留一个面板；打开说明时收起诊断。
+    if (open) closeDiagnosticsPanel(false);
     panel.hidden = !open;
     infoButton.setAttribute('aria-expanded', String(open));
     if (open) {
@@ -346,6 +430,97 @@ export function createToggleControl(
   }
 
   panel.addEventListener('keydown', handlePanelKeyDown);
+
+  /** 诊断预览来自控制器注入的脱敏快照；不读取页面文本。 */
+  function renderDiagnostics(): void {
+    if (!options.diagnostics) return;
+    diagSummary.textContent = options.diagnostics.summary();
+    diagPreview.textContent = options.diagnostics.preview();
+  }
+
+  function closeDiagnosticsPanel(restoreFocus: boolean): void {
+    if (diagnosticsPanel.hidden) return;
+    diagnosticsPanel.hidden = true;
+    diagnosticsButton.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) diagnosticsButton.focus();
+  }
+
+  function setDiagnosticsOpen(open: boolean): void {
+    if (!options.diagnostics) return;
+    if (open) {
+      // 打开诊断前收起说明面板，避免两个浮层同时占据浮标旁空间。
+      if (!panel.hidden) {
+        panel.hidden = true;
+        infoButton.setAttribute('aria-expanded', 'false');
+      }
+      renderDiagnostics();
+      diagFeedback.textContent = '';
+    }
+    diagnosticsPanel.hidden = !open;
+    diagnosticsButton.setAttribute('aria-expanded', String(open));
+    if (open) {
+      if (position) setPosition(position.left, position.top);
+      diagCloseButton.focus();
+    } else {
+      diagnosticsButton.focus();
+    }
+  }
+
+  function handleDiagnosticsClick(event: MouseEvent): void {
+    event.stopPropagation();
+    setDiagnosticsOpen(diagnosticsPanel.hidden === true);
+  }
+
+  function handleDiagnosticsClose(event: MouseEvent): void {
+    event.stopPropagation();
+    setDiagnosticsOpen(false);
+  }
+
+  function handleDiagnosticsRefresh(event: MouseEvent): void {
+    event.stopPropagation();
+    renderDiagnostics();
+    diagFeedback.textContent = '已刷新（仅本机读取）';
+  }
+
+  function handleDiagnosticsCopy(event: MouseEvent): void {
+    event.stopPropagation();
+    void copyText(doc, diagPreview.textContent ?? '').then((ok) => {
+      diagFeedback.textContent = ok ? '已复制到剪贴板' : '复制失败，请手动选择预览文本';
+    });
+  }
+
+  function handleDiagnosticsDownload(event: MouseEvent): void {
+    event.stopPropagation();
+    const canDownload =
+      typeof Blob !== 'undefined' &&
+      typeof URL !== 'undefined' &&
+      typeof URL.createObjectURL === 'function';
+    if (!canDownload) {
+      // jsdom 等没有 Blob URL 的环境回退到复制，保证内容仍可由用户主动带走。
+      diagFeedback.textContent = '当前环境不支持文件下载，请使用「复制」保存预览文本';
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([diagPreview.textContent ?? ''], { type: 'application/json' }),
+    );
+    const link = doc.createElement('a');
+    link.href = url;
+    link.download = 'genui-diagnostics.json';
+    link.rel = 'noopener';
+    (doc.body ?? doc.documentElement).append(link);
+    link.click();
+    link.remove();
+    win?.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function handleDiagnosticsKeyDown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || diagnosticsPanel.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDiagnosticsOpen(false);
+  }
+
+  diagnosticsPanel.addEventListener('keydown', handleDiagnosticsKeyDown);
 
   function clampPosition(left: number, top: number): { left: number; top: number } {
     const rect = host.getBoundingClientRect();
@@ -510,6 +685,12 @@ export function createToggleControl(
       modeButton.removeEventListener('click', handleModeClick);
       closeButton.removeEventListener('click', handleCloseClick);
       panel.removeEventListener('keydown', handlePanelKeyDown);
+      diagnosticsButton.removeEventListener('click', handleDiagnosticsClick);
+      diagCloseButton.removeEventListener('click', handleDiagnosticsClose);
+      diagRefreshButton.removeEventListener('click', handleDiagnosticsRefresh);
+      diagCopyButton.removeEventListener('click', handleDiagnosticsCopy);
+      diagDownloadButton.removeEventListener('click', handleDiagnosticsDownload);
+      diagnosticsPanel.removeEventListener('keydown', handleDiagnosticsKeyDown);
       win?.removeEventListener('resize', handleResize);
       clearSuppressedClick();
       disposeTheme();

@@ -152,3 +152,72 @@ div.md-code-block.md-code-block-dark        （有 -light 变体）
 **受限原因**：自动化过程中浏览器 CDP frame 两次出现「A page frame is not responding」挂起，需重建浏览器会话（必要时重启 Edge 进程）恢复；这属于工具链限制，不影响上述取证结论的可靠性——所有结论均有截图或 HTML 快照支撑。
 
 **隐私边界**：侧栏历史会话标题仅用于确认 DOM 结构（链接格式 `a[href^="/a/chat/s/"]`），未读取或记录任何会话内容；合成测试消息均为阶段 0 自造。
+
+## 8. 站点适配接口、选择器维护与页面变体回归（issue #9）
+
+2026-11-04 起，所有站点结构知识集中到 `src/content/site-adapter.ts`。渲染（`src/render/`）、卡片状态（`src/runtime/card-state-store.ts`）、计算（`src/runtime/evaluate.ts`）与方案逻辑不再直接查询 DeepSeek 选择器；识别、输入框、生成状态、会话与账号标记都经 `SiteAdapter` 获取。检测入口 `findGenuiBlocks(root, adapter?)` 仍保留，默认使用 `DEEPSEEK_SITE_ADAPTER`，现有调用方可按原签名使用。
+
+### 8.1 接口契约
+
+`SiteAdapter` 的职责：
+
+| 方法/字段 | 作用 | 约束 |
+| --- | --- | --- |
+| `id` / `version` | 适配器标识与结构版本 | 版本随选择器或识别规则变化递增；进入诊断导出 |
+| `findAssistantContainers(root)` | 找出 AI 回答容器 | 只返回容器，不做内容判断 |
+| `findCandidates(root)` | 提取 `genui` 代码块候选（容器、块、`pre`、标签来源） | 不解析 JSON、不挂载；`pre` 缺失时返回 `null` |
+| `findChatInput(doc)` | 找确定可写入的输入框 | 只返回唯一可见、可写候选；多个候选、隐藏/禁用或找不到时返回 `null`，**绝不猜测其他 textarea** |
+| `isGenerationActive(doc)` | 判断是否正在生成 | 兼容按钮 aria-label/title、停止图标路径与 tooltip |
+| `readSessionId(doc)` | 读取会话路由 | 只接受 `/a/chat/s/<id>`，其余为 `unknown-session` |
+| `readNavigationKey(doc)` | 读取路由/会话/账号组合键 | 供控制器轮询导航变化，重新校验已挂载卡片身份 |
+| `readAccountId(doc)` | 读取账号稳定标记 | 原始 id 只在身份模块哈希后使用，不进入诊断 |
+| `readMessageKey(container)` | 读取消息键（虚拟列表键优先） | 无稳定键时返回 `null`，由身份模块退化为文本指纹 |
+| `probe(doc)` | 只读探针 | 仅计数与布尔值，不含文本、账号或会话 id |
+
+选择器清单（当前 `2026-11-02` 版本）：
+
+| 用途 | 选择器/标记 | 备注 |
+| --- | --- | --- |
+| AI 回答容器 | `div.ds-assistant-message-main-content` | 用户消息不在识别范围 |
+| 代码块 | `div.md-code-block` | 需同时有 `genui` 语言标签 |
+| 代码块 banner | `div.md-code-block-banner-wrap` | 标签回退查找范围 |
+| 语言标签 | `span.d813de27`，文本 `genui` | 主路径；类名轮换时用 banner 内叶子文本回退 |
+| 停止生成图标 | `svg path[d^="M2 4.88C2 3.68009"]` | 与 aria-label/title「停止生成」、`div.ds-tooltip` 三者任一命中 |
+| 输入框 | `textarea[name="search"]`，否则 placeholder 含「发送消息」 | 两路命中合并去重；排除隐藏、`disabled`、`readOnly` 等不可用项；仅当恰好一个候选时写入 |
+| 会话路由 | `^/a/chat/s/([^/]+)/?$` | 末尾斜杠去掉 |
+| 账号标记 | `[data-user-id]`、`[data-account-id]`、`meta[name="user-id"]`、`meta[name="account-id"]` | 按顺序取第一个非空值 |
+| 消息键 | `data-virtual-list-item-key` > `data-message-id` | 缺失时由文本指纹兜底 |
+
+### 8.2 变更策略
+
+1. **只改适配器**：站点结构变化时优先修改 `site-adapter.ts`，不把新选择器散落到渲染或状态模块。
+2. **提升版本**：选择器、回退规则或探针字段变化时更新 `version`，并在本文件记录观察日期与证据来源（真实页面快照或合成样本）。
+3. **先加探针再改规则**：新增识别路径前，先用 `probe()` 的计数确认页面实际形态（容器数、代码块数、带标签块数、孤立块数、输入框候选数与是否唯一、生成状态、路由）。
+4. **回归样本**：结构变体放入 `tests/fixtures/site-variants/`，单测同时断言识别结果与探针；现有样本见 8.3。
+5. **保守回退**：找不到确定输入框时不写入；识别不到 AI 容器时不把孤立代码块挂成卡片，只在诊断中记录计数（见 8.4）。
+
+### 8.3 页面变体与延迟渲染样本
+
+| 样本 | 模拟的页面变化 | 期望行为 |
+| --- | --- | --- |
+| `tests/fixtures/site-variants/rotated-label.html` | 语言标签类名轮换（`span.f3a9c1b2`） | 通过 banner 内叶子文本回退识别，`labelSource: "fallback"` |
+| `tests/fixtures/site-variants/empty-pre.html` | 代码块先出现、`pre` 暂时为空 | 保留候选但不挂载；下一轮扫描 `pre` 补齐后再挂载，不缓存空内容 |
+| `tests/fixtures/site-variants/orphan-label.html` | 带 `genui` 标签的代码块不在任何 AI 回答容器内 | 不产生候选；探针 `labelledBlocksOutsideContainers > 0`，诊断记录 `detection/no-assistant-container` |
+
+延迟渲染、流式生成与节点替换的既有处理保持不变：生成中只撤下当前回答的卡片，历史卡片保持挂载；同一文档的节点替换按身份恢复状态；原文改写则丢弃旧状态。会话或路由变化时，控制器通过 `readNavigationKey`（`popstate`、`hashchange` 与 1 秒轮询）发现变化，先撤下当前挂载并在新会话身份下重新计算；即使 SPA 复用同一代码块节点且内容不变，也不会继续沿用旧会话的状态键。相关回归在 `tests/unit/detect.test.ts`、`tests/unit/site-adapter.test.ts`、`tests/unit/controller.test.ts`、`tests/unit/enhance.test.ts`、`tests/unit/controller-diagnostics.test.ts`。
+
+### 8.4 本地诊断的边界
+
+适配器只向诊断提供计数与布尔值：容器数、代码块数、带标签块数、孤立带标签块数、候选数、含 `pre` 候选数、输入框候选数与是否唯一、是否生成中、路由类别。诊断不接收文本、账号、会话 id 或草稿；识别失败按「识别 / 等待完整内容 / 协议 / 挂载」四类分别记录，输入框缺失或存在多个候选时分别记 `detection/no-input` 与 `detection/input-ambiguous`，用户主动打开面板时预览，复制或下载均为显式操作。详见 [隐私说明](privacy.md) 与 [状态保持](state-storage.md)。
+
+### 8.5 真实网页复核状态
+
+本轮未新增真实页面人工复核；适配器逻辑由既有真实页面快照与合成变体覆盖。后续站点改版后，应按 8.2 先跑 `probe()`、补样本、再更新版本。发布前的真实页面复核清单：
+
+1. 打开真实 DeepSeek 会话，确认浮标「本地诊断」可打开，`adapter` 段显示 `deepseek-chat` / `2026-11-02`；
+2. 确认 `assistantContainers > 0`、`candidates > 0`、`candidatesWithPre` 与可见 `genui` 代码块数一致，`inputCandidates === 1`（`inputFound` 为 `true`）；
+3. 生成过程中确认 `generationActive` 为 `true`，卡片按等待/流式规则处理，历史卡片不被卸载；
+4. 触发一次页面改版或延迟渲染场景，确认诊断只记录计数与代码、不含聊天文本、草稿、账号或会话 id，且复制/下载均为用户主动操作；
+5. 记录浏览器版本、日期与证据（截图或快照），再决定是否提升适配器 `version`。
+
+真实 DeepSeek 页面复核仍作为发布前检查项，而不是自动化结论的替代。

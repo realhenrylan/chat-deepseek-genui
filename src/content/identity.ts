@@ -1,6 +1,13 @@
-import type { GenuiBlockCandidate } from './detect';
+import {
+  DEEPSEEK_SITE_ADAPTER,
+  UNKNOWN_SESSION_ID,
+  type GenuiBlockCandidate,
+  type SiteAdapter,
+} from './site-adapter';
 import { CARD_STATE_VERSION } from '../runtime/card-state';
 import { hashString } from '../runtime/hash';
+
+export { UNKNOWN_SESSION_ID };
 
 /**
  * 卡片稳定身份（issue #2）。
@@ -21,18 +28,7 @@ import { hashString } from '../runtime/hash';
  *   稳定，节点替换后即失效），从根上避免串用。
  */
 
-export const UNKNOWN_SESSION_ID = 'unknown-session';
 export const UNKNOWN_ACCOUNT_ID = 'acct-unknown';
-const VIRTUAL_ITEM_ATTR = 'data-virtual-list-item-key';
-const MESSAGE_ID_ATTR = 'data-message-id';
-const SESSION_ROUTE = /^\/a\/chat\/s\/([^/]+)\/?$/;
-
-const ACCOUNT_MARKERS: Array<{ selector: string; attribute: string }> = [
-  { selector: '[data-user-id]', attribute: 'data-user-id' },
-  { selector: '[data-account-id]', attribute: 'data-account-id' },
-  { selector: 'meta[name="user-id"]', attribute: 'content' },
-  { selector: 'meta[name="account-id"]', attribute: 'content' },
-];
 
 export interface CardIdentity {
   /** 页面内状态仓库使用的键。 */
@@ -51,6 +47,8 @@ export interface ComputeIdentityOptions {
   sessionId?: string;
   /** 测试或特殊入口注入的账号标记；缺省从页面稳定标记推导。 */
   accountId?: string;
+  /** 站点适配器；缺省使用 DeepSeek 适配器（选择器只存在于适配层）。 */
+  adapter?: SiteAdapter;
   document?: Document;
 }
 
@@ -78,25 +76,14 @@ function normalizeMessageText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-function readAttribute(element: Element | null, name: string): string {
-  return element?.getAttribute(name)?.trim() ?? '';
+/** 会话身份：委托适配层；非会话路由返回 UNKNOWN_SESSION_ID。 */
+export function readSessionId(doc: Document, adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER): string {
+  return adapter.readSessionId(doc);
 }
 
-/** 会话身份：仅接受生产页面的 /a/chat/s/<id>；其他路由一律保守未知。 */
-export function readSessionId(doc: Document): string {
-  const pathname = doc.location?.pathname?.trim() ?? '';
-  const match = SESSION_ROUTE.exec(pathname);
-  return match ? `/a/chat/s/${match[1]}` : UNKNOWN_SESSION_ID;
-}
-
-/** 账号标记：只认站点显式提供的稳定属性；缺失时返回空字符串。 */
-export function readAccountId(doc: Document): string {
-  for (const marker of ACCOUNT_MARKERS) {
-    const element = doc.querySelector(marker.selector);
-    const value = readAttribute(element, marker.attribute);
-    if (value) return value;
-  }
-  return '';
+/** 账号标记：委托适配层；缺失时返回空字符串。 */
+export function readAccountId(doc: Document, adapter: SiteAdapter = DEEPSEEK_SITE_ADAPTER): string {
+  return adapter.readAccountId(doc);
 }
 
 /** 保存时只写账号作用域哈希，不落原始账号 id。 */
@@ -106,15 +93,12 @@ export function accountScope(rawAccountId: string): string {
 }
 
 /**
- * 消息键优先级：虚拟列表 item key > data-message-id > 消息文本指纹。
- * 前两者由站点提供，跨重渲染/刷新稳定；指纹只用于页面内节点替换兜底。
+ * 消息键优先级：虚拟列表 item key > data-message-id（均由适配层读取），
+ * 两者都缺失时用消息文本指纹兜底。
  */
-function resolveMessageKey(container: Element): MessageKeyResolution {
-  const virtualKey = readAttribute(container.closest(`[${VIRTUAL_ITEM_ATTR}]`), VIRTUAL_ITEM_ATTR);
-  if (virtualKey) return { key: `vl:${virtualKey}`, stable: true };
-
-  const messageId = readAttribute(container.closest(`[${MESSAGE_ID_ATTR}]`), MESSAGE_ID_ATTR);
-  if (messageId) return { key: `mid:${messageId}`, stable: true };
+function resolveMessageKey(container: Element, adapter: SiteAdapter): MessageKeyResolution {
+  const stable = adapter.readMessageKey(container);
+  if (stable) return stable;
 
   const fingerprint = hashString(normalizeMessageText(container.textContent ?? ''));
   return { key: `fp:${fingerprint}`, stable: false };
@@ -159,8 +143,9 @@ export function computeCardIdentities(
   if (candidates.length === 0) return identities;
 
   const doc = options.document ?? candidates[0].block.ownerDocument;
-  const sessionId = options.sessionId ?? readSessionId(doc);
-  const accountId = accountScope(options.accountId ?? readAccountId(doc));
+  const adapter = options.adapter ?? DEEPSEEK_SITE_ADAPTER;
+  const sessionId = options.sessionId ?? readSessionId(doc, adapter);
+  const accountId = accountScope(options.accountId ?? readAccountId(doc, adapter));
 
   const byContainer = new Map<Element, GenuiBlockCandidate[]>();
   for (const candidate of candidates) {
@@ -172,7 +157,7 @@ export function computeCardIdentities(
   const resolutions = new Map<Element, MessageKeyResolution>();
   const messageKeyCounts = new Map<string, number>();
   for (const container of byContainer.keys()) {
-    const resolution = resolveMessageKey(container);
+    const resolution = resolveMessageKey(container, adapter);
     resolutions.set(container, resolution);
     messageKeyCounts.set(resolution.key, (messageKeyCounts.get(resolution.key) ?? 0) + 1);
   }
