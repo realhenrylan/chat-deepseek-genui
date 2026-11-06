@@ -3,7 +3,9 @@
   "name": "DeepSeek GenUI",
   "version": "0.2.0",
   "description": "为 DeepSeek 网页回答提供可关闭的声明式交互界面增强。",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -12,14 +14,22 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["branding/logo-small.svg"],
-      "matches": ["https://chat.deepseek.com/*"]
+      "resources": [
+        "branding/logo-small.svg"
+      ],
+      "matches": [
+        "https://chat.deepseek.com/*"
+      ]
     }
   ],
   "content_scripts": [
     {
-      "matches": ["https://chat.deepseek.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://chat.deepseek.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
