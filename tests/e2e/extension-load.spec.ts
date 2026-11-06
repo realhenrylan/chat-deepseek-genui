@@ -227,6 +227,31 @@ const INTERACTIVE_RAW = JSON.stringify({
     { kind: 'value', label: '当前余额', source: { kind: 'derived', id: 'balance' } },
   ],
 });
+// 阶段 4 补充：长标签、20 字符单位、触屏目标与键盘/AX 检查共用一份文档。
+const LONG_UNIT = '这是一个正好二十个字符的超长计量单位名称';
+const CONTROL_A11Y_RAW = JSON.stringify({
+  type: 'genui',
+  version: 2,
+  title: '控件可达性',
+  state: [
+    { id: 'budget', label: '每月家庭固定生活支出预算合计', kind: 'number', initial: 100, min: 0, max: 200, step: 10, unit: '元' },
+    { id: 'spent', label: '已支出', kind: 'number', initial: 40, min: 0, max: 100, step: 10, unit: LONG_UNIT },
+    { id: 'category', label: '类别', kind: 'select', initial: 'food', options: [
+      { label: '餐饮', value: 'food' }, { label: '交通', value: 'transport' },
+    ] },
+  ],
+  derived: [{
+    id: 'balance', label: '余额', unit: '元',
+    expression: { op: 'subtract', left: { op: 'state', id: 'budget' }, right: { op: 'state', id: 'spent' } },
+  }],
+  elements: [
+    { kind: 'slider', bind: 'budget' },
+    { kind: 'number-input', bind: 'spent' },
+    { kind: 'select', bind: 'category' },
+    { kind: 'value', label: '当前类别', source: { kind: 'state', id: 'category' } },
+    { kind: 'value', label: '当前余额', source: { kind: 'derived', id: 'balance' } },
+  ],
+});
 // 阶段 6 的候选表：筛选、排序与选中项都需要进入继续讨论摘要。
 const TABLE_RAW = JSON.stringify({
   type: 'genui',
@@ -479,7 +504,15 @@ interface Launched {
   profileDir: string;
 }
 
-async function launchWithExtension(channel: string): Promise<Launched> {
+interface LaunchOptions {
+  viewport?: { width: number; height: number };
+  hasTouch?: boolean;
+}
+
+async function launchWithExtension(
+  channel: string,
+  options: LaunchOptions = {},
+): Promise<Launched> {
   if (!existsSync(join(DIST, 'manifest.json'))) {
     throw new Error(`缺少 ${join(DIST, 'manifest.json')}，请先运行 npm run build`);
   }
@@ -487,6 +520,8 @@ async function launchWithExtension(channel: string): Promise<Launched> {
   const context = await chromium.launchPersistentContext(profileDir, {
     channel,
     headless: process.env.HEADED !== '1',
+    viewport: options.viewport,
+    hasTouch: options.hasTouch,
     args: [
       `--disable-extensions-except=${DIST}`,
       `--load-extension=${DIST}`,
@@ -513,6 +548,76 @@ async function gotoAndAwaitMarker(page: Page): Promise<void> {
   await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
     timeout: 30_000,
   });
+}
+
+interface RgbaColor {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+/** Chromium 的 color-mix 计算值可能是 color(srgb …)，两种写法都解析。 */
+function parseCssColor(value: string): RgbaColor {
+  const rgb = value.match(/rgba?\(([^)]+)\)/);
+  if (rgb) {
+    const parts = rgb[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+    return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
+  }
+  const srgb = value.match(/color\(srgb ([^)]+)\)/);
+  if (srgb) {
+    const parts = srgb[1].split(/[ /]+/).filter(Boolean).map(Number);
+    return { r: parts[0] * 255, g: parts[1] * 255, b: parts[2] * 255, a: parts[3] ?? 1 };
+  }
+  const oklab = value.match(/oklab\(([^)]+)\)/);
+  if (oklab) {
+    const parts = oklab[1].split(/[ /]+/).filter(Boolean).map(Number);
+    const [lightness, aAxis, bAxis] = parts;
+    const l = (lightness + 0.3963377774 * aAxis + 0.2158037573 * bAxis) ** 3;
+    const m = (lightness - 0.1055613458 * aAxis - 0.0638541728 * bAxis) ** 3;
+    const s = (lightness - 0.0894841775 * aAxis - 1.291485548 * bAxis) ** 3;
+    const linear = [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+    ];
+    const encode = (channel: number) => {
+      const clamped = Math.min(1, Math.max(0, channel));
+      return clamped <= 0.0031308
+        ? clamped * 12.92
+        : 1.055 * clamped ** (1 / 2.4) - 0.055;
+    };
+    return {
+      r: encode(linear[0]) * 255,
+      g: encode(linear[1]) * 255,
+      b: encode(linear[2]) * 255,
+      a: parts[3] ?? 1,
+    };
+  }
+  throw new Error(`无法解析颜色：${value}`);
+}
+
+function compositeOver(fg: RgbaColor, bg: RgbaColor): RgbaColor {
+  return {
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1,
+  };
+}
+
+function relativeLuminance(color: RgbaColor): number {
+  const channel = (value: number) => {
+    const s = value / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+}
+
+function contrastRatio(fg: RgbaColor, bg: RgbaColor): number {
+  const l1 = relativeLuminance(fg);
+  const l2 = relativeLuminance(bg);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 
 interface ViewportRect {
@@ -837,6 +942,182 @@ for (const { label, channel } of CHANNELS) {
         `保留的本地草稿\n\n${GENUI_PROMPT_TEXT}`,
       );
       expect(interactionRequests, '控件操作期间不得产生网络请求').toEqual([]);
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`阶段 4 补充 · ${label} 键盘、无障碍树、触屏目标与长单位`, async () => {
+    test.skip(REAL_SITE, '阶段 4 补充用例使用本地合成页面；不依赖真实会话内容');
+    const { context, page, profileDir } = await launchWithExtension(channel, {
+      viewport: { width: 390, height: 900 },
+      hasTouch: true,
+    });
+    const buckets = watchErrors(page);
+
+    try {
+      await gotoAndAwaitMarker(page);
+      await page.evaluate((raw) => {
+        const message = document.createElement('div');
+        message.className = 'ds-assistant-message-main-content';
+        message.id = 'e2e-control-a11y-message';
+        const block = document.createElement('div');
+        block.className = 'md-code-block md-code-block-light';
+        block.id = 'e2e-control-a11y';
+        block.innerHTML = '<div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>';
+        const pre = document.createElement('pre');
+        const content = document.createElement('span');
+        content.textContent = raw;
+        pre.append(content);
+        block.append(pre);
+        message.append(block);
+        document.body.append(message);
+      }, CONTROL_A11Y_RAW);
+
+      const host = page.locator('.genui-card-host').last();
+      await expect(host).toContainText('控件可达性');
+      await page.setViewportSize({ width: 360, height: 900 });
+
+      const slider = host.locator('input[type="range"]');
+      const numberInput = host.locator('input[type="number"]');
+      const select = host.locator('select');
+
+      // 键盘焦点可见，range 的步进与 PageUp/PageDown/Home/End 语义保持原生行为。
+      await slider.focus();
+      expect(await slider.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
+      expect(await slider.evaluate((element) => getComputedStyle(element).outlineWidth)).toBe('2px');
+      await slider.press('ArrowRight');
+      await expect(host.locator('.genui-control-current')).toHaveText('110 元');
+      await slider.press('PageUp');
+      await expect(host.locator('.genui-control-current')).toHaveText('130 元');
+      await slider.press('PageDown');
+      await expect(host.locator('.genui-control-current')).toHaveText('110 元');
+      await slider.press('End');
+      await expect(host.locator('.genui-control-current')).toHaveText('200 元');
+      await slider.press('Home');
+      await expect(host.locator('.genui-control-current')).toHaveText('0 元');
+      expect(
+        await slider.evaluate(
+          (element) => (element.getRootNode() as ShadowRoot).activeElement === element,
+        ),
+      ).toBe(true);
+
+      await numberInput.focus();
+      await numberInput.press('ArrowUp');
+      await expect(numberInput).toHaveValue('50');
+      await expect(host.locator('.genui-input-error')).toHaveCount(0);
+
+      await select.focus();
+      await select.press('ArrowDown');
+      await expect(select).toHaveValue('transport');
+
+      const readColors = () =>
+        host.evaluate((element) => {
+          const shadow = element.shadowRoot as ShadowRoot;
+          const card = shadow.querySelector('.genui-card')!;
+          const input = shadow.querySelector('input[type="number"]')!;
+          const slider = shadow.querySelector('input[type="range"]')!;
+          const error = shadow.querySelector('.genui-input-error');
+          const style = (node: Element) => getComputedStyle(node);
+          return {
+            page: style(document.body).backgroundColor,
+            card: style(card).backgroundColor,
+            border: style(input).borderColor,
+            inputBg: style(input).backgroundColor,
+            accent: style(slider).accentColor,
+            error: error ? style(error).color : null,
+          };
+        });
+      const ratios = (raw: Awaited<ReturnType<typeof readColors>>) => {
+        const pageRaw = parseCssColor(raw.page);
+        // 模拟页未声明背景时浏览器按白色画布合成。
+        const page =
+          pageRaw.a === 0 ? { r: 255, g: 255, b: 255, a: 1 } : compositeOver(pageRaw, { r: 255, g: 255, b: 255, a: 1 });
+        const card = compositeOver(parseCssColor(raw.card), page);
+        return {
+          border: contrastRatio(compositeOver(parseCssColor(raw.border), card), card),
+          focus: contrastRatio(compositeOver(parseCssColor(raw.accent), card), card),
+          background: contrastRatio(compositeOver(parseCssColor(raw.inputBg), card), card),
+          error: raw.error
+            ? contrastRatio(compositeOver(parseCssColor(raw.error), card), card)
+            : null,
+        };
+      };
+
+      const lightNormal = ratios(await readColors());
+      expect(lightNormal.border).toBeGreaterThanOrEqual(3);
+      expect(lightNormal.focus).toBeGreaterThanOrEqual(3);
+
+      await numberInput.fill('');
+      await expect(host.locator('.genui-input-error')).toContainText('请输入有限数字');
+      const lightInvalid = ratios(await readColors());
+      expect(lightInvalid.border).toBeGreaterThanOrEqual(3);
+      expect(lightInvalid.error).toBeGreaterThanOrEqual(4.5);
+
+      await host.locator('.genui-card-reset').click();
+      await page.evaluate(() => {
+        document.body.classList.add('dark');
+        document.body.style.background = '#1b1d22';
+      });
+      await expect(host.locator('.genui-card-root')).toHaveAttribute('data-site-theme', 'dark');
+      await page.waitForTimeout(250);
+      const darkNormal = ratios(await readColors());
+      expect(darkNormal.border).toBeGreaterThanOrEqual(3);
+      expect(darkNormal.focus).toBeGreaterThanOrEqual(3);
+
+      await numberInput.fill('');
+      await expect(host.locator('.genui-input-error')).toContainText('请输入有限数字');
+      const darkInvalid = ratios(await readColors());
+      expect(darkInvalid.border).toBeGreaterThanOrEqual(3);
+      expect(darkInvalid.error).toBeGreaterThanOrEqual(4.5);
+
+      // 原生 range 在 Chromium 中会忽略带单位的 aria-valuetext，单位必须出现在
+      // 可访问性树的 description 中，而不是只依赖可见 output。
+      const cdp = await context.newCDPSession(page);
+      const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+      const sliderNode = nodes.find(
+        (node) =>
+          node.role?.value === 'slider' &&
+          node.name?.value === '每月家庭固定生活支出预算合计',
+      );
+      expect(sliderNode?.description?.value).toContain('单位：元');
+      const numberNode = nodes.find(
+        (node) => node.role?.value === 'spinbutton' && node.name?.value === '已支出',
+      );
+      expect(numberNode?.description?.value).toContain(LONG_UNIT);
+
+      const metrics = await host.evaluate((element) => {
+        const shadow = element.shadowRoot as ShadowRoot;
+        const input = shadow.querySelector('input[type="number"]')!;
+        const unit = shadow.querySelector('.genui-number-unit')!;
+        const card = shadow.querySelector('.genui-card')!;
+        const inputRect = input.getBoundingClientRect();
+        const unitRect = unit.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        return {
+          coarse: matchMedia('(pointer: coarse)').matches,
+          inputHeight: inputRect.height,
+          selectHeight: shadow.querySelector('select')!.getBoundingClientRect().height,
+          sliderHeight: shadow.querySelector('input[type="range"]')!.getBoundingClientRect().height,
+          inputWidth: inputRect.width,
+          unitBelow: unitRect.top >= inputRect.bottom - 1,
+          unitRight: unitRect.right,
+          cardRight: cardRect.right,
+          overflow: card.scrollWidth > card.clientWidth + 1,
+        };
+      });
+      expect(metrics.coarse).toBe(true);
+      expect(metrics.inputHeight).toBeGreaterThanOrEqual(44);
+      expect(metrics.selectHeight).toBeGreaterThanOrEqual(44);
+      expect(metrics.sliderHeight).toBeGreaterThanOrEqual(44);
+      expect(metrics.inputWidth).toBeGreaterThanOrEqual(80);
+      expect(metrics.unitBelow).toBe(true);
+      expect(metrics.unitRight).toBeLessThanOrEqual(metrics.cardRight + 1);
+      expect(metrics.overflow).toBe(false);
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
       expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);

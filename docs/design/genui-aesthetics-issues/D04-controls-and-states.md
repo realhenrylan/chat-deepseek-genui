@@ -1,6 +1,6 @@
 # D04：统一输入控件与交互状态的视觉表现
 
-状态：已发布，待开发。
+状态：已实现（2026-11-06），待发布验收。
 
 GitHub：[#14](https://github.com/realhenrylan/chat-deepseek-genui/issues/14)。
 
@@ -41,11 +41,21 @@ GitHub：[#14](https://github.com/realhenrylan/chat-deepseek-genui/issues/14)。
 
 ## 实现与验收
 
-- [ ] 鼠标和键盘调整 range、编辑 number、操作 select 均保持原有数值边界和提交语义。
-- [ ] 空值、非法值、越界、步长不齐和输入法场景仍显示就近错误，最后有效值继续用于计算。
-- [ ] 标签、当前值和单位在长中文及窄栏下清楚；焦点可见且不会落到不可见元素。
-- [ ] 亮暗主题均有一致的交互状态，错误不只依赖红色区分。
-- [ ] 同参数的多个绑定控件与多个卡片仍同步正确、彼此隔离；运行相应交互单测及 Edge/Chrome e2e。
+- [x] 鼠标和键盘调整 range、编辑 number、操作 select 均保持原有数值边界和提交语义。
+- [x] 空值、非法值、越界、步长不齐和输入法场景仍显示就近错误，最后有效值继续用于计算。
+- [x] 标签、当前值和单位在长中文及窄栏下清楚；焦点可见且不会落到不可见元素。
+- [x] 亮暗主题均有一致的交互状态，错误不只依赖红色区分。
+- [x] 同参数的多个绑定控件与多个卡片仍同步正确、彼此隔离；运行相应交互单测及 Edge/Chrome e2e。
+
+## 实现与验证记录
+
+- 结构：滑块顶行为真实 `<label>` + `<output>`（`for` 指向 range），range 独占下一行；两者仍包在 `.genui-slider-row` 内，保留 #13 依赖的容器契约，只在 #14 内用更高优先级的纵向布局覆盖。移除 range 上重复的 `aria-label`，保留 `aria-valuetext`，output 设 `aria-live="off"`，避免同一当前值被重复播报。Chromium 会忽略原生 range 上带单位的 `aria-valuetext`，因此单位另外通过隐藏文本进入 `aria-describedby`，错误时与错误说明并列。数字输入把单位从标签移到输入框后的 `.genui-number-unit`；`aria-describedby` 同时包含单位和就地错误，错误消失后只保留单位。select 继续使用原生元素与 label/htmlFor。
+- 交互：数字输入在 `compositionstart` 到 `compositionend` 之间只回显草稿，不校验、不提交、不显示错误；合成结束后再按既有范围/步长逻辑校验，最后有效值继续参与计算。滑块、数字、select 的提交语义、重置和草稿行为未改。
+- 形态：number/select/slider 统一 36px 最小高度（`pointer: coarse` 44px），复用同一套边界、背景、圆角、焦点与错误状态；普通、悬停、焦点、无效和禁用使用有限样式角色。控件边界以 55% 文字色与表面混合，亮色对比度 3.57:1、暗色 4.82:1；焦点蓝 4.01:1 / 5.65:1；错误文字 4.73:1 / 7.38:1，均达到对应 WCAG AA 阈值，错误同时有文字和浅底色。单位与数值使用等宽数字；长标签、长单位和窄栏允许换行，超长单位会换到输入框下一行并保留输入宽度。过渡只作用于颜色/边界，并在 `prefers-reduced-motion` 下关闭。未引入自定义下拉、Portal 或新依赖。
+- 自动化：`tests/unit/control-presentation.test.tsx` 5 项，覆盖滑块顶行/独占行与 `.genui-slider-row` 契约、output 关联与 `aria-live`、单位 describedby、数字错误 describedby 共存、select 同步、20 字符单位，以及输入法合成期间只回显草稿。原有 `card.test.ts` 的控件边界、步长、重置与多卡隔离用例，以及 `value-emphasis.test.tsx` 继续通过。`npm run check`：47 个测试文件、575 项单测；`dist/content.js` 875049 B（875.05 kB，gzip 157.56 kB），产物 7 个文件，权限仍仅 `storage`。
+- 浏览器：默认 Edge/Chrome e2e 30 passed、6 skipped（真实 origin 用例按默认跳过）。阶段 4 控件的原有同步、错误与隔离用例继续通过；新增「阶段 4 补充」在两种浏览器验证 Arrow/PageUp/PageDown/Home/End 键盘步进、焦点始终留在滑块、数字输入键盘步进、select 键盘选择、无障碍树的滑块单位描述与数字长单位描述、`pointer: coarse` 下 44px 目标、360px 下 20 字符单位换行/输入宽度/无卡片横向溢出，以及亮暗两套边界、焦点和错误对比度断言；#13 的「阶段 15」在合并后同样通过。
+- 视觉：Edge 中检查 720 宽亮色、360 宽暗色、错误/焦点态和 20 字符单位；滑块标签与当前值同排、range 独占下一行；长标签与长单位在 360px 下换行，未出现卡片级横向溢出，输入框在长单位换行后仍保留可编辑宽度。360px 等效覆盖 720px 下 200% 页面缩放的 CSS 回流。
+- 限制：未运行真实屏幕阅读器和真实输入法；输入法用 `compositionstart/end` 事件模拟，对比度由 Edge/Chrome e2e 从计算样式合成后断言，并非人工取色。#13 已合入 main，`.genui-slider-row` 兼容层与阶段 15 在合并后复跑通过。
 
 ## 与现有 issues 的关系
 

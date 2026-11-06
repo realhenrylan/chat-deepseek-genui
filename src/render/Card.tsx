@@ -336,8 +336,14 @@ export function Card({
     closePreview();
   };
 
-  const handleNumberInput = (id: string, raw: string) => {
+  const handleNumberInput = (
+    id: string,
+    raw: string,
+    options?: { deferValidation?: boolean },
+  ) => {
     setDrafts((previous) => ({ ...previous, [id]: raw }));
+    // 输入法合成中只保留草稿；compositionend 后再统一校验并提交。
+    if (options?.deferValidation) return;
     const variable = findVariable(id);
     if (!variable || variable.kind !== 'number') return;
 

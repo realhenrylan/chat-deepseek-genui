@@ -228,14 +228,15 @@
 .genui-control {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
 }
 
 .genui-control-label {
+  min-width: 0;
+  max-width: 100%;
   font-size: var(--genui-type-label);
   font-weight: 600;
-  min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -254,17 +255,78 @@
   opacity: 0.7;
 }
 
+/* 所有可编辑控件共用同一组尺寸、边界、悬停、焦点与错误角色。
+   #11 变量负责主题；不为单个示例覆写形态。 */
 .genui-number-input,
 .genui-select {
   box-sizing: border-box;
   width: min(100%, 320px);
-  min-height: 34px;
-  padding: 5px 9px;
-  border: 1px solid var(--genui-color-border-strong);
-  border-radius: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--genui-color-border);
+  /* 控件边界本身是识别输入区域的主要线索，需达到 3:1；纯灰阶变量
+     的 .35 透明度在亮/暗主题下都不足。边框仍由文字色派生，主题切换时
+     保持同一对比关系。 */
+  border-color: color-mix(in srgb, var(--genui-color-text) 55%, transparent);
+  border-radius: var(--genui-radius-md);
   background: var(--genui-color-surface-subtle);
   color: inherit;
   font: inherit;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.genui-number-input:hover:not(:disabled):not(:focus):not([aria-invalid='true']),
+.genui-select:hover:not(:disabled):not(:focus):not([aria-invalid='true']) {
+  border-color: color-mix(in srgb, var(--genui-color-text) 72%, transparent);
+  background: var(--genui-color-surface-hover);
+}
+
+.genui-number-input:focus,
+.genui-select:focus {
+  border-color: var(--genui-color-accent-border);
+}
+
+.genui-number-input[aria-invalid='true'],
+.genui-select[aria-invalid='true'] {
+  border-color: var(--genui-color-danger);
+  background: var(--genui-color-danger-soft);
+}
+
+.genui-number-input:disabled,
+.genui-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.genui-number-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  width: min(100%, 320px);
+  min-width: 0;
+}
+
+.genui-number-field .genui-number-input {
+  flex: 1 1 12ch;
+  width: auto;
+  min-width: 8ch;
+}
+
+/* 常规单位跟在输入框右侧；超长单位可换到下一行，避免挤占可编辑区域。 */
+.genui-number-unit {
+  flex: 0 1 auto;
+  max-width: 100%;
+  color: var(--genui-color-text-muted);
+  font-size: var(--genui-type-label);
+  font-variant-numeric: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .genui-select option {
@@ -272,34 +334,73 @@
   background: Canvas;
 }
 
-.genui-slider-row {
+/* #13 仍通过 .genui-slider-row 查找滑块与当前值；#14 在该容器内改为
+   纵向布局，标签/当前值在顶行，range 独占下一行。保留 #13 的
+   max-width 与 min-width 约束，避免窄栏下横向溢出。 */
+.genui-control > .genui-slider-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--genui-space-1) var(--genui-space-3);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
   max-width: 540px;
   min-width: 0;
 }
 
 .genui-slider {
-  flex: 1 1 140px;
-  min-width: min(120px, 100%);
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
-  width: auto;
+  min-height: 36px;
   margin: 0;
   accent-color: var(--genui-color-accent);
+  cursor: pointer;
 }
 
+.genui-slider:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* 当前值使用等宽数字并与标签同排；单位仍跟随数值，不另起一列。 */
 .genui-control-current {
   flex: 0 1 auto;
-  margin-left: auto;
-  max-width: 100%;
   min-width: 5ch;
+  max-width: 100%;
+  margin-left: auto;
+  font-size: var(--genui-type-body);
+  font-weight: 600;
+  line-height: 1.4;
   text-align: right;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.genui-control-current-value {
+  white-space: nowrap;
+}
+
+.genui-control-current .genui-control-unit {
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* 触屏目标不小于约 44px；桌面保持紧凑的 36px。 */
+@media (pointer: coarse) {
+  .genui-number-input,
+  .genui-select,
+  .genui-slider {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .genui-number-input,
+  .genui-select {
+    transition: none;
+  }
 }
 
 .genui-value {
