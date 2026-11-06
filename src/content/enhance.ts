@@ -51,13 +51,13 @@ export const STATE_ATTR = 'data-genui-state';
 /** 失败原因：协议失败码或链路级原因。 */
 export const REASON_ATTR = 'data-genui-reason';
 /** 卡片 host 的 light-DOM 标记（host 本体位于原始块之前）。 */
-export const HOST_CLASS = 'genui-card-host';
+const HOST_CLASS = 'genui-card-host';
 
 /** 失败原因 = 协议失败码 ∪ 链路级原因。 */
 export type EnhanceFailureReason = GenuiFailureCode | 'missing-pre' | 'mount-failed' | 'render-error';
 
 /** 失败原因到脱敏诊断信号的映射；deferred 不是失败，单独记为等待。 */
-export function diagnosticForEnhanceFailure(
+function diagnosticForEnhanceFailure(
   reason: EnhanceFailureReason,
 ): { category: DiagnosticCategory; code: DiagnosticCode } {
   if (reason === 'missing-pre') return { category: 'detection', code: 'missing-pre' };

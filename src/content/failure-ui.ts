@@ -11,7 +11,7 @@ import { copyText, type RepairDeliveryResult } from './repair';
  */
 
 export const STATUS_ATTR = 'data-genui-status';
-export const STATUS_HOST_CLASS = 'genui-status-host';
+const STATUS_HOST_CLASS = 'genui-status-host';
 export const STATUS_HOST_ATTR = 'data-genui-status-host';
 
 export type BlockStatus = 'pending' | 'validating' | 'deferred' | 'invalid' | 'incomplete' | 'incompatible';

@@ -6,7 +6,7 @@ export interface InlineStateBus {
 
 const buses = new WeakMap<Element, InlineStateBus>();
 
-export function createStandaloneBus(): InlineStateBus {
+function createStandaloneBus(): InlineStateBus {
   const state = new Map<string, number | string>();
   const listeners = new Map<string, Set<(value: number | string) => void>>();
 
