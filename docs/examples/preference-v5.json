@@ -33,27 +33,54 @@
     }
   ],
   "elements": [
-    { "kind": "note", "text": "续航与重量为 0–100 的相对评分，价格单位为元；缺失资料不按 0 分计算。", "tone": "info" },
-    { "kind": "slider", "bind": "budget" },
-    { "kind": "note", "text": "调整三项权重会立即改变归一化得分与排名；权重为 0 的维度不参与计分，也不进入缺失分母。", "tone": "info" },
     {
-      "kind": "columns",
-      "columns": [
-        [ { "kind": "slider", "bind": "priceWeight" } ],
-        [ { "kind": "slider", "bind": "batteryWeight" } ],
-        [ { "kind": "slider", "bind": "weightWeight" } ]
+      "kind": "section",
+      "title": "筛选与偏好权重",
+      "children": [
+        { "kind": "note", "text": "续航与重量为 0–100 的相对评分，价格单位为元；缺失资料不按 0 分计算。", "tone": "info" },
+        { "kind": "slider", "bind": "budget" },
+        { "kind": "note", "text": "调整三项权重会立即改变归一化得分与排名；权重为 0 的维度不参与计分，也不进入缺失分母。", "tone": "info" },
+        {
+          "kind": "columns",
+          "columns": [
+            [ { "kind": "slider", "bind": "priceWeight" } ],
+            [ { "kind": "slider", "bind": "batteryWeight" } ],
+            [ { "kind": "slider", "bind": "weightWeight" } ]
+          ]
+        }
       ]
     },
-    { "kind": "value", "label": "符合预算的候选", "source": { "kind": "model", "model": "pick", "key": "eligibleCount" }, "unit": "款" },
-    { "kind": "value", "label": "最高得分", "source": { "kind": "model", "model": "pick", "key": "topScore" }, "unit": "分", "emphasis": "primary" },
-    { "kind": "table", "title": "综合排名", "source": { "model": "pick", "view": "ranking" } },
     {
-      "kind": "columns",
-      "columns": [
-        [ { "kind": "chart", "chartType": "bar", "title": "得分对比", "source": { "model": "pick" } } ],
-        [ { "kind": "table", "title": "得分分解", "source": { "model": "pick", "view": "breakdown" } } ]
+      "kind": "section",
+      "title": "综合排名与关键结果",
+      "children": [
+        {
+          "kind": "columns",
+          "columns": [
+            [
+              { "kind": "value", "label": "最高得分", "source": { "kind": "model", "model": "pick", "key": "topScore" }, "unit": "分", "emphasis": "primary" }
+            ],
+            [
+              { "kind": "value", "label": "符合预算的候选", "source": { "kind": "model", "model": "pick", "key": "eligibleCount" }, "unit": "款" }
+            ]
+          ]
+        },
+        { "kind": "table", "title": "综合排名", "source": { "model": "pick", "view": "ranking" } }
       ]
     },
-    { "kind": "explain", "model": "pick", "title": "排名依据" }
+    {
+      "kind": "section",
+      "title": "得分对比与依据",
+      "children": [
+        {
+          "kind": "columns",
+          "columns": [
+            [ { "kind": "chart", "chartType": "bar", "title": "得分对比", "source": { "model": "pick" } } ],
+            [ { "kind": "table", "title": "得分分解", "source": { "model": "pick", "view": "breakdown" } } ]
+          ]
+        },
+        { "kind": "explain", "model": "pick", "title": "排名依据" }
+      ]
+    }
   ]
 }

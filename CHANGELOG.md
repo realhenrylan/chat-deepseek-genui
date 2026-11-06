@@ -4,6 +4,12 @@
 
 ### Added
 
+- 卡片分组与局部容器自适应布局（issue #13）：
+  - `src/render/composite.tsx`：为 `columns` 外层增加 `.genui-columns-container` 局部查询容器节点，内部保持 `<div className="genui-columns" data-columns={...}>`，元素递归路径 `path`、`key` 及表格状态键保持零破坏；
+  - `src/render/card.css`：`.genui-section` 移除默认四周封闭边框、圆角与固定内边距盒子样式，改为由区域标题（14px semi-bold）、上下留白（8px/12px）与非首项轻量顶部分隔线（`border-top: 1px solid var(--genui-color-border-subtle)`）分组；嵌套首项在列内自然紧凑对齐；
+  - `.genui-columns-container` 声明 `container-type: inline-size`，`.genui-columns` 默认单列（窄屏/移动优先），通过 `@container (min-width: 38rem)` 恢复 2 列并列，`@container (min-width: 58rem)`（并校准 57.5rem 兼容扣除内边距后的 926px 可用宽度）恢复 3 列并列；移除原末尾基于浏览器视口的 `@media (max-width: 560px)` 规则，嵌套 `columns` 依托各自外层容器独立适配；
+  - 核心容器全部声明 `min-width: 0` 与长文本/单位自动换行，防止在长中文标签（120 字）、长数值、20 字符单位及 200% 缩放下发生整卡水平溢出；
+  - 提示词升级至 v3.1：补充 `section`（标题留白逻辑分组、避免无意义嵌套）与 `columns`（按卡片可用宽度自适应切换，推荐参数与核心结果并列对照，图表、表格与依据按层级排在下方，关键说明直接可见）组合原则；优化末尾月度预算速算示例为并列结构；同步更新 `docs/prompt.md` 与 `docs/examples/preference-v5.json` 等示例。
 - 建立 GenUI 基础语义变量层（#11 所需公共层，本轮只完成变量与现有样式替换，不宣称 #11 完成）：在卡片根节点统一定义表面、主/次文字、边界、主色、状态、间距、圆角与排版角色，亮暗值均由 `data-site-theme` 切换；品牌蓝统一为 `#4d6bfe`（暗色 `#7c9aff`），移除旧 `#3988ff`，并删除重复的暗色覆盖块。默认间距采用 4/8/12/16/24px，圆角 6/8/12px，文字对比度按 4.5:1 选择。组件级全量替换、对比度矩阵、主题切换状态保持与独立 360/560/720 验收仍归 #11。
 - 卡片排版层级与主结果强调（issue #12）：建立标题 16px、区域标题与正文 14px、标签/辅助文字 12–13px、主要结果 20px 的排版角色，用字号、字重、位置、留白和附加蓝线区分主次，不依赖颜色；长标签与数值可换行，数字使用等宽数字。v3–v5 的 `value` 新增可选 `emphasis: "normal" | "primary"`，省略即普通，仅文档顺序中前两个显式 primary 突出显示，超出的 primary 仍按普通结果显示，不因展示数量让整卡失败；v1/v2 字段集合保持关闭。数值与单位拆为独立排版节点但保留“数值 空格 单位”的完整文本与可访问名称，错误仍在结果位置就地显示而不是写成 0。提示词升级 v3.0，说明只给真正核心的 1–2 个结果显式写 primary，并同步预算、成本、偏好与函数示例；协议文档、生成校验器与提示词文档同步更新。
 - 站点适配与本地诊断（issue #9）：新增 `src/content/site-adapter.ts`，统一回答容器、`genui` 候选、输入框、生成状态、会话路由与账号/消息身份，渲染、状态与计算不再直接依赖站点选择器；`findGenuiBlocks`、`findChatInput`、`isGenerationActive` 保留兼容签名，找不到确定输入框时返回 `null` 而不猜测其他文本框。新增 `src/runtime/diagnostics.ts`（`genui-diagnostics/v1`），按识别、等待完整内容、协议、挂载四类记录固定代码、次数与首次/最近时间，并附适配器探针的计数与布尔值；浮标新增「本地诊断」面板，可预览、刷新、复制或由用户主动下载 JSON，导出不含聊天文本、草稿、账号或会话 id，仅页面内存、不上传、不新增权限。补充类名轮换、空 `pre` 延迟补齐、孤立带标签代码块三个变体样本，以及输入框歧义、路由复用、适配器注入等 39 项单测；侧栏承载形成评审稿 [docs/side-panel-evaluation.md](docs/side-panel-evaluation.md)，本轮只评审不实施。
@@ -39,6 +45,7 @@
 
 ### Validation
 
+- issue #13 验证（2026-11-06）：`npm run check` 通过：46 个测试文件、567 项单测通过（3 项按既有条件跳过，共 570 项），类型检查、lint、构建与生产包校验均通过；`dist/content.js` 870563 B（870.56 kB，gzip 156.77 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions` 或后台脚本。新增 `tests/unit/grouping-layout.test.tsx` 9 项单测，更新 `prompt.test.ts` 与 `card-visual-tokens.test.ts`，覆盖局部容器查询与断点规则检查、去框线顶部分隔与首项紧凑规则、各级容器 min-width: 0 防溢出声明、标题层级与 DOM/键盘阅读顺序一致性、宽窄容器切换下输入控件/未提交草稿/表格筛选/排序/详情折叠的无重建状态保持、嵌套布局下前两个 primary 收集与原始 JSON / 展开收起切换；在真实 Edge 与 Chrome 中通过 Playwright 端到端测试（新增 `阶段 15`，全套 28 项通过、6 项真实站点跳过），验证 360px、560px、720px、960px 宽度及亮/暗主题下的单列/双列/三列与嵌套自适应布局，以及长中文标签（60–120 字符）、长数值、长单位和 200% 等效缩放下的无卡片级溢出。
 - issue #12 验证（2026-11-05）：`npm run check` 通过：45 个测试文件、551 项单测，类型检查、lint、构建与生产包校验均通过；`dist/content.js` 868794 B（868.79 kB，gzip 156.42 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions` 或后台脚本。新增 `value-emphasis.test.tsx` 13 项与 `card-visual-tokens.test.ts` 2 项单测，覆盖 v1/v2 拒绝字段、v3–v5（含 v5 模型值）接受与未知枚举拒绝、嵌套布局前两个 primary、0/1/2 个 primary、负值/小数/大数、20 字符单位、120 字符长标签、单位拆分与可访问名称、除零错误不写成 0、强调不改变求值/计算依据/继续讨论摘要，以及基础语义变量与暗色覆盖唯一性。并在 Edge 中检查预算、选购比较、函数学习、成本、偏好和长标签/长单位样例的亮色、暗色与 360/560/720 宽度；360px 下无卡片级横向溢出，选购表保留内部横向滚动，长标签与 20 字符单位正常换行；200% 页面缩放以 360px 等效回流宽度验证。本轮未重跑真实页面 e2e，也未运行真实屏幕阅读器。
 - `npm run check` 通过：41 个测试文件、497 项单测，类型检查、lint、构建与生产包校验均通过；`dist/content.js` 855349 B（855.35 kB，gzip 152.49 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions` 或后台脚本。
 - 默认 Edge/Chrome e2e：24 passed、6 skipped（真实 origin 用例按默认跳过）。流式用例断言未变化的历史卡片保持挂载、仅被改写的卡片卸载；真实 DeepSeek 页面虚拟列表键稳定性与真实模型生成本轮未重跑。

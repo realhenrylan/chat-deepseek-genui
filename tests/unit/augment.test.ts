@@ -8,6 +8,8 @@ import {
   GENUI_PROMPT_START,
   GENUI_PROMPT_TEXT,
   GENUI_TOOL_PROMPT_TEXT,
+  GENUI_PROMPT_V30_TEXT,
+  GENUI_TOOL_PROMPT_V30_TEXT,
 } from '../../src/content/prompt';
 
 /**
@@ -560,5 +562,88 @@ describe('issue7 模式切换安全替换与残留', () => {
     userTypes(input, '');
     expect(draft.getStatus()).toBe('idle');
     expect(onPlainNote).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('旧版 v3.0 草稿兼容与模式切换', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    augmenter?.dispose();
+    augmenter = null;
+    document.body.replaceChildren();
+    vi.useRealTimers();
+  });
+
+  it('恢复含完整 v3.0 auto 提示词的草稿：打字不重复追加 v3.1，切 tool 替换为 v3.1 tool，切 plain 移除提示词保留原文', async () => {
+    const onModeChange = vi.fn();
+    const input = createInput();
+    const draft = createAugmenter({ onModeChange });
+
+    // 模拟恢复包含完整 v3.0 auto 提示词的旧草稿
+    const V30_DRAFT = `${USER}\n\n${GENUI_PROMPT_V30_TEXT}`;
+    userTypes(input, V30_DRAFT);
+    expect(draft.getStatus()).toBe('appended');
+
+    // 继续打字：防抖后不应追加任何新说明（不重复追加 v3.1）
+    await advance(DEBOUNCE * 2);
+    expect(input.value).toBe(V30_DRAFT);
+    expect(draft.getStatus()).toBe('appended');
+
+    // 切换为 tool 模式：干净替换旧版 v3.0 auto 说明为当前 v3.1 tool 说明，保留用户原文
+    draft.setMode('tool');
+    expect(input.value).toBe(`${USER}\n\n${GENUI_TOOL_PROMPT_TEXT}`);
+    expect(draft.getStatus()).toBe('appended');
+
+    // 切换为 plain 模式：干净移除提示词，恢复为纯用户输入
+    draft.setMode('plain');
+    expect(input.value).toBe(USER);
+    expect(draft.getStatus()).toBe('plain');
+  });
+
+  it('恢复含完整 v3.0 tool 提示词的旧草稿：切 auto 替换为 v3.1 auto，切 plain 移除提示词', async () => {
+    const input = createInput();
+    const draft = createAugmenter();
+    // 先设为 tool 模式，模拟用户当前会话曾处于 tool 模式
+    draft.setMode('tool');
+
+    const V30_TOOL_DRAFT = `${USER}\n\n${GENUI_TOOL_PROMPT_V30_TEXT}`;
+    userTypes(input, V30_TOOL_DRAFT);
+    await advance(DEBOUNCE * 2);
+    expect(input.value).toBe(V30_TOOL_DRAFT);
+
+    // 切回 auto：安全替换为当前 v3.1 auto 文本
+    draft.setMode('auto');
+    expect(input.value).toBe(`${USER}\n\n${GENUI_PROMPT_TEXT}`);
+    expect(draft.getStatus()).toBe('appended');
+
+    // 切为 plain：干净移除提示词
+    draft.setMode('plain');
+    expect(input.value).toBe(USER);
+  });
+
+  it('恢复含用户修改过的 v3.0 说明的草稿：切换模式严禁误删用户编辑内容', async () => {
+    const onPlainNote = vi.fn();
+    const input = createInput();
+    const draft = createAugmenter({ onPlainNote });
+
+    // 包含被用户编辑过的 v3.0 说明（例如修改了末尾参数或添加了注释）
+    const EDITED_V30 = `${USER}\n\n${GENUI_PROMPT_V30_TEXT}（用户特别注明：需要三列布局）`;
+    userTypes(input, EDITED_V30);
+    await advance(DEBOUNCE * 2);
+
+    // 切到 plain 模式：不删除用户修改过的说明，给出保留提示
+    draft.setMode('plain');
+    expect(input.value).toBe(EDITED_V30);
+    expect(draft.getStatus()).toBe('plain');
+    expect(onPlainNote).toHaveBeenLastCalledWith(GENUI_PLAIN_RESIDUAL_NOTE);
+
+    // 切到 tool 模式：保持用户修改内容，状态置为 edited
+    draft.setMode('tool');
+    expect(input.value).toBe(EDITED_V30);
+    expect(draft.getStatus()).toBe('edited');
+
+    // 切到 auto 模式：保持用户修改内容
+    draft.setMode('auto');
+    expect(input.value).toBe(EDITED_V30);
   });
 });
