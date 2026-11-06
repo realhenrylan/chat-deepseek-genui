@@ -1,6 +1,6 @@
 # D04：统一输入控件与交互状态的视觉表现
 
-状态：已实现（2026-11-06），待发布验收。
+状态：已发布并验收（2026-11-06）。
 
 GitHub：[#14](https://github.com/realhenrylan/chat-deepseek-genui/issues/14)。
 
