@@ -42,7 +42,11 @@ export interface CompositeContext {
   drafts: Record<string, string>;
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
-  onNumberInput: (id: string, raw: string) => void;
+  onNumberInput: (
+    id: string,
+    raw: string,
+    options?: { deferValidation?: boolean },
+  ) => void;
   /** 表格筛选/排序/选中项按元素路径保存，随卡片状态一起跨重新挂载保留。 */
   tables: Record<string, TableViewState>;
   onTableChange: (path: string, view: TableViewState) => void;

@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import type {
   ComposableInteractiveElement,
   DerivedCalculation,
@@ -27,7 +27,15 @@ export interface InteractiveElementProps {
   drafts: Record<string, string>;
   fieldErrors: Record<string, string>;
   onValueChange: (id: string, value: number | string) => void;
-  onNumberInput: (id: string, raw: string) => void;
+  /**
+   * 数字输入草稿；deferValidation 用于输入法合成期间只更新可见草稿，
+   * 待 compositionend 后再校验/提交，避免合成中的临时值触发错误。
+   */
+  onNumberInput: (
+    id: string,
+    raw: string,
+    options?: { deferValidation?: boolean },
+  ) => void;
   /** 展示层计算出的强调资格；省略时按普通结果呈现。 */
   emphasized?: boolean;
 }
@@ -105,12 +113,16 @@ export function InteractiveElementView({
   emphasized = false,
 }: InteractiveElementProps) {
   const controlId = useId();
+  /** 数字输入正在输入法合成中；期间只回显草稿，不触发提交/错误。 */
+  const composingRef = useRef(false);
 
   if (element.kind === 'number-input' || element.kind === 'slider' || element.kind === 'select') {
     const variable = document.state.find((item) => item.id === element.bind);
     if (!variable) return <UnknownElementView element={{ kind: element.kind }} />;
     const error = getOwn(fieldErrors, variable.id);
     const errorId = `${controlId}-error`;
+    /** 数字输入的单位后缀与错误共用 aria-describedby，避免名称里重复单位。 */
+    const unitId = `${controlId}-unit`;
 
     if (element.kind === 'select' && variable.kind === 'select') {
       return (
@@ -142,10 +154,20 @@ export function InteractiveElementView({
     if (element.kind === 'slider') {
       return (
         <div className="genui-control">
-          <div className="genui-control-head">
-            <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
-          </div>
+          {/* 保留 .genui-slider-row 作为与 #13 布局工作的结构接口；#14 内
+              部改为纵向排列，标签/当前值在顶行，range 独占下一行。 */}
           <div className="genui-slider-row">
+            <div className="genui-control-head">
+              <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
+              <output
+                className="genui-control-current"
+                htmlFor={controlId}
+                aria-live="off"
+              >
+                <span className="genui-control-current-value">{formatNumber(current)}</span>
+                {variable.unit ? <span className="genui-control-unit"> {variable.unit}</span> : null}
+              </output>
+            </div>
             <input
               id={controlId}
               className="genui-slider"
@@ -154,13 +176,18 @@ export function InteractiveElementView({
               max={variable.max}
               step={variable.step}
               value={current}
-              aria-label={variable.label}
               aria-valuetext={currentLabel}
-              aria-describedby={error ? errorId : undefined}
+              aria-describedby={[variable.unit ? unitId : null, error ? errorId : null]
+                .filter(Boolean)
+                .join(' ') || undefined}
               aria-invalid={error ? 'true' : undefined}
               onChange={(event) => onValueChange(variable.id, Number(event.currentTarget.value))}
             />
-            <output className="genui-control-current" htmlFor={controlId}>{currentLabel}</output>
+            {/* Chromium 对 aria-valuetext 的暴露并不稳定，单位另以描述提供，
+                避免读屏只读到数值而漏掉单位。 */}
+            {variable.unit ? (
+              <span className="genui-visually-hidden" id={unitId}>单位：{variable.unit}</span>
+            ) : null}
           </div>
           {error ? <p className="genui-input-error" id={errorId} role="status">{error}</p> : null}
         </div>
@@ -168,26 +195,43 @@ export function InteractiveElementView({
     }
 
     const inputValue = getOwn(drafts, variable.id) ?? String(current);
+    const describedBy = [variable.unit ? unitId : null, error ? errorId : null]
+      .filter(Boolean)
+      .join(' ') || undefined;
     return (
       <div className="genui-control">
         <div className="genui-control-head">
-          <label className="genui-control-label" htmlFor={controlId}>
-            {variable.label}{variable.unit ? <span className="genui-control-unit">（{variable.unit}）</span> : null}
-          </label>
+          <label className="genui-control-label" htmlFor={controlId}>{variable.label}</label>
         </div>
-        <input
-          id={controlId}
-          className="genui-number-input"
-          type="number"
-          inputMode="decimal"
-          min={variable.min}
-          max={variable.max}
-          step={variable.step}
-          value={inputValue}
-          aria-describedby={error ? errorId : undefined}
-          aria-invalid={error ? 'true' : undefined}
-          onChange={(event) => onNumberInput(variable.id, event.currentTarget.value)}
-        />
+        <div className="genui-number-field">
+          <input
+            id={controlId}
+            className="genui-number-input"
+            type="number"
+            inputMode="decimal"
+            min={variable.min}
+            max={variable.max}
+            step={variable.step}
+            value={inputValue}
+            aria-describedby={describedBy}
+            aria-invalid={error ? 'true' : undefined}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              onNumberInput(variable.id, event.currentTarget.value);
+            }}
+            onChange={(event) => onNumberInput(variable.id, event.currentTarget.value, {
+              deferValidation: composingRef.current,
+            })}
+          />
+          {variable.unit ? (
+            <span className="genui-number-unit" id={unitId}>
+              <span className="genui-visually-hidden">单位：</span>{variable.unit}
+            </span>
+          ) : null}
+        </div>
         {error ? <p className="genui-input-error" id={errorId} role="status">{error}</p> : null}
       </div>
     );
