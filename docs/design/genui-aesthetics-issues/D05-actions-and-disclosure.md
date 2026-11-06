@@ -1,6 +1,6 @@
 # D05：梳理卡片操作与辅助信息的呈现层级
 
-状态：已实现（2026-11-06），待发布验收。
+状态：已实现（2026-11-06，含复核 P2 修复），待发布验收。
 
 GitHub：[#15](https://github.com/realhenrylan/chat-deepseek-genui/issues/15)。
 
@@ -54,12 +54,12 @@ GitHub：[#15](https://github.com/realhenrylan/chat-deepseek-genui/issues/15)。
 ## 实现与验证记录
 
 - 结构：`Card.tsx` 页脚新增 `.genui-card-actions`（`role="group"`，可访问名称“界面操作”），组内按「继续讨论 → 重置 → 保存 → 清除保存」排列；反馈紧随操作组之后，原始 JSON 切换与“透明增强 · 纯文本渲染 · 不执行脚本 · 原始 N 字符”说明移入 `details.genui-card-details`，`summary.genui-card-details-summary` 文案为“界面详情”，默认不设 `open`。v1 卡片不渲染继续讨论与重置，仍保留可展开的详情。
-- 交互：详情开合是原生 details 的本地视图状态，不卸载卡片；展开后切换原始 JSON 仍由既有 `onToggleRaw` 承担，按钮文案在“查看原始 JSON / 收起原始 JSON”之间切换。主卡收起时整个页脚（含详情）通过 `hidden` 移出可见层与 Tab 顺序，重新展开后保留 `details.open`、已改参数与当前结果。所有反馈继续使用 `role="status"`，位于操作组与详情之间；`onContinue` 的四种返回（filled/appended/no-input/unavailable）及重置、摘要去重逻辑未改。
+- 交互：详情开合是原生 details 的本地视图状态，不卸载卡片；展开后切换原始 JSON 仍由既有 `onToggleRaw` 承担，按钮文案在“查看原始 JSON / 收起原始 JSON”之间切换。主卡收起时整个页脚（含详情）通过 `hidden` 移出可见层与 Tab 顺序，重新展开后保留 `details.open`、已改参数与当前结果。首次打开“继续讨论”时焦点主动进入摘要文本域（光标置末尾），关闭预览（取消或成功带入）后焦点回到触发按钮——预览在 DOM 中位于触发按钮之前，若焦点停留在触发按钮上，下一次 Tab 会越过预览落到紧随其后的“重置”。所有反馈继续使用 `role="status"`，位于操作组与详情之间；`onContinue` 的四种返回（filled/appended/no-input/unavailable）及重置、摘要去重逻辑未改。
 - 形态：`.genui-card-followup` 作为唯一主操作使用主色浅底、主色边界、加深文字与 600 字重；`.genui-card-reset` 改为无可见边框的次要文字按钮（透明边界、次要文字色、悬停浅底）；保存与清除保存保留原描边样式；`.genui-card-badge` 降至 10px、500 字重、次要文字色且去掉描边胶囊。详情摘要提供指针光标并加入 `:focus-visible` 焦点组，≤480px 时详情左对齐、摘要左内边距归零，操作组按 8/12px 间距换行。
-- 自动化：`npm run check` 通过：48 个测试文件、587 项单测，类型检查、lint、构建与生产包校验均通过；`dist/content.js` 876100 B（876.10 kB，gzip 157.71 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions` 或后台脚本。新增 `tests/unit/action-hierarchy.test.tsx` 12 项：操作组顺序与语义、详情默认收起与点击展开、原始 JSON 往返且参数与结果不丢、收起后页脚隐藏与重新展开保留详情状态、反馈就近且不进入详情、重置清除越界错误并恢复初始值、v1 无主操作仍可查看原始内容，以及“主操作 vs 次要操作”“详情摘要可发现性”的样式契约（不锁定像素）。
-- 浏览器：默认 Edge/Chrome e2e 30 passed、6 skipped（真实 origin 用例按默认跳过）。阶段 2、阶段 3 改为先展开“界面详情”再切换原始 JSON，验证入口不可见时的可见性约束；阶段 6 新增「继续讨论」直接可见、详情默认收起、展开后原始 JSON 入口可见、收起卡片时页脚一并隐藏的断言；阶段 15 在 960px 与 360px 下断言 `.genui-card-actions` 首个子项仍是继续讨论、详情保持展开、原始 JSON 文案不丢，并继续覆盖亮暗主题与窄栏无横向溢出。
+- 自动化：`npm run check` 通过：48 个测试文件、589 项单测，类型检查、lint、构建与生产包校验均通过；`dist/content.js` 876380 B（876.38 kB，gzip 157.81 kB），产物 7 个文件，权限仍仅 `storage`，无 `host_permissions` 或后台脚本。新增 `tests/unit/action-hierarchy.test.tsx` 14 项（含两条键盘焦点回归）：操作组顺序与语义、详情默认收起与点击展开、原始 JSON 往返且参数与结果不丢、收起后页脚隐藏与重新展开保留详情状态、反馈就近且不进入详情、重置清除越界错误并恢复初始值、v1 无主操作仍可查看原始内容，以及“主操作 vs 次要操作”“详情摘要可发现性”的样式契约（不锁定像素）；另含两条键盘焦点回归——打开预览后焦点进入摘要文本域且光标在末尾、取消或成功带入后焦点回到触发按钮。
+- 浏览器：默认 Edge/Chrome e2e 30 passed、6 skipped（真实 origin 用例按默认跳过）。阶段 2、阶段 3 改为先展开“界面详情”再切换原始 JSON，验证入口不可见时的可见性约束；阶段 2 新增真实键盘路径——聚焦 `summary` 按 Enter 展开、Tab 进入原始 JSON 入口，空格收起/展开，主卡收起后入口隐藏且 Tab 不留在卡内；打开“继续讨论”后断言文本域获得焦点、下一次 Tab 落到“填入输入框”而不是“重置”，取消后焦点回到触发按钮。阶段 6 新增「继续讨论」直接可见、详情默认收起、展开后原始 JSON 入口可见、收起卡片时页脚一并隐藏的断言；阶段 15 在 960px 与 360px 下断言 `.genui-card-actions` 首个子项仍是继续讨论、详情保持展开、原始 JSON 文案不丢，并继续覆盖亮暗主题与窄栏无横向溢出。
 - 视觉：只改层级与权重，未引入新颜色变量、动画或装饰；主操作沿用既有 `--genui-color-accent-soft` / `accent-border` / `accent-strong`，次要操作沿用 `text-muted` 与 `surface-hover`，亮暗主题直接复用现有变量。本轮未对详情展开态做逐像素截图比对。
-- 限制：未在真实 DeepSeek 页面与真实屏幕阅读器上人工走查“界面详情”的键盘路径；键盘展开由原生 `summary` 语义与单测中的 `summary.click()` 覆盖，实机焦点顺序仍需后续确认。
+- 限制：未在真实 DeepSeek 页面与真实屏幕阅读器上人工走查；键盘路径（Enter/空格展开详情、Tab 进入原始 JSON、打开继续讨论后 Tab 到“填入输入框”）已在 Playwright 驱动的 Edge/Chrome 中回归，屏幕阅读器的朗读顺序仍需后续确认。
 
 ## 与现有 issues 的关系
 

@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type {
   DerivedCalculation,
   GenuiDocument,
@@ -156,6 +156,9 @@ export function Card({
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const previewTextRef = useRef<HTMLTextAreaElement | null>(null);
+  const followupButtonRef = useRef<HTMLButtonElement | null>(null);
+  // 首次打开预览时把焦点送进摘要面板（见下方 useEffect）。
+  const previewOpenedRef = useRef(false);
   const bodyId = useId();
   const followupPanelId = useId();
   const followupTextId = useId();
@@ -237,6 +240,7 @@ export function Card({
           : 'explain';
     const request = getContinueIntent(intent).request;
     const text = buildContinueSummary({ ...snapshot.input, request });
+    previewOpenedRef.current = true;
     setPreview({
       input: snapshot.input,
       text,
@@ -247,6 +251,20 @@ export function Card({
     });
     setFollowupFeedback(null);
   };
+
+  // issue #15 复核：预览面板位于触发按钮之前，首次打开时必须把焦点送进预览；
+  // 否则键盘用户下一次 Tab 会越过预览落到紧随其后的「重置」，误按 Enter 会清空当前界面。
+  // 只处理“打开”这一刻：之后用户在预览内编辑或切换意图时不抢焦点。
+  useEffect(() => {
+    if (!preview || !previewOpenedRef.current) return;
+    previewOpenedRef.current = false;
+    const textarea = previewTextRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    // 光标放到末尾，方便继续补充；不整体选中，避免一次按键覆盖整段摘要。
+    const end = textarea.value.length;
+    textarea.setSelectionRange(end, end);
+  }, [preview]);
 
   const handleIntentChange = (intent: ContinueIntent) => {
     // 用户手动改过摘要时不能整段重生成：只替换结尾请求句，其余编辑逐字保留。
@@ -276,7 +294,16 @@ export function Card({
     const result = onContinue?.(preview.text) ?? 'unavailable';
     setFollowupFeedback(CONTINUE_FEEDBACK[result]);
     // 成功带入后关闭预览；找不到输入框/未接线时保留文本，用户可继续修改或复制。
-    if (result === 'filled' || result === 'appended') setPreview(null);
+    if (result === 'filled' || result === 'appended') {
+      // 收起预览时把键盘焦点还给触发按钮，避免焦点丢到 body。
+      followupButtonRef.current?.focus();
+      setPreview(null);
+    }
+  };
+
+  const handleCancelPreview = () => {
+    followupButtonRef.current?.focus();
+    closePreview();
   };
 
   const handleTableChange = (path: string, view: TableViewState) => {
@@ -554,7 +581,11 @@ export function Card({
             >
               填入输入框
             </button>
-            <button type="button" className="genui-followup-cancel" onClick={closePreview}>
+            <button
+              type="button"
+              className="genui-followup-cancel"
+              onClick={handleCancelPreview}
+            >
               取消
             </button>
           </div>
@@ -567,6 +598,7 @@ export function Card({
           {doc.version === 1 ? null : (
             <button
               type="button"
+              ref={followupButtonRef}
               className="genui-card-followup"
               aria-expanded={preview !== null}
               aria-controls={followupPanelId}

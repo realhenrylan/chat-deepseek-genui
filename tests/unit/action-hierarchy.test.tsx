@@ -280,6 +280,49 @@ describe('issue #15 · 反馈与轻量重置', () => {
   });
 });
 
+describe('issue #15 · 键盘焦点（复核 P2）', () => {
+  it('打开继续讨论后焦点进入摘要，下一次 Tab 不会落到重置', async () => {
+    const root = mount(V2_DOC, { onContinue: () => 'filled' });
+    const followup = root.querySelector<HTMLButtonElement>('button.genui-card-followup');
+    if (!followup) throw new Error('继续讨论按钮未渲染');
+
+    followup.focus();
+    fireEvent.click(followup);
+    await flushUi();
+
+    const textarea = root.querySelector<HTMLTextAreaElement>('textarea.genui-followup-text');
+    expect(textarea).not.toBeNull();
+    // 预览在 DOM 中位于触发按钮之前：打开时焦点必须进入摘要，
+    // 否则下一次 Tab 会越过预览落到紧随触发的「重置」。
+    expect(root.activeElement).toBe(textarea);
+    expect(root.activeElement).not.toBe(root.querySelector('.genui-card-reset'));
+    // 光标落在末尾，继续输入是追加而不是覆盖整段摘要。
+    expect(textarea?.selectionStart).toBe(textarea?.value.length);
+    expect(textarea?.selectionEnd).toBe(textarea?.value.length);
+
+    // 取消后焦点回到触发按钮，键盘用户不会被丢到 body 或重置上。
+    fireEvent.click(root.querySelector<HTMLElement>('.genui-followup-cancel')!);
+    await flushUi();
+    expect(root.activeElement).toBe(followup);
+  });
+
+  it('摘要带入输入框、预览关闭后焦点回到触发按钮', async () => {
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+    const root = mount(V2_DOC, { onContinue });
+    const followup = root.querySelector<HTMLButtonElement>('button.genui-card-followup');
+    if (!followup) throw new Error('继续讨论按钮未渲染');
+
+    fireEvent.click(followup);
+    await flushUi();
+    fireEvent.click(root.querySelector<HTMLElement>('.genui-followup-apply')!);
+    await flushUi();
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('.genui-followup')).toBeNull();
+    expect(root.activeElement).toBe(followup);
+  });
+});
+
 describe('issue #15 · v1 静态卡片', () => {
   it('没有继续讨论与重置，但仍可展开详情查看原始 JSON', async () => {
     const onToggleRaw = vi.fn();

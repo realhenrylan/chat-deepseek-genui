@@ -1351,6 +1351,11 @@ for (const { label, channel } of CHANNELS) {
       await expect(expand).toHaveAttribute('aria-expanded', 'false');
       await expect(card.locator('.genui-card-body')).toBeHidden();
       await expect(card.locator('.genui-card-footer')).toBeHidden();
+      // 页脚整体 display:none：详情里的原始 JSON 入口不在可见层，也不会进入 Tab 顺序。
+      await expect(card.locator('button.genui-card-toggle')).toBeHidden();
+      await expand.focus();
+      await page.keyboard.press('Tab');
+      await expect(expand).not.toBeFocused();
 
       await expand.click();
       await expect(expand).toHaveText('收起界面');
@@ -1364,9 +1369,20 @@ for (const { label, channel } of CHANNELS) {
       await expect(card.locator('button.genui-card-followup')).toBeVisible();
       await expect(card.locator('details.genui-card-details')).not.toHaveAttribute('open', '');
       await expect(card.locator('button.genui-card-toggle')).toBeHidden();
-      await card.locator('summary.genui-card-details-summary').click();
+      // 真实键盘路径：聚焦 summary 按 Enter 展开，再按 Tab 进入原始 JSON 入口。
+      const disclosure = card.locator('summary.genui-card-details-summary');
+      await disclosure.focus();
+      await page.keyboard.press('Enter');
       await expect(card.locator('details.genui-card-details')).toHaveAttribute('open', '');
       await expect(card.locator('button.genui-card-toggle')).toBeVisible();
+      await page.keyboard.press('Tab');
+      await expect(card.locator('button.genui-card-toggle')).toBeFocused();
+      // 空格收起、再按空格展开（原生 details 语义），焦点始终留在 summary 上。
+      await disclosure.focus();
+      await page.keyboard.press('Space');
+      await expect(card.locator('details.genui-card-details')).not.toHaveAttribute('open', '');
+      await page.keyboard.press('Space');
+      await expect(card.locator('details.genui-card-details')).toHaveAttribute('open', '');
       // —— 表格筛选与选中：业务状态进入继续讨论摘要（issue #5 的真实流程）。
       const input = page.locator('#e2e-input');
       await expect(input).toHaveValue('');
@@ -1402,6 +1418,11 @@ for (const { label, channel } of CHANNELS) {
       await expect(previewText).toHaveValue(/总预算：0 元/);
       await expect(previewText).toHaveValue(/请解释以上当前结果的含义/);
       await expect(card.locator('button.genui-card-followup')).toHaveAttribute('aria-expanded', 'true');
+      // 键盘打开时焦点直接进入摘要；下一次 Tab 落到「填入输入框」，而不是紧随触发的「重置」。
+      await expect(previewText).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(card.locator('button.genui-followup-apply')).toBeFocused();
+      await expect(card.locator('button.genui-card-reset')).not.toBeFocused();
 
       // 重复点击只聚焦预览，不覆盖用户已编辑的摘要。
       await previewText.fill('请解释一下当前结果。');
