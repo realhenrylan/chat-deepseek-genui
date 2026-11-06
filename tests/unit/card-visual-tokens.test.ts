@@ -25,4 +25,14 @@ describe('card 视觉变量', () => {
     expect(css).toContain('--genui-color-accent: #7c9aff');
     expect(css).toContain('box-shadow: inset 3px 0 0 var(--genui-color-accent)');
   });
+
+  it('section 移除封闭四周描边盒子，columns 依托容器查询自适应', () => {
+    expect(css).toContain('.genui-columns-container');
+    expect(css).toContain('container-type: inline-size');
+    expect(css).toContain('@container (min-width: 38rem)');
+    expect(css).toContain('@container (min-width: 58rem)');
+    expect(css).not.toContain('@media (max-width: 560px)');
+    expect(css).not.toMatch(/\.genui-section\s*\{[^}]*border:\s*1px\s+solid[^}]*border-radius:\s*10px/);
+    expect(css).toContain('border-top: 1px solid var(--genui-color-border-subtle)');
+  });
 });

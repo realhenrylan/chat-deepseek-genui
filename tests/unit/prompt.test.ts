@@ -7,6 +7,10 @@ import {
   GENUI_PROMPT_TOOL_START,
   GENUI_PROMPT_VERSION,
   GENUI_TOOL_PROMPT_TEXT,
+  GENUI_PROMPT_V30_START,
+  GENUI_PROMPT_TOOL_V30_START,
+  GENUI_PROMPT_V30_TEXT,
+  GENUI_TOOL_PROMPT_V30_TEXT,
   appendGenuiPrompt,
   describeGenuiDraftPrompt,
   getGenuiPromptTextForMode,
@@ -23,11 +27,19 @@ const USER_DRAFT = '帮我算一下每月能存多少钱';
 
 describe('默认增强提示词', () => {
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe('3.0');
+    expect(GENUI_PROMPT_VERSION).toBe('3.1');
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
     expect(hasGenuiPrompt(GENUI_PROMPT_TEXT)).toBe(true);
+  });
+
+  it('明确 section/columns 组合原则与容器可用宽度自适应说明', () => {
+    expect(GENUI_PROMPT_TEXT).toContain('通过标题与留白组织逻辑分组');
+    expect(GENUI_PROMPT_TEXT).toContain('按卡片容器实际可用宽度自动切换');
+    expect(GENUI_PROMPT_TEXT).toContain('宽时并列、窄栏自动上下单列');
+    expect(GENUI_PROMPT_TEXT).toContain('推荐将可调参数与核心结果放入 2 列 columns 并列对照');
+    expect(GENUI_PROMPT_TEXT).toContain('关键说明、警告和假设保持直接可见');
   });
 
   it('只把显式 primary 描述为展示强调', () => {
@@ -218,5 +230,58 @@ describe('issue7 草稿说明识别', () => {
     const toolEdited = describeGenuiDraftPrompt(`草稿${SEP}${GENUI_TOOL_PROMPT_TEXT}尾注`);
     expect(toolEdited.kind).toBe('edited');
     expect(toolEdited.start).toBe(GENUI_PROMPT_TOOL_START);
+  });
+});
+
+describe('旧版 v3.0 兼容草稿识别与平滑切换', () => {
+  const NL = String.fromCharCode(10);
+  const SEP = NL + NL;
+
+  it('旧版 v3.0 auto 与 tool 说明均能被 hasGenuiPrompt 正确识别', () => {
+    expect(hasGenuiPrompt(GENUI_PROMPT_V30_TEXT)).toBe(true);
+    expect(hasGenuiPrompt(GENUI_TOOL_PROMPT_V30_TEXT)).toBe(true);
+    expect(hasGenuiPrompt(`草稿${SEP}${GENUI_PROMPT_V30_START}`)).toBe(true);
+    expect(hasGenuiPrompt(`草稿${SEP}${GENUI_PROMPT_TOOL_V30_START}`)).toBe(true);
+  });
+
+  it('草稿包含旧版 v3.0 说明（无论完整还是已编辑）时不重复追加 v3.1', () => {
+    const intactV30Draft = `${USER_DRAFT}${SEP}${GENUI_PROMPT_V30_TEXT}`;
+    const autoResult = appendGenuiPrompt(intactV30Draft, 'auto');
+    expect(autoResult.inserted).toBe(false);
+    expect(autoResult.value).toBe(intactV30Draft);
+
+    const toolResult = appendGenuiPrompt(intactV30Draft, 'tool');
+    expect(toolResult.inserted).toBe(false);
+    expect(toolResult.value).toBe(intactV30Draft);
+
+    const intactV30ToolDraft = `${USER_DRAFT}${SEP}${GENUI_TOOL_PROMPT_V30_TEXT}`;
+    expect(appendGenuiPrompt(intactV30ToolDraft, 'auto').inserted).toBe(false);
+    expect(appendGenuiPrompt(intactV30ToolDraft, 'tool').inserted).toBe(false);
+
+    const editedV30Draft = `${USER_DRAFT}${SEP}${GENUI_PROMPT_V30_TEXT.slice(0, 100)}`;
+    expect(appendGenuiPrompt(editedV30Draft, 'auto').inserted).toBe(false);
+    expect(appendGenuiPrompt(editedV30Draft, 'tool').inserted).toBe(false);
+  });
+
+  it('完整 v3.0 自动模式与工具模式提示词识别为 intact，并提供精确后缀', () => {
+    const autoInfo = describeGenuiDraftPrompt(`${USER_DRAFT}${SEP}${GENUI_PROMPT_V30_TEXT}`);
+    expect(autoInfo.kind).toBe('intact');
+    expect(autoInfo.suffix).toBe(GENUI_PROMPT_V30_TEXT);
+    expect(autoInfo.start).toBe(GENUI_PROMPT_V30_START);
+
+    const toolInfo = describeGenuiDraftPrompt(`${USER_DRAFT}${SEP}${GENUI_TOOL_PROMPT_V30_TEXT}`);
+    expect(toolInfo.kind).toBe('intact');
+    expect(toolInfo.suffix).toBe(GENUI_TOOL_PROMPT_V30_TEXT);
+    expect(toolInfo.start).toBe(GENUI_PROMPT_TOOL_V30_START);
+  });
+
+  it('被用户修改过的 v3.0 提示词识别为 edited，保护用户编辑不被误覆盖', () => {
+    const editedAuto = describeGenuiDraftPrompt(`${USER_DRAFT}${SEP}${GENUI_PROMPT_V30_TEXT}用户补充要求`);
+    expect(editedAuto.kind).toBe('edited');
+    expect(editedAuto.start).toBe(GENUI_PROMPT_V30_START);
+
+    const partialTool = describeGenuiDraftPrompt(`${USER_DRAFT}${SEP}${GENUI_TOOL_PROMPT_V30_TEXT.slice(0, 150)}`);
+    expect(partialTool.kind).toBe('edited');
+    expect(partialTool.start).toBe(GENUI_PROMPT_TOOL_V30_START);
   });
 });

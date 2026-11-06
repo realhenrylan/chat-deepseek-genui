@@ -236,17 +236,19 @@ function ElementContent({
       );
     case 'columns':
       return (
-        <div className="genui-columns" data-columns={element.columns.length}>
-          {element.columns.map((column, index) => (
-            <div className="genui-column" key={`${path}-col-${index}`}>
-              <ElementList
-                elements={column}
-                context={context}
-                path={`${path}-col-${index}`}
-                emphasizedPaths={emphasizedPaths}
-              />
-            </div>
-          ))}
+        <div className="genui-columns-container">
+          <div className="genui-columns" data-columns={element.columns.length}>
+            {element.columns.map((column, index) => (
+              <div className="genui-column" key={`${path}-col-${index}`}>
+                <ElementList
+                  elements={column}
+                  context={context}
+                  path={`${path}-col-${index}`}
+                  emphasizedPaths={emphasizedPaths}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       );
     default:

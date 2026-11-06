@@ -88,6 +88,122 @@ const SORT_VALID_RAW = JSON.stringify({
   ],
 });
 const SORT_INVALID_RAW = SORT_VALID_RAW.replace('"dir":"asc"', '"direction":"asc"');
+const RESPONSIVE_LAYOUT_RAW = JSON.stringify({
+  type: 'genui',
+  version: 5,
+  title: '自适应与防溢出测试',
+  state: [
+    {
+      id: 'longField',
+      label: '超长中文标签'.repeat(20), // 120 字符（协议上限）
+      kind: 'number',
+      initial: 1000000000000,
+      min: 0,
+      max: 1000000000000,
+      step: 1000000,
+      unit: '千瓦时·每周期人次测试单位二十字', // 20 字符（协议上限）
+    },
+    { id: 'paramA', label: '参数 A', kind: 'number', initial: 10, min: 0, max: 100, step: 1 },
+    { id: 'paramB', label: '参数 B', kind: 'number', initial: 20, min: 0, max: 100, step: 1 },
+    { id: 'inputNum', label: '数字输入', kind: 'number', initial: 50, min: 0, max: 100, step: 1 },
+    { id: 'col3_1', label: '三列 1', kind: 'number', initial: 1, min: 0, max: 10, step: 1 },
+    { id: 'col3_2', label: '三列 2', kind: 'number', initial: 2, min: 0, max: 10, step: 1 },
+    { id: 'col3_3', label: '三列 3', kind: 'number', initial: 3, min: 0, max: 10, step: 1 },
+  ],
+  derived: [],
+  models: [
+    {
+      kind: 'budget',
+      id: 'monthly',
+      label: '月度收支',
+      unit: '元',
+      precision: 0,
+      income: { op: 'const', value: 10000 },
+      expenses: [{ label: '固定支出', amount: { op: 'const', value: 4000 } }],
+    },
+  ],
+  elements: [
+    {
+      kind: 'section',
+      title: '两列与嵌套两列',
+      children: [
+        {
+          kind: 'columns',
+          columns: [
+            [
+              {
+                kind: 'columns',
+                columns: [
+                  [{ kind: 'slider', bind: 'paramA' }],
+                  [{ kind: 'slider', bind: 'paramB' }],
+                ],
+              },
+              { kind: 'number-input', bind: 'inputNum' },
+            ],
+            [
+              {
+                kind: 'value',
+                label: '主要结果',
+                source: { kind: 'model', model: 'monthly', key: 'balance' },
+                unit: '元',
+                emphasis: 'primary',
+              },
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      kind: 'section',
+      title: '三列布局',
+      children: [
+        {
+          kind: 'columns',
+          columns: [
+            [{ kind: 'slider', bind: 'col3_1' }],
+            [{ kind: 'slider', bind: 'col3_2' }],
+            [{ kind: 'slider', bind: 'col3_3' }],
+          ],
+        },
+      ],
+    },
+    {
+      kind: 'section',
+      title: '超长内容与宽表',
+      children: [
+        { kind: 'slider', bind: 'longField' },
+        {
+          kind: 'table',
+          title: '方案对比表',
+          sortable: true,
+          columns: [
+            { key: 'name', label: '方案名称' },
+            { key: 'cost', label: '预计成本', numeric: true },
+            { key: 'score', label: '综合评分', numeric: true },
+          ],
+          rows: [
+            { cells: { name: '方案 A', cost: 1200, score: 85 } },
+            { cells: { name: '方案 B', cost: 800, score: 92 } },
+            { cells: { name: '方案 C', cost: 1500, score: 78 } },
+            { cells: { name: '方案 D', cost: 950, score: 88 } },
+          ],
+        },
+        {
+          kind: 'chart',
+          chartType: 'bar',
+          title: '收支对比',
+          legend: true,
+          source: { model: 'monthly' },
+        },
+        {
+          kind: 'explain',
+          model: 'monthly',
+          title: '计算依据与诊断',
+        },
+      ],
+    },
+  ],
+});
 const INTERACTIVE_RAW = JSON.stringify({
   type: 'genui',
   version: 2,
@@ -1433,4 +1549,380 @@ for (const { label, channel } of CHANNELS) {
       rmSync(profileDir, { recursive: true, force: true });
     }
   });
+  test(`阶段 15 · ${label} 卡片分组与局部容器自适应布局（360/560/720/960px、防水平溢出、键盘焦点与宽窄切换状态保持）`, async () => {
+    test.skip(REAL_SITE, '自适应与防溢出测试使用本地模拟页面；真实网页需人工验收');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    try {
+      await context.addInitScript((raw) => {
+        const insert = () => {
+          if (!document.body || document.getElementById('e2e-layout-message')) return;
+          const message = document.createElement('div');
+          message.className = 'ds-assistant-message-main-content';
+          message.id = 'e2e-layout-message';
+          message.setAttribute('data-virtual-list-item-key', 'e2e-layout-msg-1');
+          const block = document.createElement('div');
+          block.className = 'md-code-block md-code-block-light';
+          block.id = 'e2e-layout-block';
+          block.innerHTML =
+            '<div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>';
+          const pre = document.createElement('pre');
+          const content = document.createElement('span');
+          content.textContent = raw;
+          pre.append(content);
+          block.append(pre);
+          message.append(block);
+          document.body.append(message);
+        };
+        if (document.body) {
+          insert();
+          return;
+        }
+        const observer = new MutationObserver(() => {
+          if (!document.body) return;
+          observer.disconnect();
+          insert();
+        });
+        observer.observe(document, { childList: true, subtree: true });
+      }, RESPONSIVE_LAYOUT_RAW);
+
+      await gotoAndAwaitMarker(page);
+      const card = page.locator('.genui-card-host').filter({ hasText: '自适应与防溢出测试' });
+      await expect(card).toHaveCount(1);
+
+      const evaluateLayout = async (widthPx: number, theme: 'light' | 'dark' = 'light') => {
+        return await page.evaluate(
+          ({ w, th }) => {
+            const container = document.getElementById('e2e-layout-message');
+            if (!container) throw new Error('e2e-layout-message not found');
+            container.style.width = `${w}px`;
+            container.style.boxSizing = 'border-box';
+
+            const host = document.querySelector('#e2e-layout-message .genui-card-host');
+            if (!host || !host.shadowRoot) throw new Error('card host or shadowRoot not found');
+            const shadow = host.shadowRoot;
+            const root = shadow.querySelector('.genui-card-root');
+            if (!root) throw new Error('card-root not found');
+
+            root.setAttribute('data-site-theme', th);
+
+            const cardEl = shadow.querySelector('.genui-card') as HTMLElement;
+            const outer2Col = shadow.querySelector(
+              '.genui-section:nth-of-type(1) > .genui-section-body > .genui-columns-container > .genui-columns',
+            ) as HTMLElement;
+            const nested2Col = outer2Col?.querySelector(
+              '.genui-column:nth-child(1) .genui-columns-container > .genui-columns',
+            ) as HTMLElement;
+            const col3 = shadow.querySelector(
+              '.genui-columns[data-columns="3"]',
+            ) as HTMLElement;
+
+            const parseColCount = (el: HTMLElement | null) => {
+              if (!el) return 0;
+              const template = window.getComputedStyle(el).gridTemplateColumns.trim();
+              if (!template) return 0;
+              return template.split(/\s+/).length;
+            };
+
+            const isCardOverflowing = cardEl.scrollWidth > cardEl.clientWidth + 1;
+
+            return {
+              outer2ColCount: parseColCount(outer2Col),
+              nested2ColCount: parseColCount(nested2Col),
+              col3Count: parseColCount(col3),
+              isCardOverflowing,
+            };
+          },
+          { w: widthPx, th: theme },
+        );
+      };
+
+      // 1. 360px（等效 200% 缩放窄栏回流）：全部为单列，卡片无水平溢出
+      const at360 = await evaluateLayout(360, 'light');
+      expect(at360.outer2ColCount).toBe(1);
+      expect(at360.col3Count).toBe(1);
+      expect(at360.isCardOverflowing).toBe(false);
+
+      // 2. 560px：仍处于 < 38rem（608px）区间，保持单列，无溢出
+      const at560 = await evaluateLayout(560, 'light');
+      expect(at560.outer2ColCount).toBe(1);
+      expect(at560.col3Count).toBe(1);
+      expect(at560.isCardOverflowing).toBe(false);
+
+      // 3. 720px：局部容器 >= 38rem（608px）且 < 58rem（928px）
+      // 外层 2 列恢复双列并列；嵌套在左列内部的二级 columns 局部宽度约 330px < 38rem，保持单列
+      const at720 = await evaluateLayout(720, 'light');
+      expect(at720.outer2ColCount).toBe(2);
+      expect(at720.nested2ColCount).toBe(1);
+      expect(at720.isCardOverflowing).toBe(false);
+
+      // 4. 960px：局部容器 >= 58rem（928px）
+      // 外层 2 列并列，三列布局恢复 3 列并列
+      const at960 = await evaluateLayout(960, 'light');
+      expect(at960.outer2ColCount).toBe(2);
+      expect(at960.col3Count).toBe(3);
+      expect(at960.isCardOverflowing).toBe(false);
+
+      // 5. 暗色主题在 360px 与 960px 验证
+      const at360Dark = await evaluateLayout(360, 'dark');
+      expect(at360Dark.outer2ColCount).toBe(1);
+      expect(at360Dark.isCardOverflowing).toBe(false);
+
+      const at960Dark = await evaluateLayout(960, 'dark');
+      expect(at960Dark.col3Count).toBe(3);
+      expect(at960Dark.isCardOverflowing).toBe(false);
+
+      // 6. 窄栏极端滑块布局与键盘操作（360px 下长数值 1e12 + 20 字符单位 + 120 字符标签）
+      await evaluateLayout(360, 'light');
+      const sliderMetrics = await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const slider = shadow?.querySelector('input[type="range"][max="1000000000000"]') as HTMLInputElement;
+        const row = slider?.closest('.genui-slider-row') as HTMLElement;
+        const output = row?.querySelector('.genui-control-current') as HTMLElement;
+        const cardEl = shadow?.querySelector('.genui-card') as HTMLElement;
+        const rect = slider?.getBoundingClientRect();
+        return {
+          sliderWidth: rect?.width ?? 0,
+          computedWidth: window.getComputedStyle(slider).width,
+          offsetWidth: slider?.offsetWidth,
+          rect: rect ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height } : null,
+          currentText: output?.textContent ?? '',
+          sliderValue: slider?.value ?? '',
+          isCardOverflowing: cardEl.scrollWidth > cardEl.clientWidth + 1,
+          sliderFound: !!slider,
+          sliderCount: shadow?.querySelectorAll("input[type=\"range\"]").length ?? 0,
+          allInputs: Array.from(shadow?.querySelectorAll("input") ?? []).map(i => ({ type: i.type, max: i.max, id: i.id })),
+        };
+      });
+      // 断言滑块具有合理的可见宽度（>= 120px，换行后独占一行展开至完整容器可用宽），且输出包含长单位
+      expect(sliderMetrics.sliderWidth).toBeGreaterThanOrEqual(120);
+      expect(sliderMetrics.currentText).toContain('1000000000000');
+      expect(sliderMetrics.currentText).toContain('千瓦时·每周期人次测试单位二十字');
+      expect(sliderMetrics.isCardOverflowing).toBe(false);
+
+      // 在真实浏览器中操作极端滑块：聚焦并按向左键调整
+      await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const slider = host?.shadowRoot?.querySelector('input[type="range"][max="1000000000000"]') as HTMLInputElement;
+        slider.focus();
+      });
+      await page.keyboard.press('ArrowLeft');
+      const sliderAfterKey = await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const slider = shadow?.querySelector('input[type="range"][max="1000000000000"]') as HTMLInputElement;
+        const row = slider?.closest('.genui-slider-row') as HTMLElement;
+        const output = row?.querySelector('.genui-control-current') as HTMLElement;
+        const cardEl = shadow?.querySelector('.genui-card') as HTMLElement;
+        return {
+          sliderValue: slider?.value ?? '',
+          currentText: output?.textContent ?? '',
+          isCardOverflowing: cardEl.scrollWidth > cardEl.clientWidth + 1,
+        };
+      });
+      expect(sliderAfterKey.sliderValue).toBe('999999000000');
+      expect(sliderAfterKey.currentText).toContain('999999000000');
+      expect(sliderAfterKey.isCardOverflowing).toBe(false);
+
+      // 7. 真实浏览器 Tab 键顺序验证：聚焦首个输入控件后连续按 Tab，验证焦点在 Shadow DOM 内顺次前行
+      await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const first = host?.shadowRoot?.querySelector('input[type="range"]') as HTMLInputElement;
+        first.focus();
+      });
+
+      const focusedElements: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const tag = await page.evaluate(() => {
+          const host = document.querySelector('#e2e-layout-message .genui-card-host');
+          const active = host?.shadowRoot?.activeElement as HTMLElement | null;
+          if (!active) return 'none';
+          const type = active.getAttribute('type');
+          return `${active.tagName.toLowerCase()}${active.className ? '.' + active.className.split(' ')[0] : ''}${type ? `[${type}]` : ''}`;
+        });
+        focusedElements.push(tag);
+        await page.keyboard.press('Tab');
+      }
+
+      // 断言真实键盘焦点顺序严格按照协议 DOM 顺序依次经过：
+      // paramA 滑块 -> paramB 滑块 -> inputNum 输入框 -> col3_1 滑块 -> col3_2 滑块 -> col3_3 滑块 -> longField 滑块 -> table 筛选框
+      expect(focusedElements[0]).toBe('input.genui-slider[range]');
+      expect(focusedElements[1]).toBe('input.genui-slider[range]');
+      expect(focusedElements[2]).toBe('input.genui-number-input[number]');
+      expect(focusedElements[3]).toBe('input.genui-slider[range]');
+      expect(focusedElements[4]).toBe('input.genui-slider[range]');
+      expect(focusedElements[5]).toBe('input.genui-slider[range]');
+      expect(focusedElements[6]).toBe('input.genui-slider[range]');
+      expect(focusedElements[7]).toBe('input[search]');
+
+      // 8. 宽窄布局切换前后的表格筛选、排序、输入草稿与详情折叠状态完整保持验证
+      // 先切到 960px 宽容器
+      await evaluateLayout(960, 'light');
+
+      // (1) 表格筛选：输入 "方案 B"
+      await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const filterInput = shadow?.querySelector('.genui-table-filter input') as HTMLInputElement;
+        filterInput.value = '方案 B';
+        filterInput.dispatchEvent(new Event('input', { bubbles: true }));
+        filterInput.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitForTimeout(50);
+      const rowsFiltered = await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        return host?.shadowRoot?.querySelectorAll('.genui-table tbody tr').length ?? 0;
+      });
+      expect(rowsFiltered).toBe(1);
+
+      // (2) 表格筛选改为 "方案"（全匹配）并点击按预计成本列排序
+      await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const filterInput = shadow?.querySelector('.genui-table-filter input') as HTMLInputElement;
+        filterInput.value = '方案';
+        filterInput.dispatchEvent(new Event('input', { bubbles: true }));
+        filterInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // 点击第二列（预计成本）表头排序按钮
+        const sortButtons = shadow?.querySelectorAll('.genui-table-sort') ?? [];
+        if (sortButtons.length > 1) {
+          (sortButtons[1] as HTMLButtonElement).click();
+        }
+      });
+      await page.waitForTimeout(50);
+
+      // (3) 在 inputNum 中输入未提交/超界草稿 "150"（范围 0–100），显示错误状态
+      await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const numInput = shadow?.querySelector('input.genui-number-input') as HTMLInputElement;
+        numInput.value = '150';
+        numInput.dispatchEvent(new Event('input', { bubbles: true }));
+        numInput.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitForTimeout(50);
+
+      // (4) 展开图表数据详情与原始 JSON 视图
+      await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
+        if (chartDetails) chartDetails.open = true;
+
+        const rawBtn = shadow?.querySelector('.genui-card-toggle') as HTMLButtonElement;
+        if (rawBtn && rawBtn.textContent?.includes('查看原始 JSON')) {
+          rawBtn.click();
+        }
+      });
+      await page.waitForTimeout(50);
+
+      // 验证在 960px 下当前状态
+      const stateAt960 = await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const filterInput = shadow?.querySelector('.genui-table-filter input') as HTMLInputElement;
+        const sortTh = shadow?.querySelectorAll('.genui-table thead th')[1] as HTMLElement;
+        const firstRowName = shadow?.querySelector('.genui-table tbody tr td')?.textContent?.trim();
+        const numInput = shadow?.querySelector('input.genui-number-input') as HTMLInputElement;
+        const errorEl = shadow?.querySelector('.genui-input-error');
+        const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
+        const toggleBtn = shadow?.querySelector('.genui-card-toggle');
+        return {
+          filter: filterInput?.value,
+          sortDir: sortTh?.getAttribute('aria-sort'),
+          firstRowName,
+          numValue: numInput?.value,
+          hasError: !!errorEl,
+          chartDetailsOpen: chartDetails?.open,
+          
+          toggleBtnText: toggleBtn?.textContent?.trim(),
+        };
+      });
+      expect(stateAt960.filter).toBe('方案');
+      expect(stateAt960.sortDir).toBe('ascending');
+      expect(stateAt960.firstRowName).toBe('方案 B'); // 成本 800 最低，升序排第一
+      expect(stateAt960.numValue).toBe('150');
+      expect(stateAt960.hasError).toBe(true);
+      expect(stateAt960.chartDetailsOpen).toBe(true);
+      
+      expect(stateAt960.toggleBtnText).toBe('收起原始 JSON');
+
+      // (5) 触发宽度切换：从 960px 缩窄至 360px（触发 columns 单列化）
+      await evaluateLayout(360, 'light');
+
+      // 验证在 360px 单列化下，表格筛选、排序方向、首行排序结果、输入草稿、错误提示与详情展开完整保持
+      const stateAt360 = await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const filterInput = shadow?.querySelector('.genui-table-filter input') as HTMLInputElement;
+        const sortTh = shadow?.querySelectorAll('.genui-table thead th')[1] as HTMLElement;
+        const firstRowName = shadow?.querySelector('.genui-table tbody tr td')?.textContent?.trim();
+        const numInput = shadow?.querySelector('input.genui-number-input') as HTMLInputElement;
+        const errorEl = shadow?.querySelector('.genui-input-error');
+        const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
+        const toggleBtn = shadow?.querySelector('.genui-card-toggle');
+        const cardEl = shadow?.querySelector('.genui-card') as HTMLElement;
+        return {
+          filter: filterInput?.value,
+          sortDir: sortTh?.getAttribute('aria-sort'),
+          firstRowName,
+          numValue: numInput?.value,
+          hasError: !!errorEl,
+          chartDetailsOpen: chartDetails?.open,
+          toggleBtnText: toggleBtn?.textContent?.trim(),
+          isCardOverflowing: cardEl.scrollWidth > cardEl.clientWidth + 1,
+        };
+      });
+      expect(stateAt360.filter).toBe('方案');
+      expect(stateAt360.sortDir).toBe('ascending');
+      expect(stateAt360.firstRowName).toBe('方案 B');
+      expect(stateAt360.numValue).toBe('150');
+      expect(stateAt360.hasError).toBe(true);
+      expect(stateAt360.chartDetailsOpen).toBe(true);
+      
+      expect(stateAt360.toggleBtnText).toBe('收起原始 JSON');
+      expect(stateAt360.isCardOverflowing).toBe(false);
+
+      // (6) 再切回 960px 恢复多列并列，再次断言所有状态完整保留
+      await evaluateLayout(960, 'light');
+      const stateRestored = await page.evaluate(() => {
+        const host = document.querySelector('#e2e-layout-message .genui-card-host');
+        const shadow = host?.shadowRoot;
+        const filterInput = shadow?.querySelector('.genui-table-filter input') as HTMLInputElement;
+        const sortTh = shadow?.querySelectorAll('.genui-table thead th')[1] as HTMLElement;
+        const firstRowName = shadow?.querySelector('.genui-table tbody tr td')?.textContent?.trim();
+        const numInput = shadow?.querySelector('input.genui-number-input') as HTMLInputElement;
+        const errorEl = shadow?.querySelector('.genui-input-error');
+        const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
+        const cardEl = shadow?.querySelector('.genui-card') as HTMLElement;
+        return {
+          filter: filterInput?.value,
+          sortDir: sortTh?.getAttribute('aria-sort'),
+          firstRowName,
+          numValue: numInput?.value,
+          hasError: !!errorEl,
+          chartDetailsOpen: chartDetails?.open,
+          isCardOverflowing: cardEl.scrollWidth > cardEl.clientWidth + 1,
+        };
+      });
+      expect(stateRestored.filter).toBe('方案');
+      expect(stateRestored.sortDir).toBe('ascending');
+      expect(stateRestored.firstRowName).toBe('方案 B');
+      expect(stateRestored.numValue).toBe('150');
+      expect(stateRestored.hasError).toBe(true);
+      expect(stateRestored.chartDetailsOpen).toBe(true);
+      
+      expect(stateRestored.isCardOverflowing).toBe(false);
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
 }
