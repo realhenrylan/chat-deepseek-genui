@@ -41,7 +41,7 @@ describe('默认增强提示词', () => {
   });
 
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe('3.2');
+    expect(GENUI_PROMPT_VERSION).toBe('4.0');
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
@@ -297,5 +297,34 @@ describe('旧版 v3.0 兼容草稿识别与平滑切换', () => {
     const partialTool = describeGenuiDraftPrompt(`${USER_DRAFT}${SEP}${GENUI_TOOL_PROMPT_V30_TEXT.slice(0, 150)}`);
     expect(partialTool.kind).toBe('edited');
     expect(partialTool.start).toBe(GENUI_PROMPT_TOOL_V30_START);
+  });
+});
+
+
+describe('v4.0 智能界面内联穿插协议提示词特性', () => {
+  it('覆盖 7 种 w1 原子小组件语法与自然穿插引导', () => {
+    expect(GENUI_PROMPT_TEXT).toContain('穿插排版');
+    expect(GENUI_PROMPT_TEXT).toContain('0 到 3 个轻量小组件');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"quiz"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"card"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"compare"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"checklist"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"slider"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"result"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"note"');
+  });
+
+  it('提示词中的所有示例代码块均能被 parseGenui 正确解析', () => {
+    const regex = /```genui\r?\n([\s\S]*?)\r?\n```/g;
+    const blocks: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(GENUI_PROMPT_TEXT)) !== null) {
+      blocks.push(match[1]);
+    }
+    expect(blocks.length).toBeGreaterThanOrEqual(3);
+    for (const block of blocks) {
+      const parsed = parseGenui(block);
+      expect(parsed.ok).toBe(true);
+    }
   });
 });

@@ -1,0 +1,492 @@
+/* 内联组件样式隔离（Shadow DOM ?inline 注入） */
+
+:host {
+  display: block;
+  margin: 12px 0;
+  max-width: 100%;
+}
+
+:host([hidden]) {
+  display: none !important;
+}
+
+.genui-inline-root {
+  --genui-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --inline-bg: rgba(0, 0, 0, 0.025);
+  --inline-border: rgba(0, 0, 0, 0.08);
+  --inline-border-strong: rgba(0, 0, 0, 0.16);
+  --inline-text: #1e293b;
+  --inline-text-muted: #64748b;
+  --inline-text-subtle: #94a3b8;
+  --inline-card-surface: #ffffff;
+  --inline-accent: #4d6bfe;
+  --inline-accent-hover: #3d54d9;
+  --inline-accent-soft: rgba(77, 107, 254, 0.08);
+  --inline-success: #10b981;
+  --inline-success-soft: rgba(16, 185, 129, 0.1);
+  --inline-warning: #f59e0b;
+  --inline-warning-soft: rgba(245, 158, 11, 0.1);
+  --inline-danger: #ef4444;
+  --inline-danger-soft: rgba(239, 68, 68, 0.1);
+
+  font-family: var(--genui-font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--inline-text);
+  box-sizing: border-box;
+}
+
+.genui-inline-root *,
+.genui-inline-root *::before,
+.genui-inline-root *::after {
+  box-sizing: border-box;
+}
+
+/* 宿主暗色主题适配 */
+.genui-inline-root[data-site-theme="dark"] {
+  --inline-bg: rgba(255, 255, 255, 0.04);
+  --inline-border: rgba(255, 255, 255, 0.12);
+  --inline-border-strong: rgba(255, 255, 255, 0.22);
+  --inline-text: #f1f5f9;
+  --inline-text-muted: #94a3b8;
+  --inline-text-subtle: #64748b;
+  --inline-card-surface: rgba(255, 255, 255, 0.06);
+  --inline-accent: #60a5fa;
+  --inline-accent-hover: #3b82f6;
+  --inline-accent-soft: rgba(96, 165, 250, 0.15);
+  --inline-success: #34d399;
+  --inline-success-soft: rgba(52, 211, 153, 0.15);
+  --inline-warning: #fbbf24;
+  --inline-warning-soft: rgba(251, 191, 36, 0.15);
+  --inline-danger: #f87171;
+  --inline-danger-soft: rgba(248, 113, 113, 0.15);
+}
+
+/* 组件通用包裹卡 */
+.inline-widget-box {
+  background: var(--inline-card-surface);
+  border: 1px solid var(--inline-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  position: relative;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.inline-widget-box:hover {
+  border-color: var(--inline-border-strong);
+}
+
+/* 顶部/标题区 */
+.inline-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.inline-widget-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--inline-text);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-widget-subtitle {
+  font-size: 12px;
+  color: var(--inline-text-muted);
+  margin-top: 2px;
+}
+
+/* 极简源码查看按钮 */
+.inline-raw-btn {
+  background: transparent;
+  border: none;
+  color: var(--inline-text-subtle);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.inline-raw-btn:hover {
+  opacity: 1;
+  color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+}
+
+/* ================= QUIZ 组件 ================= */
+.inline-quiz-question {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--inline-text);
+  line-height: 1.4;
+}
+
+.inline-quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inline-quiz-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13.5px;
+  color: var(--inline-text);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.inline-quiz-option:hover:not(:disabled) {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+}
+
+.inline-quiz-option.selected {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+}
+
+.inline-quiz-option.correct {
+  border-color: var(--inline-success);
+  background: var(--inline-success-soft);
+  color: var(--inline-text);
+}
+
+.inline-quiz-option.incorrect {
+  border-color: var(--inline-danger);
+  background: var(--inline-danger-soft);
+  color: var(--inline-text);
+}
+
+.inline-quiz-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.inline-quiz-badge.correct {
+  color: var(--inline-success);
+}
+
+.inline-quiz-badge.incorrect {
+  color: var(--inline-danger);
+}
+
+.inline-quiz-explain {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--inline-bg);
+  border-left: 3px solid var(--inline-accent);
+  font-size: 12.5px;
+  color: var(--inline-text-muted);
+  line-height: 1.45;
+}
+
+.inline-quiz-footer {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inline-quiz-retry {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--inline-accent);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.inline-quiz-retry:hover {
+  text-decoration: underline;
+}
+
+/* ================= CHECKLIST 组件 ================= */
+.inline-checklist-progress {
+  font-size: 12px;
+  color: var(--inline-text-muted);
+}
+
+.inline-checklist-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inline-checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.inline-checklist-item:hover {
+  background: var(--inline-bg);
+}
+
+.inline-checklist-checkbox {
+  margin-top: 2px;
+  accent-color: var(--inline-accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.inline-checklist-content {
+  flex: 1;
+}
+
+.inline-checklist-text {
+  font-size: 13.5px;
+  color: var(--inline-text);
+  transition: all 0.15s ease;
+}
+
+.inline-checklist-text.checked {
+  color: var(--inline-text-subtle);
+  text-decoration: line-through;
+}
+
+.inline-checklist-note {
+  font-size: 11.5px;
+  color: var(--inline-text-muted);
+  margin-top: 1px;
+}
+
+/* ================= COMPARE 组件 ================= */
+.inline-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.inline-compare-col {
+  border: 1px solid var(--inline-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--inline-bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.inline-compare-col.highlighted {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+}
+
+.inline-compare-pill {
+  position: absolute;
+  top: -8px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--inline-accent);
+  color: #ffffff;
+}
+
+.inline-compare-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 6px;
+}
+
+.inline-compare-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.inline-compare-pro {
+  color: var(--inline-success);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.inline-compare-con {
+  color: var(--inline-text-muted);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.inline-compare-fields {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--inline-border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+}
+
+.inline-compare-field-row {
+  display: flex;
+  justify-content: space-between;
+  color: var(--inline-text-muted);
+}
+
+.inline-compare-field-val {
+  font-weight: 500;
+  color: var(--inline-text);
+}
+
+/* ================= SLIDER 组件 ================= */
+.inline-slider-body {
+  margin-top: 6px;
+}
+
+.inline-slider-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.inline-slider-label {
+  font-size: 13px;
+  color: var(--inline-text);
+  font-weight: 500;
+}
+
+.inline-slider-val {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--inline-accent);
+}
+
+.inline-slider-unit {
+  font-size: 12px;
+  color: var(--inline-text-muted);
+  margin-left: 2px;
+}
+
+.inline-slider-input {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  accent-color: var(--inline-accent);
+  cursor: pointer;
+}
+
+.inline-slider-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--inline-text-subtle);
+  margin-top: 2px;
+}
+
+/* ================= RESULT 组件 ================= */
+.inline-result-content {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.inline-result-val {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--inline-accent);
+  line-height: 1.1;
+}
+
+.inline-result-val.primary {
+  color: var(--inline-accent);
+}
+
+.inline-result-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--inline-text-muted);
+}
+
+/* ================= NOTE 组件 ================= */
+.inline-note-box {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  border-left: 3px solid;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.inline-note-box.info {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+  color: var(--inline-text);
+}
+
+.inline-note-box.warn {
+  border-color: var(--inline-warning);
+  background: var(--inline-warning-soft);
+  color: var(--inline-text);
+}
+
+.inline-note-box.error {
+  border-color: var(--inline-danger);
+  background: var(--inline-danger-soft);
+  color: var(--inline-text);
+}
+
+/* ================= CARD 组件 ================= */
+.inline-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.inline-card-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--inline-bg);
+  border: 1px solid var(--inline-border);
+  color: var(--inline-text-muted);
+}
+
+.inline-card-points {
+  margin: 8px 0 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--inline-text);
+  line-height: 1.5;
+}
+
+.inline-card-points li {
+  margin-bottom: 3px;
+}

@@ -564,6 +564,10 @@ export interface GenuiV5Document {
   elements: GenuiV5Element[];
 }
 
+import type { GenuiWidget } from './widget/types.ts';
+
+export type { GenuiWidget };
+
 /** 经 parseGenui 校验后可安全交给渲染器的版本化文档。 */
 export type GenuiDocument =
   | GenuiV1Document
@@ -593,7 +597,7 @@ export type GenuiFailureCode =
   | 'too-complex';
 
 export type ParseGenuiResult =
-  | { ok: true; document: GenuiDocument }
+  | { ok: true; document: GenuiDocument; widget?: GenuiWidget }
   | {
       ok: false;
       code: GenuiFailureCode;

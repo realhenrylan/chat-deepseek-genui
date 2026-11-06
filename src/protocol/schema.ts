@@ -171,8 +171,8 @@ const expressionDefinitions = {
       },
       id: idSchema,
       value: { anyOf: [boundedNumberSchema, expressionRef] },
-      left: expressionRef,
-      right: expressionRef,
+      left: { anyOf: [boundedNumberSchema, expressionRef] },
+      right: { anyOf: [boundedNumberSchema, expressionRef] },
     },
   },
   /**
@@ -194,8 +194,8 @@ const expressionDefinitions = {
       },
       id: idSchema,
       value: { anyOf: [boundedNumberSchema, functionExpressionRef] },
-      left: functionExpressionRef,
-      right: functionExpressionRef,
+      left: { anyOf: [boundedNumberSchema, functionExpressionRef] },
+      right: { anyOf: [boundedNumberSchema, functionExpressionRef] },
     },
   },
   /**
@@ -218,8 +218,8 @@ const expressionDefinitions = {
       model: idSchema,
       key: { type: 'string', minLength: 1, maxLength: LIMITS.maxIdLength, pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
       value: { anyOf: [boundedNumberSchema, expressionV5Ref] },
-      left: expressionV5Ref,
-      right: expressionV5Ref,
+      left: { anyOf: [boundedNumberSchema, expressionV5Ref] },
+      right: { anyOf: [boundedNumberSchema, expressionV5Ref] },
     },
   },
 };
@@ -242,8 +242,8 @@ const conditionDefinition = {
       required: ['op', 'left', 'right'],
       properties: {
         op: { enum: ['num-eq', 'num-neq', 'num-gt', 'num-gte', 'num-lt', 'num-lte'] },
-        left: expressionRef,
-        right: expressionRef,
+        left: { anyOf: [boundedNumberSchema, expressionRef] },
+        right: { anyOf: [boundedNumberSchema, expressionRef] },
       },
     },
     {
@@ -290,8 +290,8 @@ const conditionDefinitionV5 = {
       required: ['op', 'left', 'right'],
       properties: {
         op: { enum: ['num-eq', 'num-neq', 'num-gt', 'num-gte', 'num-lt', 'num-lte'] },
-        left: expressionV5Ref,
-        right: expressionV5Ref,
+        left: { anyOf: [boundedNumberSchema, expressionV5Ref] },
+        right: { anyOf: [boundedNumberSchema, expressionV5Ref] },
       },
     },
     {
@@ -362,7 +362,7 @@ const chartBarPieSchema = {
         required: ['label', 'value'],
         properties: {
           label: labelSchema,
-          value: expressionRef,
+          value: { anyOf: [boundedNumberSchema, expressionRef] },
         },
       },
     },
@@ -387,7 +387,7 @@ const discreteChartSeriesSchema = {
         required: ['x', 'y'],
         properties: {
           x: boundedNumberSchema,
-          y: expressionRef,
+          y: { anyOf: [boundedNumberSchema, expressionRef] },
         },
       },
     },
@@ -405,7 +405,10 @@ const chartFunctionSchema = {
       type: 'object',
       additionalProperties: false,
       required: ['start', 'end'],
-      properties: { start: expressionRef, end: expressionRef },
+      properties: {
+        start: { anyOf: [boundedNumberSchema, expressionRef] },
+        end: { anyOf: [boundedNumberSchema, expressionRef] },
+      },
     },
     samples: {
       type: 'integer',
@@ -559,7 +562,7 @@ const budgetModelSchema = {
     label: labelSchema,
     unit: unitSchema,
     precision: modelPrecisionSchema,
-    income: expressionV5Ref,
+    income: { anyOf: [boundedNumberSchema, expressionV5Ref] },
     expenses: {
       type: 'array',
       maxItems: LIMITS.maxBudgetExpenses,
@@ -569,7 +572,7 @@ const budgetModelSchema = {
         required: ['label', 'amount'],
         properties: {
           label: labelSchema,
-          amount: expressionV5Ref,
+          amount: { anyOf: [boundedNumberSchema, expressionV5Ref] },
         },
       },
     },
@@ -587,7 +590,7 @@ const costModelSchema = {
     unit: unitSchema,
     useUnit: unitSchema,
     precision: modelPrecisionSchema,
-    horizon: expressionV5Ref,
+    horizon: { anyOf: [boundedNumberSchema, expressionV5Ref] },
     plans: {
       type: 'array',
       minItems: 1,
@@ -598,13 +601,13 @@ const costModelSchema = {
         required: ['label', 'fee', 'coverage', 'usesPerPeriod'],
         properties: {
           label: labelSchema,
-          fee: expressionV5Ref,
+          fee: { anyOf: [boundedNumberSchema, expressionV5Ref] },
           coverage: {
             type: 'number',
             exclusiveMinimum: 0,
             maximum: LIMITS.maxNumberMagnitude,
           },
-          usesPerPeriod: expressionV5Ref,
+          usesPerPeriod: { anyOf: [boundedNumberSchema, expressionV5Ref] },
         },
       },
     },
@@ -748,7 +751,7 @@ const chartBarPieSchemaV5 = {
         required: ['label', 'value'],
         properties: {
           label: labelSchema,
-          value: expressionV5Ref,
+          value: { anyOf: [boundedNumberSchema, expressionV5Ref] },
         },
       },
     },
@@ -791,7 +794,7 @@ const discreteChartSeriesSchemaV5 = {
         required: ['x', 'y'],
         properties: {
           x: boundedNumberSchema,
-          y: expressionV5Ref,
+          y: { anyOf: [boundedNumberSchema, expressionV5Ref] },
         },
       },
     },
@@ -1130,7 +1133,7 @@ const v2Schema = {
           id: idSchema,
           label: labelSchema,
           unit: unitSchema,
-          expression: expressionRef,
+          expression: { anyOf: [boundedNumberSchema, expressionRef] },
         },
       },
     },
@@ -1167,7 +1170,7 @@ const v3Schema = {
           id: idSchema,
           label: labelSchema,
           unit: unitSchema,
-          expression: expressionRef,
+          expression: { anyOf: [boundedNumberSchema, expressionRef] },
         },
       },
     },
@@ -1204,7 +1207,7 @@ const v4Schema = {
           id: idSchema,
           label: labelSchema,
           unit: unitSchema,
-          expression: expressionRef,
+          expression: { anyOf: [boundedNumberSchema, expressionRef] },
         },
       },
     },
@@ -1242,13 +1245,12 @@ const v5Schema = {
           label: labelSchema,
           unit: unitSchema,
           // derived 仍只使用不含模型引用的表达式，避免声明顺序上的环。
-          expression: expressionRef,
+          expression: { anyOf: [boundedNumberSchema, expressionRef] },
         },
       },
     },
     models: {
       type: 'array',
-      minItems: 1,
       maxItems: LIMITS.maxModels,
       items: semanticModelSchema,
     },

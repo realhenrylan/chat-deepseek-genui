@@ -1,7 +1,9 @@
+import { wrapWidgetAsDocument } from './widget/compat.ts';
+import { normalizeWidget } from './widget/normalize.ts';
 import type { ErrorObject } from 'ajv';
-import genuiValidate from './genui-validator.generated';
-import { buildSchemaIssues, formatSchemaPath } from './diagnose';
-import { isStepAligned } from './step';
+import genuiValidate from './genui-validator.generated.ts';
+import { buildSchemaIssues, formatSchemaPath } from './diagnose.ts';
+import { isStepAligned } from './step.ts';
 import {
   LIMITS,
   MODEL_SCALAR_KEYS,
@@ -25,7 +27,7 @@ import {
   type ParseGenuiResult,
   type SemanticModel,
   type StateVariable,
-} from './types';
+} from './types.ts';
 
 /**
  * genui 协议解析与验证（v1 静态 / v2 交互 / v3-v4 组合；v4 新增函数曲线系列）。
@@ -470,18 +472,43 @@ function inspectStateAndDerived(
           'initial 必须位于 min 与 max 之间',
         );
       }
-      if (!isStepAligned(variable.initial, variable.min, variable.step)) {
+      const initialAligned = isStepAligned(variable.initial, variable.min, variable.step);
+      const maxAligned = isStepAligned(variable.max, variable.min, variable.step);
+      if (!initialAligned && !maxAligned) {
+        return {
+          ok: false,
+          code: 'semantic-violation',
+          detail: `数值状态 ${variable.id} 的初始值和最大值均不符合步长`,
+          issues: [
+            {
+              pointer: `${base}/initial`,
+              path: formatSchemaPath(`${base}/initial`),
+              keyword: 'semantic',
+              message: `数值状态 ${variable.id} 的初始值不符合步长`,
+              expected: 'initial 必须与 min、step 对齐',
+            },
+            {
+              pointer: `${base}/max`,
+              path: formatSchemaPath(`${base}/max`),
+              keyword: 'semantic',
+              message: `数值状态 ${variable.id} 的最大值不符合步长`,
+              expected: 'max 必须与 min、step 对齐',
+            },
+          ],
+        };
+      }
+      if (!initialAligned) {
         return semanticFailure(
           'semantic-violation',
-          `数值状态 ${variable.id} 的初始值或最大值不符合步长`,
+          `数值状态 ${variable.id} 的初始值不符合步长`,
           `${base}/initial`,
           'initial 必须与 min、step 对齐',
         );
       }
-      if (!isStepAligned(variable.max, variable.min, variable.step)) {
+      if (!maxAligned) {
         return semanticFailure(
           'semantic-violation',
-          `数值状态 ${variable.id} 的初始值或最大值不符合步长`,
+          `数值状态 ${variable.id} 的最大值不符合步长`,
           `${base}/max`,
           'max 必须与 min、step 对齐',
         );
@@ -1218,6 +1245,245 @@ function validateV5Semantics(document: GenuiV5Document): SemanticFailure | null 
   return inspectDependencyCycles(context);
 }
 
+function normalizeExpressionTree(expr: unknown): void {
+  if (typeof expr !== 'object' || expr === null) return;
+  const record = expr as Record<string, unknown>;
+  if ('left' in record) {
+    if (typeof record.left === 'number') {
+      record.left = { op: 'const', value: record.left };
+    } else {
+      normalizeExpressionTree(record.left);
+    }
+  }
+  if ('right' in record) {
+    if (typeof record.right === 'number') {
+      record.right = { op: 'const', value: record.right };
+    } else {
+      normalizeExpressionTree(record.right);
+    }
+  }
+  if ('value' in record && record.op !== 'const') {
+    if (typeof record.value === 'number') {
+      record.value = { op: 'const', value: record.value };
+    } else {
+      normalizeExpressionTree(record.value);
+    }
+  }
+}
+
+function normalizeConditionTree(condition: unknown): void {
+  if (typeof condition !== 'object' || condition === null) return;
+  const cond = condition as Record<string, unknown>;
+  if (typeof cond.op === 'string' && cond.op.startsWith('num-')) {
+    if (typeof cond.left === 'number') {
+      cond.left = { op: 'const', value: cond.left };
+    } else {
+      normalizeExpressionTree(cond.left);
+    }
+    if (typeof cond.right === 'number') {
+      cond.right = { op: 'const', value: cond.right };
+    } else {
+      normalizeExpressionTree(cond.right);
+    }
+  } else if ((cond.op === 'and' || cond.op === 'or') && Array.isArray(cond.conditions)) {
+    for (const c of cond.conditions) {
+      normalizeConditionTree(c);
+    }
+  } else if (cond.op === 'not' && cond.condition) {
+    normalizeConditionTree(cond.condition);
+  }
+}
+
+function normalizeElements(elements: unknown[]): void {
+  for (const element of elements) {
+    if (typeof element !== 'object' || element === null) continue;
+    const elem = element as Record<string, unknown>;
+    if (elem.visibleIf) normalizeConditionTree(elem.visibleIf);
+
+    switch (elem.kind) {
+      case 'chart': {
+        if ('items' in elem && Array.isArray(elem.items)) {
+          for (const item of elem.items) {
+            if (typeof item === 'object' && item !== null) {
+              const itemRec = item as Record<string, unknown>;
+              if (typeof itemRec.value === 'number') {
+                itemRec.value = { op: 'const', value: itemRec.value };
+              } else {
+                normalizeExpressionTree(itemRec.value);
+              }
+            }
+          }
+        }
+        if ('series' in elem && Array.isArray(elem.series)) {
+          for (const series of elem.series) {
+            if (typeof series === 'object' && series !== null) {
+              const sRec = series as Record<string, unknown>;
+              if ('points' in sRec && Array.isArray(sRec.points)) {
+                for (const pt of sRec.points) {
+                  if (typeof pt === 'object' && pt !== null) {
+                    const ptRec = pt as Record<string, unknown>;
+                    if (typeof ptRec.y === 'number') {
+                      ptRec.y = { op: 'const', value: ptRec.y };
+                    } else {
+                      normalizeExpressionTree(ptRec.y);
+                    }
+                  }
+                }
+              }
+              if ('function' in sRec && typeof sRec.function === 'object' && sRec.function !== null) {
+                const fn = sRec.function as Record<string, unknown>;
+                if (fn.domain && typeof fn.domain === 'object') {
+                  const dom = fn.domain as Record<string, unknown>;
+                  if (typeof dom.start === 'number') dom.start = { op: 'const', value: dom.start };
+                  else normalizeExpressionTree(dom.start);
+                  if (typeof dom.end === 'number') dom.end = { op: 'const', value: dom.end };
+                  else normalizeExpressionTree(dom.end);
+                }
+                normalizeExpressionTree(fn.expression);
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'table': {
+        if ('rows' in elem && Array.isArray(elem.rows)) {
+          for (const row of elem.rows) {
+            if (typeof row === 'object' && row !== null) {
+              const rRec = row as Record<string, unknown>;
+              if (rRec.visibleIf) normalizeConditionTree(rRec.visibleIf);
+              if (rRec.cells && typeof rRec.cells === 'object') {
+                for (const cellVal of Object.values(rRec.cells)) {
+                  if (typeof cellVal === 'object' && cellVal !== null) {
+                    normalizeExpressionTree(cellVal);
+                  }
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'section': {
+        if ('children' in elem && Array.isArray(elem.children)) {
+          normalizeElements(elem.children);
+        }
+        break;
+      }
+      case 'columns': {
+        if ('columns' in elem && Array.isArray(elem.columns)) {
+          for (const col of elem.columns) {
+            if (Array.isArray(col)) {
+              normalizeElements(col);
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+
+/**
+ * 结构归一化：将表达式位置（图表 items/points、预算/成本数值、条件两侧等）
+ * 直接写入的裸数字自动升格为 `{ op: 'const', value }` 对象。
+ * 使模型自然生成的字面常量合法接入 AST 求值系统。
+ */
+function normalizeDocumentExpressions(doc: Record<string, unknown>): void {
+  // 1. derived
+  if (Array.isArray(doc.derived)) {
+    for (const item of doc.derived) {
+      if (typeof item === 'object' && item !== null) {
+        const dRec = item as Record<string, unknown>;
+        if (typeof dRec.expression === 'number') {
+          dRec.expression = { op: 'const', value: dRec.expression };
+        } else {
+          normalizeExpressionTree(dRec.expression);
+        }
+      }
+    }
+  }
+
+  // 2. models (v5)
+  if (Array.isArray(doc.models)) {
+    for (const model of doc.models) {
+      if (typeof model !== 'object' || model === null) continue;
+      const mRec = model as Record<string, unknown>;
+      if (mRec.kind === 'budget') {
+        if (typeof mRec.income === 'number') {
+          mRec.income = { op: 'const', value: mRec.income };
+        } else {
+          normalizeExpressionTree(mRec.income);
+        }
+        if (Array.isArray(mRec.expenses)) {
+          for (const exp of mRec.expenses) {
+            if (typeof exp === 'object' && exp !== null) {
+              const eRec = exp as Record<string, unknown>;
+              if (typeof eRec.amount === 'number') {
+                eRec.amount = { op: 'const', value: eRec.amount };
+              } else {
+                normalizeExpressionTree(eRec.amount);
+              }
+            }
+          }
+        }
+      } else if (mRec.kind === 'cost') {
+        if (typeof mRec.horizon === 'number') {
+          mRec.horizon = { op: 'const', value: mRec.horizon };
+        } else {
+          normalizeExpressionTree(mRec.horizon);
+        }
+        if (Array.isArray(mRec.plans)) {
+          for (const plan of mRec.plans) {
+            if (typeof plan === 'object' && plan !== null) {
+              const pRec = plan as Record<string, unknown>;
+              if (typeof pRec.fee === 'number') {
+                pRec.fee = { op: 'const', value: pRec.fee };
+              } else {
+                normalizeExpressionTree(pRec.fee);
+              }
+              if (typeof pRec.usesPerPeriod === 'number') {
+                pRec.usesPerPeriod = { op: 'const', value: pRec.usesPerPeriod };
+              } else {
+                normalizeExpressionTree(pRec.usesPerPeriod);
+              }
+            }
+          }
+        }
+      } else if (mRec.kind === 'preference') {
+        if (Array.isArray(mRec.dimensions)) {
+          for (const dim of mRec.dimensions) {
+            if (typeof dim === 'object' && dim !== null) {
+              const dimRec = dim as Record<string, unknown>;
+              if (typeof dimRec.weight === 'object' && dimRec.weight !== null) {
+                normalizeExpressionTree(dimRec.weight);
+              }
+            }
+          }
+        }
+        if (Array.isArray(mRec.filters)) {
+          for (const filter of mRec.filters) {
+            if (typeof filter === 'object' && filter !== null) {
+              const fRec = filter as Record<string, unknown>;
+              if (typeof fRec.min === 'object' && fRec.min !== null) {
+                normalizeExpressionTree(fRec.min);
+              }
+              if (typeof fRec.max === 'object' && fRec.max !== null) {
+                normalizeExpressionTree(fRec.max);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 3. elements
+  if (Array.isArray(doc.elements)) {
+    normalizeElements(doc.elements);
+  }
+}
+
 /** 解析并验证一段 genui 代码块文本。 */
 export function parseGenui(raw: string): ParseGenuiResult {
   if (raw.length > LIMITS.maxRawLength) {
@@ -1253,6 +1519,23 @@ export function parseGenui(raw: string): ParseGenuiResult {
   if (
     typeof parsed === 'object' &&
     parsed !== null &&
+    'w' in parsed &&
+    typeof (parsed as { w?: unknown }).w === 'string'
+  ) {
+    const widgetRes = normalizeWidget(parsed as Record<string, unknown>);
+    if (!widgetRes.ok) {
+      return {
+        ok: false,
+        code: widgetRes.code,
+        detail: widgetRes.detail,
+      };
+    }
+    return { ok: true, widget: widgetRes.widget, document: wrapWidgetAsDocument(widgetRes.widget) };
+  }
+
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
     'type' in parsed && parsed.type === 'genui' &&
     'version' in parsed && typeof parsed.version === 'number' && Number.isInteger(parsed.version) &&
     parsed.version > PROTOCOL_VERSION
@@ -1273,6 +1556,8 @@ export function parseGenui(raw: string): ParseGenuiResult {
       issues: buildSchemaIssues(errors, parsed),
     };
   }
+
+  normalizeDocumentExpressions(parsed as Record<string, unknown>);
 
   const document = parsed as GenuiDocument;
   if (document.version === 2) {

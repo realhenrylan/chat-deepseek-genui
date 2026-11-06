@@ -473,3 +473,65 @@ describe('appendDraftIntoInput 的草稿语义', () => {
     expect(textarea.value).toBe('修复请求 A\n\n修复请求 B');
   });
 });
+
+describe('v5 诊断与修复提示词生成', () => {
+  it('v5 文档的修复要求中包含当前最大协议版本，且不提示版本号 1-3', () => {
+    const raw = JSON.stringify({
+      type: 'genui',
+      version: 5,
+      state: [],
+      derived: [],
+      models: [],
+      elements: [{ kind: 'table', title: '表', columns: [{ key: 'a', label: 'A' }], rows: [] }],
+      extra: 123,
+    });
+    const failure = failureOf(raw);
+    const diagnostic = diagnoseParseFailure(failure, raw);
+    const prompt = buildRepairPrompt(diagnostic, raw);
+    expect(prompt).toContain('使用协议 1–5 的合法字段');
+    expect(prompt).not.toContain('使用协议 1–3 的合法字段');
+  });
+
+  it('2.5KB 左右的完整表格不被提前截断', () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      cells: {
+        dim: `维度 ${i}`,
+        a: `模型 A 的较长说明文本样本 ${i}`,
+        b: `模型 B 的较长说明文本样本 ${i}`,
+      },
+    }));
+    const raw = JSON.stringify(
+      {
+        type: 'genui',
+        version: 5,
+        state: [],
+        derived: [],
+        models: [],
+        elements: [
+          {
+            kind: 'table',
+            title: '完整对比表',
+            columns: [
+              { key: 'dim', label: '维度' },
+              { key: 'a', label: 'A' },
+              { key: 'b', label: 'B' },
+            ],
+            rows,
+          },
+        ],
+      },
+      null,
+      2,
+    );
+    const broken = raw.replace('"维度 2"', '维度 2"');
+    expect(broken.length).toBeGreaterThan(1500);
+    expect(broken.length).toBeLessThan(3200);
+
+    const failure = failureOf(broken);
+    const diagnostic = diagnoseParseFailure(failure, broken);
+    const prompt = buildRepairPrompt(diagnostic, broken);
+    expect(prompt).not.toContain('（中间内容省略）');
+    expect(prompt).not.toContain('（片段已截断');
+    expect(prompt).toContain('维度 9');
+  });
+});

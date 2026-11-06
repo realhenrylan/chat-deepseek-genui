@@ -1,0 +1,230 @@
+{
+  "version": "1.0",
+  "description": "GenUI 评测集（M0 基线，共 28 题，分 6 类）",
+  "prompts": [
+    {
+      "id": "L01",
+      "category": "learning",
+      "title": "复利与时间变量",
+      "prompt": "复利是怎么回事？为什么说时间是复利里最关键的变量？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result", "quiz", "chart"]
+    },
+    {
+      "id": "L02",
+      "category": "learning",
+      "title": "勾股定理与直角边变化",
+      "prompt": "勾股定理为什么成立？两条直角边变化时斜边怎么变化？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result", "quiz"]
+    },
+    {
+      "id": "L03",
+      "category": "learning",
+      "title": "供需平衡与价格机制",
+      "prompt": "经济学里的供需平衡是怎么决定的？供需曲线移动会怎样影响均衡价格和数量？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "chart", "quiz", "card"]
+    },
+    {
+      "id": "L04",
+      "category": "learning",
+      "title": "二次函数抛物线特征",
+      "prompt": "二次函数 y = ax² + bx + c 的开口方向、对称轴和零点分别由什么决定？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "chart", "quiz"]
+    },
+    {
+      "id": "L05",
+      "category": "learning",
+      "title": "等额本息与等额本金原理对比",
+      "prompt": "房贷里的等额本息和等额本金到底有什么区别？分别适合什么情况？",
+      "expectGenui": true,
+      "expectedIntent": ["compare", "slider", "result", "quiz"]
+    },
+    {
+      "id": "L06",
+      "category": "learning",
+      "title": "资产配置与风险分散",
+      "prompt": "投资组合里的风险分散是怎么降低波动的？股票和债券配置比例变化会带来什么影响？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result", "card", "quiz"]
+    },
+    {
+      "id": "W01",
+      "category": "what-if",
+      "title": "月度收支预算速算",
+      "prompt": "我月收入 12000 元，房租 4500、餐饮 2600、交通 600、其他 900，帮我算算每月能存下多少，如果调整餐饮和其他支出会怎么变？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result", "chart"]
+    },
+    {
+      "id": "W02",
+      "category": "what-if",
+      "title": "房贷月供与利息敏感度",
+      "prompt": "贷款 100 万买房，年限在 20 到 30 年、年利率在 3.0% 到 4.5% 之间变动时，每月还款和总利息大概差多少？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result"]
+    },
+    {
+      "id": "W03",
+      "category": "what-if",
+      "title": "半程马拉松配速与完赛时间",
+      "prompt": "我准备跑半程马拉松（21.1 公里），配速在 5分00秒 到 6分30秒 每公里之间变化时，完赛总用时和每 5 公里分段用时是多少？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result"]
+    },
+    {
+      "id": "W04",
+      "category": "what-if",
+      "title": "SaaS 小工具盈亏平衡测算",
+      "prompt": "独立开发一个 SaaS 小工具，服务器固定成本每月 300 元，每用户变动成本 2 元，月费定价 15 到 50 元、付费用户数 20 到 500 人时，盈亏平衡点和月净利润怎么变化？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result"]
+    },
+    {
+      "id": "W05",
+      "category": "what-if",
+      "title": "买咖啡与自冲咖啡年度成本",
+      "prompt": "每天买现磨拿铁（18 元/杯）还是自己买咖啡机冲浓缩（机器 1500 元，每杯豆和奶约 4 元）？按每周喝 3 到 14 杯算，一年下来差多少钱？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result", "compare"]
+    },
+    {
+      "id": "D01",
+      "category": "decision",
+      "title": "四款轻薄笔记本多维对比（含缺失值）",
+      "prompt": "我在挑轻薄笔记本：A 款（6500 元、1.2kg、续航 12h）、B 款（5200 元、1.5kg、续航 9h）、C 款（7800 元、1.1kg、续航 15h）、D 款（5900 元、1.3kg、续航未知），预算 7500 以内、重量不超过 1.4kg，帮我按价格、重量、续航对比选型。",
+      "expectGenui": true,
+      "expectedIntent": ["compare", "table"]
+    },
+    {
+      "id": "D02",
+      "category": "decision",
+      "title": "健身卡方案周期成本对比",
+      "prompt": "通勤健身卡怎么选更划算：单次卡 35 元/次，月卡 280 元/月，季卡 720 元/3个月，年卡 2200 元/12个月，按我每月去 4 到 16 次、坚持 1 到 12 个月算哪个单次成本最低？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result", "compare", "table"]
+    },
+    {
+      "id": "D03",
+      "category": "decision",
+      "title": "周末短途出行方式选型",
+      "prompt": "周末从上海去杭州两天一夜，高铁、自驾、顺风车三种出行方式在费用、耗时、灵活性和舒适度上怎么选？",
+      "expectGenui": true,
+      "expectedIntent": ["compare", "table"]
+    },
+    {
+      "id": "D04",
+      "category": "decision",
+      "title": "个人技术博客建站方案对比",
+      "prompt": "个人技术博客建站方案对比：GitHub Pages + Astro、Vercel + Next.js、自购轻量云服务器 + Docker，在月成本、维护难度、国内访问速度、扩展性上如何取舍？",
+      "expectGenui": true,
+      "expectedIntent": ["compare", "table"]
+    },
+    {
+      "id": "D05",
+      "category": "decision",
+      "title": "家用洗碗机容量与安装方式选型",
+      "prompt": "家里买洗碗机，台式 6 套、独嵌两用 10 套、全嵌入式 15 套在尺寸要求、容量、水电消耗和价格区间上怎么选？",
+      "expectGenui": true,
+      "expectedIntent": ["compare", "table"]
+    },
+    {
+      "id": "G01",
+      "category": "guide",
+      "title": "Windows 11 前端开发环境配置清单",
+      "prompt": "在 Windows 11 上从零配置 Node.js、Git 和 VS Code 前端开发环境，有哪些必做步骤和检查项？",
+      "expectGenui": true,
+      "expectedIntent": ["checklist", "card"]
+    },
+    {
+      "id": "G02",
+      "category": "guide",
+      "title": "长途自驾出发前准备清单",
+      "prompt": "第一次长途自驾出发前，车辆检查、随车工具、证件与应急物品清单该怎么准备？",
+      "expectGenui": true,
+      "expectedIntent": ["checklist"]
+    },
+    {
+      "id": "G03",
+      "category": "guide",
+      "title": "家常少油版宫保鸡丁步骤",
+      "prompt": "在家做一道少油版宫保鸡丁，备料用量、火候步骤和容易翻车的注意事项是什么？",
+      "expectGenui": true,
+      "expectedIntent": ["checklist", "card", "slider"]
+    },
+    {
+      "id": "G04",
+      "category": "guide",
+      "title": "Web 前端项目上线前检查清单",
+      "prompt": "Web 前端项目上线前的安全与性能检查清单（CSP、包体积、缓存、无障碍）包含哪些项？",
+      "expectGenui": true,
+      "expectedIntent": ["checklist"]
+    },
+    {
+      "id": "P01",
+      "category": "plain",
+      "title": "HTTP 401 与 403 简答",
+      "prompt": "HTTP 状态码 401 和 403 的区别是什么？",
+      "expectGenui": false,
+      "expectedIntent": []
+    },
+    {
+      "id": "P02",
+      "category": "plain",
+      "title": "简短周报润色",
+      "prompt": "帮我写一段 100 字左右的周报总结：本周完成了登录接口联调与单元测试修复，下周推进权限模块。",
+      "expectGenui": false,
+      "expectedIntent": []
+    },
+    {
+      "id": "P03",
+      "category": "plain",
+      "title": "TypeScript debounce 代码实现",
+      "prompt": "用 TypeScript 写一个防抖函数 debounce，支持 cancel 取消。",
+      "expectGenui": false,
+      "expectedIntent": []
+    },
+    {
+      "id": "P04",
+      "category": "plain",
+      "title": "文学名句含义解释",
+      "prompt": "鲁迅《故乡》里“其实地上本没有路，走的人多了，也便成了路”表达了什么意思？",
+      "expectGenui": false,
+      "expectedIntent": []
+    },
+    {
+      "id": "P05",
+      "category": "plain",
+      "title": "日常闲聊放松",
+      "prompt": "今天工作有点累，跟我随便聊聊放松一下。",
+      "expectGenui": false,
+      "expectedIntent": []
+    },
+    {
+      "id": "E01",
+      "category": "edge",
+      "title": "多候选含缺失数据的开源模型对比",
+      "prompt": "对比 6 款主流开源大模型在参数量、上下文窗口、开源协议、代码能力、推理显存需求上的表现（部分新模型显存需求未知）。",
+      "expectGenui": true,
+      "expectedIntent": ["table", "compare"]
+    },
+    {
+      "id": "E02",
+      "category": "edge",
+      "title": "零收入脱产期预算边界",
+      "prompt": "如果我每月收入为 0 元（脱产学习期），房租 2500、伙食 1500、杂费 500，每月收支和预算占比怎么算？",
+      "expectGenui": true,
+      "expectedIntent": ["slider", "result"]
+    },
+    {
+      "id": "E03",
+      "category": "edge",
+      "title": "模糊宽泛的生活建议",
+      "prompt": "我想把生活过得更有条理一点，你有什么建议？",
+      "expectGenui": false,
+      "expectedIntent": []
+    }
+  ]
+}

@@ -408,4 +408,42 @@ describe('genui v5 语义模型协议', () => {
     const model = { ...budget(), extra: true };
     expectFailure(parseGenui(JSON.stringify(doc([model as unknown as SemanticModel]))), 'schema-violation');
   });
+  it('v5 支持空的 models 数组（纯对比表或无需模型的场景）', () => {
+    const document: GenuiV5Document = {
+      type: 'genui',
+      version: 5,
+      title: 'Gemini 3.8 Flash vs Gemini 4 Argon',
+      state: [],
+      derived: [],
+      models: [],
+      elements: [
+        {
+          kind: 'table',
+          title: '核心规格与性能对比',
+          sortable: true,
+          initialSort: { key: 'dimension', dir: 'asc' },
+          columns: [
+            { key: 'dimension', label: '对比维度' },
+            { key: 'flash', label: 'Gemini 3.8 Flash' },
+            { key: 'argon', label: 'Gemini 4 Argon' },
+          ],
+          rows: [
+            {
+              cells: {
+                dimension: '定位',
+                flash: '生产默认主力',
+                argon: '旗舰模型',
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const result = parseGenui(JSON.stringify(document));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.document.version).toBe(5);
+      expect((result.document as GenuiV5Document).models).toEqual([]);
+    }
+  });
 });

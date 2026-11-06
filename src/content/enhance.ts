@@ -34,7 +34,8 @@ import {
 } from '../runtime/saved-card-state-store';
 import { GenuiStatusPanel, STATUS_ATTR, STATUS_HOST_ATTR, type BlockStatus } from './failure-ui';
 import type { RepairDeliveryResult } from './repair';
-import { mountCard, type MountedCard } from '../render/mount';
+import { mountCard } from '../render/mount';
+import { mountInlineWidget } from '../render/inline/mount';
 import type { ElementRegistry } from '../render/registry';
 
 /**
@@ -131,7 +132,7 @@ interface MountedRecord {
   raw: string;
   signature: string;
   originalDisplay: string;
-  mountedCard: MountedCard;
+  mountedCard: { unmount(): void };
   /** 稳定卡片身份键；节点被改写时据此丢弃旧文档的页面内状态。 */
   key: string;
 }
@@ -652,58 +653,95 @@ export class EnhancementManager {
 
     const resolved = this.resolveInitialState(identity, parsed.document, saved);
     block.before(host);
-    let mountedCard: MountedCard;
+    let mountedCard: { unmount(): void };
     let fatalDuringInitialRender = false;
     let record: MountedRecord | null = null;
 
-    try {
-      mountedCard = mountCard(host, {
-        document: parsed.document,
-        rawJson: raw,
-        registry: this.options.registry,
-        onContinue: this.options.onContinue,
-        cardKey: identity.key,
-        stateStore: this.stateStore,
-        initialState: resolved.state,
-        savedAt: resolved.savedAt,
-        restoredAt: resolved.restoredAt,
-        // 没有本机存储时不渲染保存入口，避免按钮只能给出失败反馈。
-        ...(this.savedStateStore
-          ? {
-              onSaveState: (state: CardUiState) =>
-                this.saveState(identity, parsed.document, state, saved?.key ?? null),
-              onClearSavedState: () => this.clearSavedState(identity, saved?.key ?? null),
+    if (parsed.widget) {
+      const widget = parsed.widget;
+      try {
+        mountedCard = mountInlineWidget(host, {
+          widget,
+          rawJson: raw,
+          onToggleRaw: (showRaw) => {
+            block.style.display = showRaw ? originalDisplay : 'none';
+          },
+          onFatal: (error) => {
+            console.error(`${LOG_PREFIX} inline widget render failed`, error);
+            if (!record) {
+              fatalDuringInitialRender = true;
+              reject('render-error', undefined, diagnoseIncompatible('render-error'));
+              return;
             }
-          : {}),
-        onToggleRaw: (showRaw) => {
-          // 卡片保持可见，否则「收起原始 JSON」将没有可点的入口。
-          block.style.display = showRaw ? originalDisplay : 'none';
-        },
-        onFatal: (error) => {
-          console.error(`${LOG_PREFIX} card render failed, original content restored`, error);
-          if (!record) {
-            fatalDuringInitialRender = true;
-            reject('render-error', undefined, diagnoseIncompatible('render-error'));
-            return;
-          }
-          if (this.mounted.get(block) !== record) return;
-          this.mounted.delete(block);
-          disposeMounted(record, false);
-          if (this.enabled) {
-            this.failed.set(block, { signature, reason: 'render-error' });
-            markFailed(block, 'render-error');
-            this.diagnostics?.record('mount', 'render-error');
-            const diagnostic = diagnoseIncompatible('render-error');
-            this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
-          } else {
-            removeState(block);
-            this.destroyStatus(block);
-          }
-        },
-      });
-    } catch (error) {
-      console.error(`${LOG_PREFIX} card mount failed`, error);
-      return reject('mount-failed', undefined, diagnoseIncompatible('mount-failed'));
+            if (this.mounted.get(block) !== record) return;
+            this.mounted.delete(block);
+            disposeMounted(record, false);
+            if (this.enabled) {
+              this.failed.set(block, { signature, reason: 'render-error' });
+              markFailed(block, 'render-error');
+              this.diagnostics?.record('mount', 'render-error');
+              const diagnostic = diagnoseIncompatible('render-error');
+              this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
+            } else {
+              removeState(block);
+              this.destroyStatus(block);
+            }
+          },
+        });
+      } catch (error) {
+        console.error(`${LOG_PREFIX} inline widget mount failed`, error);
+        return reject('mount-failed', undefined, diagnoseIncompatible('mount-failed'));
+      }
+    } else {
+      try {
+        mountedCard = mountCard(host, {
+          document: parsed.document,
+          rawJson: raw,
+          registry: this.options.registry,
+          onContinue: this.options.onContinue,
+          cardKey: identity.key,
+          stateStore: this.stateStore,
+          initialState: resolved.state,
+          savedAt: resolved.savedAt,
+          restoredAt: resolved.restoredAt,
+          // 没有本机存储时不渲染保存入口，避免按钮只能给出失败反馈。
+          ...(this.savedStateStore
+            ? {
+                onSaveState: (state: CardUiState) =>
+                  this.saveState(identity, parsed.document, state, saved?.key ?? null),
+                onClearSavedState: () => this.clearSavedState(identity, saved?.key ?? null),
+              }
+            : {}),
+          onToggleRaw: (showRaw) => {
+            // 卡片保持可见，否则「收起原始 JSON」将没有可点的入口。
+            block.style.display = showRaw ? originalDisplay : 'none';
+          },
+          onFatal: (error) => {
+            console.error(`${LOG_PREFIX} card render failed, original content restored`, error);
+            if (!record) {
+              fatalDuringInitialRender = true;
+              reject('render-error', undefined, diagnoseIncompatible('render-error'));
+              return;
+            }
+            if (this.mounted.get(block) !== record) return;
+            this.mounted.delete(block);
+            disposeMounted(record, false);
+            if (this.enabled) {
+              this.failed.set(block, { signature, reason: 'render-error' });
+              markFailed(block, 'render-error');
+              this.diagnostics?.record('mount', 'render-error');
+              const diagnostic = diagnoseIncompatible('render-error');
+              this.showStatus(candidate, signature, blockStatusFor(diagnostic), diagnostic, raw);
+            } else {
+              removeState(block);
+              this.destroyStatus(block);
+            }
+          },
+        });
+      } catch (error) {
+        console.error(`${LOG_PREFIX} card mount failed`, error);
+        return reject('mount-failed', undefined, diagnoseIncompatible('mount-failed'));
+      }
     }
 
     if (fatalDuringInitialRender) {

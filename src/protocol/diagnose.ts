@@ -1,5 +1,5 @@
 import type { ErrorObject } from 'ajv';
-import { LIMITS, type GenuiFailureCode, type GenuiSchemaIssue } from './types';
+import { LIMITS, PROTOCOL_VERSION, type GenuiFailureCode, type GenuiSchemaIssue } from './types.ts';
 
 /**
  * 把协议失败翻译成用户可理解、可行动的诊断。
@@ -57,7 +57,9 @@ type ParseFailure = {
 function dataVersion(data: unknown): number | null {
   if (typeof data !== 'object' || data === null) return null;
   const version = (data as { version?: unknown }).version;
-  return version === 1 || version === 2 || version === 3 ? version : null;
+  return typeof version === 'number' && version >= 1 && version <= PROTOCOL_VERSION
+    ? version
+    : null;
 }
 
 function unescapePointer(segment: string): string {
@@ -152,7 +154,7 @@ function expectedFor(
     return '"initialSort": { "key": "<列 id>", "dir": "asc" | "desc" }';
   }
   if (pointersEqual(pointer, '/version')) {
-    return '版本号 1、2 或 3';
+    return `版本号 1–${PROTOCOL_VERSION}`;
   }
   if (pointersEqual(pointer, '/type')) {
     return '"type": "genui"';
@@ -279,6 +281,31 @@ const SUPPORTED_KINDS: Record<number, readonly string[]> = {
     'note',
     'chart',
     'table',
+    'section',
+    'columns',
+  ],
+  4: [
+    'text',
+    'number-input',
+    'slider',
+    'select',
+    'value',
+    'note',
+    'chart',
+    'table',
+    'section',
+    'columns',
+  ],
+  5: [
+    'text',
+    'number-input',
+    'slider',
+    'select',
+    'value',
+    'note',
+    'chart',
+    'table',
+    'explain',
     'section',
     'columns',
   ],
@@ -782,15 +809,15 @@ function capSnippet(text: string, max: number): string {
 }
 
 function invalidJsonSnippet(raw: string, position: number | undefined): string {
-  if (raw.length <= 1600) return raw;
-  if (position !== undefined && position > 900) {
-    const start = Math.max(0, position - 900);
+  if (raw.length <= 3200) return raw;
+  if (position !== undefined && position > 1500) {
+    const start = Math.max(0, position - 1500);
     return `…（前面内容省略）
-${raw.slice(start, start + 1500)}`;
+${raw.slice(start, start + 2800)}`;
   }
-  return `${raw.slice(0, 1200)}
+  return `${raw.slice(0, 2200)}
 …（中间内容省略）…
-${raw.slice(-400)}`;
+${raw.slice(-800)}`;
 }
 
 function scopedSnippet(diagnostic: GenuiDiagnostic, raw: string): string {
@@ -805,14 +832,14 @@ function scopedSnippet(diagnostic: GenuiDiagnostic, raw: string): string {
     if (scopePointer) {
       const scoped = valueAtPointer(data, scopePointer);
       if (scoped !== undefined) {
-        return capSnippet(JSON.stringify(scoped, null, 2), 2000);
+        return capSnippet(JSON.stringify(scoped, null, 2), 3200);
       }
     }
     if (pointer && typeof valueAtPointer(data, pointer) === 'object') {
       const scoped = valueAtPointer(data, pointer);
-      return capSnippet(JSON.stringify(scoped, null, 2), 2000);
+      return capSnippet(JSON.stringify(scoped, null, 2), 3200);
     }
-    return capSnippet(JSON.stringify(data, null, 2), 1800);
+    return capSnippet(JSON.stringify(data, null, 2), 3200);
   } catch {
     return invalidJsonSnippet(raw, diagnostic.position);
   }
@@ -861,7 +888,7 @@ export function buildRepairPrompt(diagnostic: GenuiDiagnostic, raw: string): str
     '',
     '修复要求：',
     '- 只修正上述格式问题，保留原有界面意图与数据。',
-    '- 使用协议 1–3 的合法字段，不要添加未知字段，也不要猜测新的业务信息。',
+    `- 使用协议 1–${PROTOCOL_VERSION} 的合法字段，不要添加未知字段，也不要猜测新的业务信息。`,
     '- 不要执行、解释或讨论代码，只输出修复后的完整 `genui` 代码块。',
   );
 

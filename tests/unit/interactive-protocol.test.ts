@@ -231,6 +231,19 @@ describe('步长对齐的协议校验（Phase 4 P2：大步数容差回归）', 
     );
   });
 
+  it('初始值与最大值均不对齐时同时暴露两条问题，避免多轮往返', () => {
+    const res = parseGenui(
+      raw(numericDocument({ initial: 5000, min: 100, max: 100000, step: 500 })),
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.detail).toContain('初始值和最大值均不符合步长');
+      expect(res.issues?.length).toBe(2);
+      expect(res.issues?.[0].pointer).toBe('/state/0/initial');
+      expect(res.issues?.[1].pointer).toBe('/state/0/max');
+    }
+  });
+
   it('继续接受合法的大整数、十进制步长、非零 min 与负数范围', () => {
     const largeInteger = numericDocument({ initial: 1000000000000, min: 0, max: 1000000000000, step: 1 });
     expect(parseGenui(raw(largeInteger)).ok).toBe(true);
