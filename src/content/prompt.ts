@@ -1,6 +1,7 @@
 /**
- * 阶段 7：默认增强提示词（v3.1）。
+ * 阶段 7：默认增强提示词（v3.2）。
  *
+ * v3.2 修订：图表默认使用主题配色，仅在语义需要时显式指定系列颜色。
  * v3.1 修订：section 通过标题与留白组织逻辑分组，避免无意义的多层嵌套；
  * columns 按容器可用宽度自适应（宽时并列、窄栏自动单列），推荐将可调参数与
  * 核心结果放入 2 列 columns 并列对照，图表、对比表与 explain 计算依据排在下方，
@@ -42,15 +43,19 @@
 /** 本轮模式：auto=自动适配（默认）；tool=本轮明确生成工具；plain=普通回答（不追加）。 */
 export type GenuiPromptMode = 'auto' | 'tool' | 'plain';
 
-export const GENUI_PROMPT_VERSION = '3.1';
+export const GENUI_PROMPT_VERSION = '3.2';
 
 export const GENUI_PROMPT_START =
-  '〔GenUI 增强 v3.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 增强 v3.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 
 export const GENUI_PROMPT_TOOL_START =
-  '〔GenUI 本轮生成工具 v3.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+  '〔GenUI 本轮生成工具 v3.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
 
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
+
+/** v3.1 标记用于安全识别历史草稿。 */
+export const GENUI_PROMPT_V31_START = '〔GenUI 增强 v3.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+export const GENUI_PROMPT_TOOL_V31_START = '〔GenUI 本轮生成工具 v3.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
 
 /** v3.0 兼容起始标记（用于识别旧版草稿，避免重复追加或模式切换时误改/误删） */
 export const GENUI_PROMPT_V30_START =
@@ -89,7 +94,7 @@ elements 项（按顺序显示）：
 - emphasis 仅用于展示强调，不参与求值：只给真正核心的 1–2 个结果显式写 "primary"，其余省略或写 "normal"；文档顺序中前两个显式 primary 会突出显示，更多 primary 按普通结果呈现。不要按数值大小、标签文字或派生顺序猜测业务重要性。
 - note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}
 - section {"kind":"section","title"?,"children":[...]}（通过标题与留白组织逻辑分组，避免无意义的多层嵌套）；columns {"kind":"columns","columns":[[...],[...]]}（2–3 列，按卡片容器实际可用宽度自动切换，宽时并列、窄栏自动上下单列；推荐将可调参数与核心结果放入 2 列 columns 并列对照，左列参数控件、右列核心 value 与紧邻状态提醒，图表、对比表与 explain 计算依据按阅读层级排在下方，关键说明、警告和假设保持直接可见）
-- chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。series 两种写法可混用：离散点 {"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}（至少 2 个递增 x 采样点；实测或离散数据用这种，不要启用 smooth）；函数曲线 {"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?:["zero"]}}，expression 是只允许局部变量 {"op":"x"} 与 state/derived 的表达式 AST（如 {"op":"multiply","left":{"op":"x"},"right":{"op":"x"}}），domain 可选 {"start":表达式,"end":表达式}（如抛物线用对称轴 ±10），samples 可选 5–50（默认 41），features ["zero"] 表示曲线在视口内不过 x 轴时按需对称加倍扩展采样范围。连续函数（尤其抛物线）优先用函数曲线写法，公式只声明一次，调整参数后曲线随状态重算；样本不画圆点。柱/饼也可用模型来源 {"kind":"chart","chartType":"bar|pie","title","legend"?,"source":{"model":"模型id"}}（source 可带可选 "kind":"model"），此时不要写 items，图表读取模型同一快照。
+- chart 柱/饼 {"kind":"chart","chartType":"bar|pie","title","legend"?,"items":[{"label","value":表达式}]}；折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。默认省略 color，使用随亮暗主题变化的 DeepSeek 蓝与中性色；只有数据含义明确需要指定颜色时才写 color。series 两种写法可混用：离散点 {"label","color"?:"#RRGGBB","smooth"?:true,"points":[{"x":数字,"y":表达式}]}（至少 2 个递增 x 采样点；实测或离散数据用这种，不要启用 smooth）；函数曲线 {"label","color"?,"function":{"expression","domain"?,"samples"?,"features"?:["zero"]}}，expression 是只允许局部变量 {"op":"x"} 与 state/derived 的表达式 AST（如 {"op":"multiply","left":{"op":"x"},"right":{"op":"x"}}），domain 可选 {"start":表达式,"end":表达式}（如抛物线用对称轴 ±10），samples 可选 5–50（默认 41），features ["zero"] 表示曲线在视口内不过 x 轴时按需对称加倍扩展采样范围。连续函数（尤其抛物线）优先用函数曲线写法，公式只声明一次，调整参数后曲线随状态重算；样本不画圆点。柱/饼也可用模型来源 {"kind":"chart","chartType":"bar|pie","title","legend"?,"source":{"model":"模型id"}}（source 可带可选 "kind":"model"），此时不要写 items，图表读取模型同一快照。
 - table {"kind":"table","title"?,"columns":[{"key","label","numeric"?,"unit"?}],"rows":[{"cells":{key:字符串|数字|null|表达式},"visibleIf"?}],"sortable"?,"selectable"?,"initialSort"?:{"key":"列key","dir":"asc|desc"},"emptyText"?,"visibleIf"?}。排序方向字段名必须是 dir，不能写 direction；候选方案、商品或路线等需要用户拍板的对比表写 "selectable":true，用户选中一行后，筛选、排序与选中项会进入「继续讨论」摘要，普通数据表不要开启。模型表格用 {"kind":"table","title"?,"source":{"model":"模型id","view"?},"sortable"?,"initialSort"?,"emptyText"?}（source 可带可选 "kind":"model"），不要写 columns/rows；view 必须与模型匹配（预算 summary|items，成本 plans，偏好 ranking|breakdown），省略时用默认视图。
 - explain {"kind":"explain","model":"模型id","title"?,"visibleIf"?}：由本地根据模型输出生成计算依据与诊断，不引入外部数据或脚本。
 visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-neq","id":选择状态id,"value":选项value}、{"op":"num-eq|num-neq|num-gt|num-gte|num-lt|num-lte","left":表达式,"right":表达式}、{"op":"and|or","conditions":[...]}、{"op":"not","condition":...}。
@@ -157,7 +162,12 @@ const BUDGET_COLUMNS_V30 = [
   '    { "kind": "value", "label": "每月剩余", "source": { "kind": "model", "model": "monthly", "key": "balance" }, "unit": "元", "emphasis": "primary" },',
 ].join('\n');
 
-const PROMPT_BODY_V30 = PROMPT_BODY
+const PROMPT_BODY_V31 = PROMPT_BODY.replace('默认省略 color，使用随亮暗主题变化的 DeepSeek 蓝与中性色；只有数据含义明确需要指定颜色时才写 color。', '');
+const PROTOCOL_BODY_V31 = PROMPT_BODY_V31.slice(PROMPT_BODY_V31.indexOf('内容分工'));
+export const GENUI_PROMPT_V31_TEXT = `${GENUI_PROMPT_V31_START}\n${PROMPT_BODY_V31}\n${GENUI_PROMPT_END}`;
+export const GENUI_TOOL_PROMPT_V31_TEXT = `${GENUI_PROMPT_TOOL_V31_START}\n${TOOL_LEAD}\n\n${PROTOCOL_BODY_V31}\n${GENUI_PROMPT_END}`;
+
+const PROMPT_BODY_V30 = PROMPT_BODY_V31
   .replace(SECTION_COLUMNS_V31, SECTION_COLUMNS_V30)
   .replace(BUDGET_COLUMNS_REGEX, BUDGET_COLUMNS_V30);
 
@@ -210,6 +220,8 @@ export function hasGenuiPrompt(value: string): boolean {
   return (
     value.includes(GENUI_PROMPT_START) ||
     value.includes(GENUI_PROMPT_TOOL_START) ||
+    value.includes(GENUI_PROMPT_V31_START) ||
+    value.includes(GENUI_PROMPT_TOOL_V31_START) ||
     value.includes(GENUI_PROMPT_V30_START) ||
     value.includes(GENUI_PROMPT_TOOL_V30_START)
   );
@@ -230,6 +242,8 @@ export function describeGenuiDraftPrompt(value: string): GenuiDraftPromptInfo {
   const candidateStarts = [
     GENUI_PROMPT_START,
     GENUI_PROMPT_TOOL_START,
+    GENUI_PROMPT_V31_START,
+    GENUI_PROMPT_TOOL_V31_START,
     GENUI_PROMPT_V30_START,
     GENUI_PROMPT_TOOL_V30_START,
   ];
@@ -246,12 +260,19 @@ export function describeGenuiDraftPrompt(value: string): GenuiDraftPromptInfo {
 
   if (startIndex < 0 || matchingStart === undefined) return { kind: 'none' };
 
-  // v3.1 完整说明判断
+  // 当前版本完整说明判断
   if (value.endsWith(GENUI_PROMPT_TEXT) && startIndex === value.length - GENUI_PROMPT_TEXT.length) {
     return { kind: 'intact', suffix: GENUI_PROMPT_TEXT, start: GENUI_PROMPT_START };
   }
   if (value.endsWith(GENUI_TOOL_PROMPT_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_TEXT.length) {
     return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_TEXT, start: GENUI_PROMPT_TOOL_START };
+  }
+
+  if (value.endsWith(GENUI_PROMPT_V31_TEXT) && startIndex === value.length - GENUI_PROMPT_V31_TEXT.length) {
+    return { kind: 'intact', suffix: GENUI_PROMPT_V31_TEXT, start: GENUI_PROMPT_V31_START };
+  }
+  if (value.endsWith(GENUI_TOOL_PROMPT_V31_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_V31_TEXT.length) {
+    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_V31_TEXT, start: GENUI_PROMPT_TOOL_V31_START };
   }
 
   // v3.0 完整说明兼容判断

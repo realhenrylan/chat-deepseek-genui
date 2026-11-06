@@ -111,6 +111,18 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
   const columnCount = table.columns.length + (selectable ? 1 : 0);
   const emptyText =
     table.emptyText ?? (model.rows.length === 0 ? '没有可显示的数据' : '没有符合筛选条件的数据');
+  // Only pin a first column whose nonmissing values are distinct, nonnumeric text.
+  // Column headings are deliberately not used to infer an identifier.
+  const firstColumn = table.columns[0];
+  const firstValues = firstColumn ? table.rows.map((row) => row.cells[firstColumn.key]).filter((value) => value != null && value !== '') : [];
+  const stickyIdentifier = !!firstColumn && firstColumn.numeric !== true && firstValues.length > 0
+    && firstValues.every((value) => typeof value === 'string' && value.trim() !== '' && Number.isNaN(Number(value)))
+    && new Set(firstValues).size === firstValues.length;
+  const numericColumn = (column: TableColumn) => {
+    if (column.numeric) return true;
+    const cells = model.rows.map((row) => row.views[column.key]).filter((cell) => cell && !cell.missing);
+    return cells.length > 0 && cells.every((cell) => cell.numeric !== undefined);
+  };
   const hasMissingCell = model.rows.some((row) =>
     Object.values(row.views).some((cell) => cell.missing === true),
   );
@@ -189,6 +201,7 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
           ) : null}
         </div>
       ) : null}
+      <p className="genui-table-hint">列较多时可横向滚动查看完整内容；聚焦表格后可使用方向键。</p>
       <div
         className="genui-table-scroll"
         role="region"
@@ -210,6 +223,7 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
                   <th
                     key={column.key}
                     scope="col"
+                    className={[stickyIdentifier && column === firstColumn ? 'genui-table-identifier' : '', numericColumn(column) ? 'genui-table-numeric' : ''].filter(Boolean).join(' ')}
                     aria-sort={
                       active ? (model.sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'
                     }
@@ -263,7 +277,7 @@ export function TableElementView({ element, evaluation, view, onViewChange }: {
                     return (
                       <td
                         key={column.key}
-                        className={column.numeric ? 'genui-table-numeric' : undefined}
+                        className={[stickyIdentifier && column === firstColumn ? 'genui-table-identifier' : '', numericColumn(column) ? 'genui-table-numeric' : ''].filter(Boolean).join(' ')}
                         title={cell?.missing ? '缺失值（不是 0）' : undefined}
                       >
                         {cell?.text ?? '—'}

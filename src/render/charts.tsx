@@ -25,15 +25,11 @@ import { formatNumber } from './format';
  */
 
 const PALETTE = [
-  '#3988ff',
-  '#2f9e6e',
-  '#d97706',
-  '#c2413a',
-  '#7c5cff',
-  '#0f8a8a',
-  '#b45309',
-  '#8b5cf6',
+  'var(--genui-chart-series-1)', 'var(--genui-chart-series-2)',
+  'var(--genui-chart-series-3)', 'var(--genui-chart-series-4)',
+  'var(--genui-chart-series-5)', 'var(--genui-chart-series-6)',
 ] as const;
+const LINE_DASHES = [undefined, '8 4', '2 4', '9 3 2 3', '12 4', '3 3 9 3'] as const;
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -98,6 +94,7 @@ function DataTable({ head, rows }: { head: string[]; rows: Array<Array<string>> 
   return (
     <details className="genui-chart-data">
       <summary>查看数据</summary>
+      <div className="genui-chart-data-scroll" role="region" aria-label="图表数据（可横向滚动）" tabIndex={0}>
       <table>
         <thead>
           <tr>{head.map((label) => <th key={label} scope="col">{label}</th>)}</tr>
@@ -112,6 +109,7 @@ function DataTable({ head, rows }: { head: string[]; rows: Array<Array<string>> 
           ))}
         </tbody>
       </table>
+      </div>
     </details>
   );
 }
@@ -129,6 +127,8 @@ function BarChart({ element, items }: {
   return (
     <div className="genui-chart-body">
       <WarningList messages={warnings} />
+      {items.length === 0 ? <p className="genui-chart-empty">暂无可绘制的数据。</p> : null}
+      {items.some((item) => item.value !== undefined && item.value < 0) ? <p className="genui-chart-note">柱长表示绝对值；负值以数值的负号标明。</p> : null}
       <div className="genui-bar-chart" role="list" aria-label={element.title ? `${element.title}（柱状图）` : '柱状图'}>
         {items.map((item) => {
           const width = item.value !== undefined && max > 0 ? (Math.abs(item.value) / max) * 100 : 0;
@@ -138,7 +138,7 @@ function BarChart({ element, items }: {
               <span className="genui-bar-track">
                 <span
                   className={`genui-bar-fill${item.value !== undefined && item.value < 0 ? ' genui-bar-negative' : ''}`}
-                  style={{ width: `${width}%`, background: item.color }}
+                  style={{ width: `${width}%`, background: seriesColor(undefined, 0) }}
                 />
               </span>
               <span className="genui-bar-value">
@@ -152,7 +152,7 @@ function BarChart({ element, items }: {
         <ul className="genui-legend" aria-label="图例">
           {items.map((item) => (
             <li key={item.label}>
-              <span className="genui-legend-swatch" style={{ background: item.color }} aria-hidden="true" />
+              <span className="genui-legend-swatch" style={{ background: seriesColor(undefined, 0) }} aria-hidden="true" />
               {item.label}
             </li>
           ))}
@@ -403,6 +403,7 @@ function LineChart({ element, evaluation }: {
           d={createSmoothPath(smoothSegments[index]!, scaleX, scaleY)}
           fill="none"
           stroke={item.color}
+          strokeDasharray={LINE_DASHES[index % LINE_DASHES.length]}
         />
       ) : (
         <polyline
@@ -410,6 +411,7 @@ function LineChart({ element, evaluation }: {
           points={item.points.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
           fill="none"
           stroke={item.color}
+          strokeDasharray={LINE_DASHES[index % LINE_DASHES.length]}
         />
       )}
       {smoothSegments[index] ? null : item.points.map((point) => (
@@ -424,6 +426,7 @@ function LineChart({ element, evaluation }: {
       {!drawable ? (
         <p className="genui-chart-empty">暂无可绘制的数据。</p>
       ) : (
+        <div className="genui-chart-plot-scroll" role="region" aria-label="折线图（可横向滚动）" tabIndex={0}>
         <svg
           className="genui-line-chart"
           viewBox={`0 0 ${width} ${height}`}
@@ -440,9 +443,6 @@ function LineChart({ element, evaluation }: {
           <line className="genui-chart-axis" x1={plot.left} x2={width - plot.right} y1={xAxisY} y2={xAxisY} />
           <text className="genui-chart-axis-label" x={plot.left} y={plot.top + innerHeight + 14}>{formatNumber(xMin)}</text>
           <text className="genui-chart-axis-label" x={width - plot.right} y={plot.top + innerHeight + 14} textAnchor="end">{formatNumber(xMax)}</text>
-          {element.xLabel ? (
-            <text className="genui-chart-axis-title" x={plot.left + innerWidth / 2} y={height - 8} textAnchor="middle">{element.xLabel}</text>
-          ) : null}
           {evaluated.series.map((item, index) => {
             if (item.kind === 'function') {
               if (item.runs.length === 0) return null;
@@ -459,6 +459,7 @@ function LineChart({ element, evaluation }: {
                           d={createSmoothPath(smooth, scaleX, scaleY)}
                           fill="none"
                           stroke={item.color}
+                          strokeDasharray={LINE_DASHES[index % LINE_DASHES.length]}
                         />
                       );
                     }
@@ -469,6 +470,7 @@ function LineChart({ element, evaluation }: {
                         points={run.map((point) => `${scaleX(point.x)},${scaleY(point.y)}`).join(' ')}
                         fill="none"
                         stroke={item.color}
+                        strokeDasharray={LINE_DASHES[index % LINE_DASHES.length]}
                       />
                     );
                   })}
@@ -478,18 +480,23 @@ function LineChart({ element, evaluation }: {
             return renderDiscrete(item, index);
           })}
         </svg>
+        </div>
       )}
-      {element.yLabel ? <p className="genui-chart-axis-title">{element.yLabel}</p> : null}
-      {element.legend !== false ? (
+      {element.xLabel ? <p className="genui-chart-axis-title">横轴：{element.xLabel}</p> : null}
+      {element.yLabel ? <p className="genui-chart-axis-title">纵轴：{element.yLabel}</p> : null}
+      {element.legend !== false || evaluated.series.length > 1 ? (
         <ul className="genui-legend" aria-label="图例">
-          {evaluated.series.map((item) => (
+          {evaluated.series.map((item, index) => (
             <li key={item.label}>
-              <span className="genui-legend-swatch" style={{ background: item.color }} aria-hidden="true" />
+              <svg className="genui-legend-line" viewBox="0 0 28 8" aria-hidden="true">
+                <line x1="0" y1="4" x2="28" y2="4" stroke={item.color} strokeWidth="2.5" strokeDasharray={LINE_DASHES[index % LINE_DASHES.length]} />
+              </svg>
               {item.label}
             </li>
           ))}
         </ul>
       ) : null}
+      <p className="genui-chart-note">图形较宽时可横向滚动查看坐标。数据表列出采样点；连线在采样点之间插值。</p>
       <DataTable
         head={['x', ...evaluated.series.map((item) => item.label)]}
         rows={Array.from(new Set(points.map((point) => point.x)))
@@ -566,7 +573,7 @@ function PieChart({ element, items }: {
                 key={slice.label}
                 d={arcPath(center, center, radius, slice.start, slice.end)}
                 fill={slice.color}
-                stroke="Canvas"
+                stroke="var(--genui-chart-slice-border)"
                 strokeWidth={1}
               />
             )

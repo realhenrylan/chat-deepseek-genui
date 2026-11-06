@@ -2,7 +2,7 @@
 
 创建日期：2026-11-03。
 
-状态：三轮设计讨论、颜色补充、技术方案和重叠检查已完成，六个 issues 已发布到 GitHub（#11–#16）；D02（issue #12）与 D03（issue #13）已实现并合入 main，D04（issue #14）已发布并验收，D05（issue #15）已实现（含复核 P2 修复）并完成本地验证、待发布验收，D01 的基础变量层随 #12 落地但完整验收仍待补齐，其余待开发。D01–D06 为本地系列编号。
+状态：三轮设计讨论、颜色补充、技术方案和重叠检查已完成，六个 issues 已发布到 GitHub（#11–#16）；D02（issue #12）与 D03（issue #13）已实现并合入 main，D04（issue #14）已发布并验收，D05（issue #15）已实现（含复核 P2 修复）并完成本地验证、待发布验收，D06（issue #16）已实现并完成本地自动化验证、待真实网页人工验收，D01 的基础变量层随 #12 落地但完整验收仍待补齐，其余待开发。D01–D06 为本地系列编号。
 
 依据：[美学调研](../../research/genui-aesthetics-2026-11-03.md)。观察基于源码和既有截图；设计结论已确认，技术规划以源码 `5f9c242` 为基线。
 
@@ -25,7 +25,7 @@
 | D03 | 优化卡片分组与窄聊天栏布局 | 留白分组、宽时并列窄时上下 | [#13](https://github.com/realhenrylan/chat-deepseek-genui/issues/13)，已实现（2026-11-06） |
 | D04 | 统一输入控件与交互状态的视觉表现 | 简洁统一、滑块值与标签同排 | [#14](https://github.com/realhenrylan/chat-deepseek-genui/issues/14)，已发布并验收（2026-11-06） |
 | D05 | 梳理卡片操作与辅助信息的呈现层级 | 继续讨论直接可见、辅助详情按需展开 | [#15](https://github.com/realhenrylan/chat-deepseek-genui/issues/15)，已实现（2026-11-06），待发布验收 |
-| D06 | 提升图表与对比表格的可读性和一致性 | 数据突出、细节收起、保留完整比较表 | [#16](https://github.com/realhenrylan/chat-deepseek-genui/issues/16)，待开发 |
+| D06 | 提升图表与对比表格的可读性和一致性 | 数据突出、细节收起、保留完整比较表 | [#16](https://github.com/realhenrylan/chat-deepseek-genui/issues/16)，已实现并完成本地自动化验证，待真实网页人工验收 |
 
 各 issue 的完整草稿见同目录 D01–D06 文件。
 

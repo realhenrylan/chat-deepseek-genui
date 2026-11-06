@@ -88,6 +88,25 @@ const SORT_VALID_RAW = JSON.stringify({
   ],
 });
 const SORT_INVALID_RAW = SORT_VALID_RAW.replace('"dir":"asc"', '"direction":"asc"');
+const ISSUE16_RAW = JSON.stringify({
+  type: 'genui', version: 3, title: '图表表格验收',
+  state: [{ id: 'amount', label: '数值', kind: 'number', initial: 10, min: 0, max: 100, step: 1 }],
+  derived: [],
+  elements: [
+    { kind: 'slider', bind: 'amount' },
+    { kind: 'chart', chartType: 'bar', title: '柱状', items: [{ label: '当前', value: { op: 'state', id: 'amount' } }, { label: '负数', value: { op: 'const', value: -20 } }] },
+    { kind: 'chart', chartType: 'pie', title: '占比', items: [{ label: '当前', value: { op: 'state', id: 'amount' } }, { label: '其他', value: { op: 'const', value: 20 } }, { label: '零', value: { op: 'const', value: 0 } }] },
+    { kind: 'chart', chartType: 'line', title: '趋势', xLabel: '周期', yLabel: '金额（元）', series: [
+      { label: '现值', points: [{ x: 0, y: { op: 'state', id: 'amount' } }, { x: 1, y: { op: 'const', value: 20 } }] },
+      { label: '历史', color: '#c2413a', points: [{ x: 0, y: { op: 'const', value: 5 } }, { x: 1, y: { op: 'const', value: 15 } }] },
+    ] },
+    { kind: 'table', title: '候选比较', sortable: true, selectable: true,
+      columns: [{ key: 'id', label: '候选名称' }, { key: 'value', label: '金额', numeric: true, unit: '元' }, { key: 'note', label: '说明' }, { key: 'extra', label: '完整资料' }],
+      rows: [{ cells: { id: '非常长的中文名称用于检查横向滚动时固定列仍完整可读', value: { op: 'state', id: 'amount' }, note: '甲', extra: '完整资料甲' } },
+        { cells: { id: '候选乙', value: 25, note: '乙', extra: '完整资料乙' } }] },
+    { kind: 'table', title: '纯数值', columns: [{ key: 'x', label: 'X', numeric: true }, { key: 'y', label: 'Y', numeric: true }], rows: [{ cells: { x: 1, y: 2 } }] },
+  ],
+});
 const RESPONSIVE_LAYOUT_RAW = JSON.stringify({
   type: 'genui',
   version: 5,
@@ -676,6 +695,91 @@ function expectToggleInsideViewport(bounds: ToggleBounds): void {
 }
 
 for (const { label, channel } of CHANNELS) {
+  test(`Issue 16 · ${label} 图表与比较表主题、宽度及状态`, async () => {
+    test.skip(REAL_SITE, '使用本地模拟页');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    try {
+      await context.addInitScript((raw) => {
+        const insert = () => {
+          const message = document.createElement('div');
+          message.id = 'issue16-message';
+          message.className = 'ds-assistant-message-main-content';
+          message.setAttribute('data-virtual-list-item-key', 'issue16');
+          const block = document.createElement('div');
+          block.className = 'md-code-block md-code-block-light';
+          block.innerHTML = '<div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>';
+          const pre = document.createElement('pre');
+          const span = document.createElement('span');
+          span.textContent = raw;
+          pre.append(span); block.append(pre); message.append(block); document.body.append(message);
+        };
+        if (document.body) insert();
+        else new MutationObserver((_, observer) => { if (document.body) { observer.disconnect(); insert(); } }).observe(document, { childList: true, subtree: true });
+      }, ISSUE16_RAW);
+      await gotoAndAwaitMarker(page);
+      const card = page.locator('#issue16-message .genui-card-host');
+      await expect(card).toHaveCount(1);
+      const tables = card.locator('.genui-table');
+      await expect(tables).toHaveCount(2);
+      await expect(tables.nth(1).locator('.genui-table-identifier')).toHaveCount(0);
+      await expect(card.locator('.genui-line-path')).toHaveCount(2);
+      await expect(card.locator('.genui-line-path').nth(1)).toHaveAttribute('stroke', '#c2413a');
+      await expect(card.locator('.genui-line-path').nth(1)).toHaveAttribute('stroke-dasharray', '8 4');
+      await card.locator('.genui-chart-data summary').nth(2).click();
+      await expect(card.locator('.genui-chart-data table').nth(2)).toContainText('10');
+      await card.locator('input[type="range"]').focus();
+      await card.locator('input[type="range"]').press('ArrowRight');
+      await expect(card.locator('.genui-chart-data table').nth(2)).toContainText('11');
+      await expect(card.locator('.genui-bar-value').first()).toHaveText('11');
+      await expect(tables.first()).toContainText('11 元');
+      await card.locator('.genui-table-filter input').fill('候选');
+      await tables.first().getByRole('button', { name: /金额/ }).click();
+      await card.locator('.genui-table-select-input').first().check();
+      for (const width of [360, 560, 720]) {
+        for (const theme of ['light', 'dark']) {
+          const metrics = await page.evaluate(({ width, theme }) => {
+            const message = document.querySelector<HTMLElement>('#issue16-message')!;
+            message.style.width = `${width}px`;
+            const shadow = message.querySelector<HTMLElement>('.genui-card-host')!.shadowRoot!;
+            shadow.querySelector('.genui-card-root')!.setAttribute('data-site-theme', theme);
+            const card = shadow.querySelector<HTMLElement>('.genui-card')!;
+            const scroll = shadow.querySelector<HTMLElement>('.genui-table-scroll')!;
+            const sticky = scroll.querySelector<HTMLElement>('tbody .genui-table-identifier')!;
+            scroll.scrollLeft = scroll.scrollWidth;
+            return { overflow: card.scrollWidth > card.clientWidth + 1, stickyWidth: sticky.getBoundingClientRect().width, viewport: scroll.clientWidth, scrollLeft: scroll.scrollLeft, left: sticky.getBoundingClientRect().left - scroll.getBoundingClientRect().left, position: getComputedStyle(sticky).position, background: getComputedStyle(sticky).backgroundColor, line: getComputedStyle(shadow.querySelector('.genui-line-path')!).stroke, bar: getComputedStyle(shadow.querySelector('.genui-bar-fill')!).backgroundColor, pie: getComputedStyle(shadow.querySelector('.genui-pie-chart path')!).fill };
+          }, { width, theme });
+          expect(metrics.overflow).toBe(false);
+          expect(metrics.position).toBe('sticky');
+          if (width === 360) expect(metrics.scrollLeft).toBeGreaterThan(0);
+          if (metrics.scrollLeft > 0) expect(metrics.left).toBeLessThan(3);
+          expect(metrics.stickyWidth).toBeLessThan(metrics.viewport * 0.5);
+          expect(metrics.background).not.toBe('rgba(0, 0, 0, 0)');
+          expect(metrics.line).toBe(theme === 'light' ? 'rgb(77, 107, 254)' : 'rgb(124, 154, 255)');
+          expect(metrics.bar).toBe(metrics.line);
+          expect(metrics.pie).toBe(metrics.line);
+          await expect(card.locator('.genui-table-filter input')).toHaveValue('候选');
+          await expect(card.locator('.genui-table-select-input:checked')).toHaveCount(1);
+          await expect(tables.first().locator('th[aria-sort="ascending"]')).toHaveCount(1);
+        }
+      }
+      await page.evaluate(() => {
+        document.body.style.zoom = '2';
+        document.querySelector<HTMLElement>('#issue16-message')!.style.width = '360px';
+      });
+      await expect(tables.first().locator('th')).toHaveCount(5);
+      await expect(tables.first()).toContainText('完整资料乙');
+      await expect(card.locator('.genui-table-filter input')).toHaveValue('候选');
+      const scroll = card.locator('.genui-table-scroll').first();
+      await scroll.evaluate((element) => { element.scrollLeft = 0; });
+      await scroll.focus();
+      await scroll.press('ArrowRight');
+      await expect(scroll).toBeFocused();
+      await expect.poll(() => scroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
   test(`阶段 1 · ${label} 加载构建目录并注入内容脚本`, async () => {
     const { context, page, profileDir } = await launchWithExtension(channel);
     const buckets = watchErrors(page);

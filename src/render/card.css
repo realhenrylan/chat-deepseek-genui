@@ -26,7 +26,18 @@
   --genui-color-border-subtle: rgba(127, 127, 127, 0.25);
   --genui-color-border: rgba(127, 127, 127, 0.35);
   --genui-color-border-strong: rgba(127, 127, 127, 0.45);
-  --genui-color-chart-grid: rgba(127, 127, 127, 0.28);
+  --genui-color-chart-grid: rgba(90, 97, 107, 0.16);
+  --genui-chart-series-1: #4d6bfe;
+  --genui-chart-series-2: #2746a5;
+  --genui-chart-series-3: #6689bc;
+  --genui-chart-series-4: #606b79;
+  --genui-chart-series-5: #92a9c6;
+  --genui-chart-series-6: #9299a3;
+  --genui-chart-slice-border: #ffffff;
+  --genui-table-sticky: #f6f6f6;
+  --genui-table-sticky-head: #e9e9e9;
+  --genui-table-sticky-selected: #e6eaff;
+  --genui-table-sticky-compare: #f0f2ff;
   --genui-color-chart-axis: rgba(127, 127, 127, 0.55);
   --genui-color-accent: #4d6bfe;
   --genui-color-accent-strong: #3d54d9;
@@ -72,7 +83,18 @@
   --genui-color-border-subtle: rgba(255, 255, 255, 0.18);
   --genui-color-border: rgba(255, 255, 255, 0.18);
   --genui-color-border-strong: rgba(255, 255, 255, 0.26);
-  --genui-color-chart-grid: rgba(255, 255, 255, 0.2);
+  --genui-color-chart-grid: rgba(255, 255, 255, 0.12);
+  --genui-chart-series-1: #7c9aff;
+  --genui-chart-series-2: #b5c6ff;
+  --genui-chart-series-3: #709ac8;
+  --genui-chart-series-4: #a6adb7;
+  --genui-chart-series-5: #4c75b5;
+  --genui-chart-series-6: #77808d;
+  --genui-chart-slice-border: #24262c;
+  --genui-table-sticky: #292b31;
+  --genui-table-sticky-head: #34363c;
+  --genui-table-sticky-selected: #343f65;
+  --genui-table-sticky-compare: #303448;
   --genui-color-chart-axis: rgba(255, 255, 255, 0.42);
   --genui-color-accent: #7c9aff;
   --genui-color-accent-strong: #a9bbff;
@@ -766,9 +788,7 @@
 }
 
 .genui-bar-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .genui-bar-track {
@@ -817,15 +837,14 @@
 
 .genui-chart-axis-label {
   fill: currentColor;
-  font-size: 10px;
-  opacity: 0.75;
+  font-size: 12px;
 }
 
 .genui-chart-axis-title {
   margin: 0;
   fill: currentColor;
-  font-size: 11px;
-  opacity: 0.85;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .genui-line-path {
@@ -869,8 +888,18 @@
   opacity: 0.8;
 }
 
+.genui-chart-data-scroll, .genui-chart-plot-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.genui-chart-plot-scroll .genui-line-chart { min-width: 360px; }
+.genui-chart-note { margin: 0; color: var(--genui-color-text-muted); font-size: 12px; }
+.genui-legend-line { width: 28px; height: 8px; flex: none; }
+
 .genui-chart-data table {
   width: 100%;
+  min-width: max-content;
   margin-top: 6px;
   border-collapse: collapse;
   font-size: 12px;
@@ -886,6 +915,7 @@
 /* ---------- v3 表格 ---------- */
 
 .genui-table-block {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -912,6 +942,7 @@
 }
 
 .genui-table-hint {
+  margin: 0;
   font-size: 12px;
   opacity: 0.7;
 }
@@ -925,9 +956,9 @@
 
 .genui-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 13px;
-  white-space: nowrap;
 }
 
 .genui-table-caption {
@@ -942,6 +973,8 @@
   padding: 6px 9px;
   border-bottom: 1px solid var(--genui-color-border-subtle);
   text-align: left;
+  min-width: 7rem;
+  overflow-wrap: anywhere;
 }
 
 .genui-table thead th {
@@ -953,10 +986,28 @@
   border-bottom: none;
 }
 
-.genui-table-numeric {
+.genui-table th.genui-table-numeric,
+.genui-table td.genui-table-numeric {
   text-align: right;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+.genui-table .genui-table-identifier {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 0;
+  width: min(12rem, 30cqw);
+  max-width: min(12rem, 30cqw);
+  background: var(--genui-table-sticky);
+  box-shadow: 1px 0 var(--genui-color-border);
+}
+.genui-table thead .genui-table-identifier { z-index: 2; background: var(--genui-table-sticky-head); }
+.genui-table .genui-table-selected .genui-table-identifier { background: var(--genui-table-sticky-selected); }
+.genui-table .genui-table-compare-row .genui-table-identifier { background: var(--genui-table-sticky-compare); }
+.genui-table .genui-table-select { min-width: 34px; }
+.genui-table-numeric .genui-table-sort { justify-content: flex-end; }
 
 .genui-table-sort {
   display: inline-flex;
@@ -1047,6 +1098,8 @@
   border: 0;
 }
 
+.genui-chart-plot-scroll:focus-visible,
+.genui-chart-data-scroll:focus-visible,
 .genui-table-scroll:focus-visible,
 .genui-table-filter input:focus-visible,
 .genui-table-sort:focus-visible,

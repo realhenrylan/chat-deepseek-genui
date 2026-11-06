@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   GENUI_PLAIN_PROMPT_NOTE,
@@ -7,6 +8,8 @@ import {
   GENUI_PROMPT_TOOL_START,
   GENUI_PROMPT_VERSION,
   GENUI_TOOL_PROMPT_TEXT,
+  GENUI_PROMPT_V31_TEXT,
+  GENUI_TOOL_PROMPT_V31_TEXT,
   GENUI_PROMPT_V30_START,
   GENUI_PROMPT_TOOL_V30_START,
   GENUI_PROMPT_V30_TEXT,
@@ -26,8 +29,19 @@ import { parseGenui } from '../../src/protocol/validate';
 const USER_DRAFT = '帮我算一下每月能存多少钱';
 
 describe('默认增强提示词', () => {
+  it('保留旧版提示词的原文，避免把未编辑草稿当成用户修改', () => {
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+    expect(hash(GENUI_PROMPT_V31_TEXT)).toBe('668c3181f9a238768f2d2ed807b117c97e809727979cb7f8916b9aa27b132bb3');
+    expect(hash(GENUI_TOOL_PROMPT_V31_TEXT)).toBe('c818f37eadcbf63a18190d0286f315bedfcca11cf51a4d4b4716ba81ad630d63');
+    for (const text of [GENUI_PROMPT_V31_TEXT, GENUI_TOOL_PROMPT_V31_TEXT]) {
+      expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${text}`).kind).toBe('intact');
+      expect(appendGenuiPrompt(`${USER_DRAFT}\n\n${text}`).inserted).toBe(false);
+      expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${text}修改`).kind).toBe('edited');
+    }
+  });
+
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe('3.1');
+    expect(GENUI_PROMPT_VERSION).toBe('3.2');
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
