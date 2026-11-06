@@ -738,6 +738,15 @@ for (const { label, channel } of CHANNELS) {
         ).toBeNull();
       }
 
+      // 原始 JSON 入口收在默认收起的「界面详情」里：先展开详情，再切换原块与文案。
+      const disclosure = hosts.nth(0).locator('summary.genui-card-details-summary');
+      const detailsPanel = hosts.nth(0).locator('details.genui-card-details');
+      await expect(disclosure).toHaveText('界面详情');
+      await expect(detailsPanel).not.toHaveAttribute('open', '');
+      await expect(hosts.nth(0).locator('button.genui-card-toggle')).toBeHidden();
+      await disclosure.click();
+      await expect(detailsPanel).toHaveAttribute('open', '');
+
       // 「查看原始 JSON」切换：原块恢复可见、卡片保持可见（入口可再次收起），文案互换。
       const toggle = hosts.nth(0).locator('button.genui-card-toggle');
       await expect(toggle).toHaveText('查看原始 JSON');
@@ -833,7 +842,12 @@ for (const { label, channel } of CHANNELS) {
       await expect(page).toHaveURL(/#e2e-link-target$/);
       await expect(page.locator('#e2e-plain')).toContainText('普通 Markdown 仍是原生内容');
 
-      // 查看原文后，代码块原有复制控件仍可收到事件并复制原始文本。
+      // 查看原文前先展开「界面详情」，代码块原有复制控件仍可收到事件并复制原始文本。
+      await page
+        .locator('.genui-card-host')
+        .first()
+        .locator('summary.genui-card-details-summary')
+        .click();
       const rawToggle = page.locator('.genui-card-host').first().locator('button.genui-card-toggle');
       await rawToggle.click();
       const copyControl = page.locator('#e2e-block-1-copy');
@@ -1345,6 +1359,14 @@ for (const { label, channel } of CHANNELS) {
       await expect(slider).toHaveValue('0');
       await expect(card.locator('.genui-value-output').nth(1)).toHaveText('-40 元');
 
+      // —— 页脚层级：「继续讨论」直接可见，原始 JSON 与说明收进默认收起的「界面详情」。
+      await expect(card.locator('.genui-card-actions')).toBeVisible();
+      await expect(card.locator('button.genui-card-followup')).toBeVisible();
+      await expect(card.locator('details.genui-card-details')).not.toHaveAttribute('open', '');
+      await expect(card.locator('button.genui-card-toggle')).toBeHidden();
+      await card.locator('summary.genui-card-details-summary').click();
+      await expect(card.locator('details.genui-card-details')).toHaveAttribute('open', '');
+      await expect(card.locator('button.genui-card-toggle')).toBeVisible();
       // —— 表格筛选与选中：业务状态进入继续讨论摘要（issue #5 的真实流程）。
       const input = page.locator('#e2e-input');
       await expect(input).toHaveValue('');
@@ -2086,12 +2108,15 @@ for (const { label, channel } of CHANNELS) {
       });
       await page.waitForTimeout(50);
 
-      // (4) 展开图表数据详情与原始 JSON 视图
+      // (4) 展开图表数据详情、界面详情与原始 JSON 视图
       await page.evaluate(() => {
         const host = document.querySelector('#e2e-layout-message .genui-card-host');
         const shadow = host?.shadowRoot;
         const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
         if (chartDetails) chartDetails.open = true;
+
+        const uiDetails = shadow?.querySelector('details.genui-card-details') as HTMLDetailsElement;
+        if (uiDetails) uiDetails.open = true;
 
         const rawBtn = shadow?.querySelector('.genui-card-toggle') as HTMLButtonElement;
         if (rawBtn && rawBtn.textContent?.includes('查看原始 JSON')) {
@@ -2110,6 +2135,8 @@ for (const { label, channel } of CHANNELS) {
         const numInput = shadow?.querySelector('input.genui-number-input') as HTMLInputElement;
         const errorEl = shadow?.querySelector('.genui-input-error');
         const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
+        const uiDetails = shadow?.querySelector('details.genui-card-details') as HTMLDetailsElement;
+        const actions = shadow?.querySelector('.genui-card-actions');
         const toggleBtn = shadow?.querySelector('.genui-card-toggle');
         return {
           filter: filterInput?.value,
@@ -2118,7 +2145,8 @@ for (const { label, channel } of CHANNELS) {
           numValue: numInput?.value,
           hasError: !!errorEl,
           chartDetailsOpen: chartDetails?.open,
-          
+          uiDetailsOpen: uiDetails?.open,
+          actionFirstClass: (actions?.firstElementChild as HTMLElement | null)?.className ?? null,
           toggleBtnText: toggleBtn?.textContent?.trim(),
         };
       });
@@ -2129,6 +2157,8 @@ for (const { label, channel } of CHANNELS) {
       expect(stateAt960.hasError).toBe(true);
       expect(stateAt960.chartDetailsOpen).toBe(true);
       
+      expect(stateAt960.uiDetailsOpen).toBe(true);
+      expect(stateAt960.actionFirstClass).toBe('genui-card-followup');
       expect(stateAt960.toggleBtnText).toBe('收起原始 JSON');
 
       // (5) 触发宽度切换：从 960px 缩窄至 360px（触发 columns 单列化）
@@ -2144,6 +2174,8 @@ for (const { label, channel } of CHANNELS) {
         const numInput = shadow?.querySelector('input.genui-number-input') as HTMLInputElement;
         const errorEl = shadow?.querySelector('.genui-input-error');
         const chartDetails = shadow?.querySelector('details.genui-chart-data') as HTMLDetailsElement;
+        const uiDetails = shadow?.querySelector('details.genui-card-details') as HTMLDetailsElement;
+        const actions = shadow?.querySelector('.genui-card-actions');
         const toggleBtn = shadow?.querySelector('.genui-card-toggle');
         const cardEl = shadow?.querySelector('.genui-card') as HTMLElement;
         return {
@@ -2153,6 +2185,8 @@ for (const { label, channel } of CHANNELS) {
           numValue: numInput?.value,
           hasError: !!errorEl,
           chartDetailsOpen: chartDetails?.open,
+          uiDetailsOpen: uiDetails?.open,
+          actionFirstClass: (actions?.firstElementChild as HTMLElement | null)?.className ?? null,
           toggleBtnText: toggleBtn?.textContent?.trim(),
           isCardOverflowing: cardEl.scrollWidth > cardEl.clientWidth + 1,
         };
@@ -2164,6 +2198,8 @@ for (const { label, channel } of CHANNELS) {
       expect(stateAt360.hasError).toBe(true);
       expect(stateAt360.chartDetailsOpen).toBe(true);
       
+      expect(stateAt360.uiDetailsOpen).toBe(true);
+      expect(stateAt360.actionFirstClass).toBe('genui-card-followup');
       expect(stateAt360.toggleBtnText).toBe('收起原始 JSON');
       expect(stateAt360.isCardOverflowing).toBe(false);
 

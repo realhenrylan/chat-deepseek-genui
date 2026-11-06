@@ -109,14 +109,15 @@
   flex: 0 0 auto;
 }
 
+/* issue #15：品牌已由页头图标承担，重复的 GenUI 文字标记只保留低权重身份提示。 */
 .genui-card-badge {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  border: 1px solid var(--genui-color-border-strong);
-  border-radius: 999px;
-  padding: 1px 8px;
-  opacity: 0.75;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--genui-color-text-muted);
+  opacity: 0.7;
+  padding: 0;
+  border: 0;
 }
 
 .genui-card-title {
@@ -152,25 +153,55 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 12px;
+  gap: 8px 12px;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--genui-color-border-subtle);
 }
 
-.genui-card-toggle {
+/* issue #15：直接可见的操作排成一组，主操作在前；窄栏换行时顺序不变。 */
+.genui-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* 「继续讨论」是页脚唯一的主操作：浅主色底 + 主色边界，仍留在轻边界基调内。 */
+.genui-card-followup {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--genui-color-accent-border);
+  border-radius: 8px;
+  background: var(--genui-color-accent-soft);
+  color: var(--genui-color-accent-strong);
+  padding: 3px 12px;
+}
+
+.genui-card-followup:hover {
+  background: var(--genui-color-accent-soft-strong);
+}
+
+/* 重置保持可访问，但改为轻量文字按钮：无边框、次要文字色。 */
+.genui-card-reset {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  border: 1px solid var(--genui-color-border-strong);
+  border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: inherit;
-  padding: 3px 10px;
+  color: var(--genui-color-text-muted);
+  padding: 3px 8px;
 }
 
-.genui-card-reset,
+.genui-card-reset:hover {
+  background: var(--genui-color-surface-hover);
+  color: var(--genui-color-text);
+}
+
+.genui-card-toggle,
 .genui-card-save,
 .genui-card-clear-saved {
   font: inherit;
@@ -183,7 +214,7 @@
   padding: 3px 10px;
 }
 
-.genui-card-reset:hover,
+.genui-card-toggle:hover,
 .genui-card-save:hover,
 .genui-card-clear-saved:hover {
   background: var(--genui-color-surface-hover);
@@ -199,6 +230,7 @@
 .genui-card-reset:focus-visible,
 .genui-card-save:focus-visible,
 .genui-card-clear-saved:focus-visible,
+.genui-card-details-summary:focus-visible,
 .genui-card-expand:focus-visible,
 .genui-card-followup:focus-visible,
 .genui-number-input:focus-visible,
@@ -206,6 +238,35 @@
 .genui-slider:focus-visible {
   outline: 2px solid var(--genui-color-accent);
   outline-offset: 2px;
+}
+
+/* issue #15：插件元信息与原始内容收进原生 details/summary，默认收起、键盘可展开。 */
+.genui-card-details {
+  margin-left: auto;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--genui-color-text-muted);
+}
+
+.genui-card-details-summary {
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.genui-card-details-summary:hover {
+  background: var(--genui-color-surface-hover);
+  color: var(--genui-color-text);
+}
+
+.genui-card-details-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  text-align: left;
 }
 
 /* issue #2 收尾：恢复提示只说明来源与「不会自动保存」，不阻挡后续调整。 */
@@ -473,8 +534,11 @@
   font-size: var(--genui-type-aux);
 }
 
+/* issue #15：技术说明已收进「界面详情」，不再抢占页脚首行的位置。 */
 .genui-card-note {
-  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.65;
+  text-align: left;
 }
 
 @media (max-width: 480px) {
@@ -486,21 +550,13 @@
     gap: 8px;
   }
 
-  .genui-card-note {
-    flex-basis: 100%;
+  .genui-card-details {
     margin-left: 0;
-    text-align: left;
   }
-}
 
-.genui-card-toggle:hover {
-  background: var(--genui-color-surface-hover);
-}
-
-.genui-card-note {
-  font-size: 12px;
-  opacity: 0.65;
-  text-align: right;
+  .genui-card-details-summary {
+    padding-left: 0;
+  }
 }
 
 /* ---------- v3 组合元素：条件说明与布局 ---------- */
@@ -1024,21 +1080,6 @@
 }
 
 .genui-card-expand:hover {
-  background: var(--genui-color-surface-hover);
-}
-
-.genui-card-followup {
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  border: 1px solid var(--genui-color-border-strong);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  padding: 3px 10px;
-}
-
-.genui-card-followup:hover {
   background: var(--genui-color-surface-hover);
 }
 

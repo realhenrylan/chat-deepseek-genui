@@ -561,40 +561,41 @@ export function Card({
         </section>
       ) : null}
       <footer className="genui-card-footer" hidden={!expanded}>
-        {doc.version === 1 ? null : (
-          <button type="button" className="genui-card-reset" onClick={handleReset}>
-            重置当前界面
-          </button>
-        )}
-        {onSaveState ? (
-          <button type="button" className="genui-card-save" disabled={saveBusy} onClick={handleSave}>
-            {savedTime === null ? '保存当前界面' : '更新已保存的设置'}
-          </button>
-        ) : null}
-        {onClearSavedState && savedTime !== null ? (
-          <button
-            type="button"
-            className="genui-card-clear-saved"
-            disabled={saveBusy}
-            onClick={handleClearSaved}
-          >
-            清除保存
-          </button>
-        ) : null}
-        {doc.version === 1 ? null : (
-          <button
-            type="button"
-            className="genui-card-followup"
-            aria-expanded={preview !== null}
-            aria-controls={followupPanelId}
-            onClick={handleContinue}
-          >
-            继续讨论
-          </button>
-        )}
-        <button type="button" className="genui-card-toggle" onClick={handleToggle}>
-          {showRaw ? '收起原始 JSON' : '查看原始 JSON'}
-        </button>
+        {/* issue #15：常用操作留在直接可见的操作组里，「继续讨论」在前、权重最高；
+            重置保持可访问但降低视觉权重；原始 JSON 与插件技术说明收进详情。 */}
+        <div className="genui-card-actions" role="group" aria-label="界面操作">
+          {doc.version === 1 ? null : (
+            <button
+              type="button"
+              className="genui-card-followup"
+              aria-expanded={preview !== null}
+              aria-controls={followupPanelId}
+              onClick={handleContinue}
+            >
+              继续讨论
+            </button>
+          )}
+          {doc.version === 1 ? null : (
+            <button type="button" className="genui-card-reset" onClick={handleReset}>
+              重置当前界面
+            </button>
+          )}
+          {onSaveState ? (
+            <button type="button" className="genui-card-save" disabled={saveBusy} onClick={handleSave}>
+              {savedTime === null ? '保存当前界面' : '更新已保存的设置'}
+            </button>
+          ) : null}
+          {onClearSavedState && savedTime !== null ? (
+            <button
+              type="button"
+              className="genui-card-clear-saved"
+              disabled={saveBusy}
+              onClick={handleClearSaved}
+            >
+              清除保存
+            </button>
+          ) : null}
+        </div>
         {followupFeedback ? (
           <p className="genui-card-followup-feedback" role="status">
             {followupFeedback}
@@ -605,9 +606,17 @@ export function Card({
             {saveFeedback}
           </p>
         ) : null}
-        <span className="genui-card-note">
-          透明增强 · 纯文本渲染 · 不执行脚本 · 原始 {rawJson.length} 字符
-        </span>
+        <details className="genui-card-details">
+          <summary className="genui-card-details-summary">界面详情</summary>
+          <div className="genui-card-details-body">
+            <button type="button" className="genui-card-toggle" onClick={handleToggle}>
+              {showRaw ? '收起原始 JSON' : '查看原始 JSON'}
+            </button>
+            <span className="genui-card-note">
+              透明增强 · 纯文本渲染 · 不执行脚本 · 原始 {rawJson.length} 字符
+            </span>
+          </div>
+        </details>
       </footer>
     </section>
   );
