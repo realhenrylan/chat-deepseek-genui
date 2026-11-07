@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "DeepSeek GenUI",
+    "description": "Extension name shown in the browser and on the store listing; the brand stays the same in every locale."
+  },
+  "extensionDescription": {
+    "message": "Adds closable, declarative interactive cards, charts, tables and local calculations to DeepSeek web answers.",
+    "description": "Short description shown in the browser and on the store listing; at most 132 characters."
+  }
+}

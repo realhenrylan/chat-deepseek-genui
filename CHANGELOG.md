@@ -51,6 +51,8 @@
 
 ### Added
 
+- **Edge Add-ons 商店国际化（i18n）**：`public/manifest.json` 的 `name` / `description` 改为 `__MSG_extensionName__` / `__MSG_extensionDescription__`，新增 `default_locale: "en"` 与 `public/_locales/en|zh_CN/messages.json`。Partner Center 依据这些 `__MSG_` 引用识别包内语言，商店列表可同时提供 English (United States) 与中文（简体）；页面内 UI 语言保持不变。`scripts/check-dist.mjs` 与 `tests/unit/manifest-i18n.test.ts` 会校验各语言均提供被引用键的非空译文。ZIP 文件数 7 → 9（新增两个 `messages.json`），扩展版本提升至 `0.2.1`（商店重新上传需高于已上传版本）。
+
 - 卡片操作与辅助信息分层（issue #15）：「继续讨论」保留为页脚唯一直接可见的主操作，使用主色浅底、主色边界与加深文字；「重置当前界面」仍在同一操作组内但改为无边框的次要文字按钮；原始 JSON 切换与“透明增强 · 纯文本渲染 · 不执行脚本 · 原始 N 字符”说明移入原生 details/summary「界面详情」，默认收起，展开后入口与说明保持可访问。页脚操作组带 `role="group"` 与“界面操作”名称，反馈继续就近以 `role="status"` 呈现且不进入详情；卡片收起时页脚整体隐藏、详情内的控件不进入 Tab 顺序，重新展开保留已调整参数与详情开合状态。首次打开“继续讨论”时焦点主动进入摘要文本域，取消或成功带入后回到触发按钮，避免下一次 Tab 越过预览落到“重置”。重复的 GenUI 文字标记降为次要文字色并去掉描边胶囊。复用既有 `onContinue`、`buildContinueSummary`、`onToggleRaw` 与重置逻辑，不重写摘要、不自动发送、不新增确认弹窗。
 - 卡片分组与局部容器自适应布局（issue #13）：
   - `src/render/composite.tsx`：为 `columns` 外层增加 `.genui-columns-container` 局部查询容器节点，内部保持 `<div className="genui-columns" data-columns={...}>`，元素递归路径 `path`、`key` 及表格状态键保持零破坏；

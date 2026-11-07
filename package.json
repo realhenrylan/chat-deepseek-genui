@@ -1,6 +1,6 @@
 {
   "name": "chat-deepseek-genui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "为 DeepSeek 网页回答提供交互卡片、本地计算、图表与表格的浏览器扩展。",
   "scripts": {
     "typecheck": "tsc --noEmit",

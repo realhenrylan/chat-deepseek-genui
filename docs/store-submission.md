@@ -1,6 +1,6 @@
-# Edge Add-ons 商店提交准备与状态（2026-11-03）
+# Edge Add-ons 商店提交准备与状态（2026-11-07）
 
-**当前状态：0.1.1 本地分发包已就绪，商店未提交。** Logo 已接入 manifest、DeepSeek 页面开关、交互卡片和 README；当前源码已通过完整检查与 Edge/Chrome 默认端到端验证，ZIP 包含全部 Logo 与图标资源。商店方形 Logo 源素材已定稿，隐私政策公网 URL 待确认；提交动作依赖用户的 Partner Center 账号（个人或组织），由用户另行执行。提交后请在本文件追加「审核状态」小节（提交日期、审核结论、申诉记录）。
+**当前状态：0.2.1 本地分发包（含 en / zh_CN 商店国际化）已就绪，商店未提交。** Logo 已接入 manifest、DeepSeek 页面开关、交互卡片和 README；当前源码已通过完整检查与 Edge/Chrome 默认端到端验证，ZIP 包含全部 Logo、图标与 `_locales` 语言文件。商店方形 Logo 源素材已定稿，隐私政策公网 URL 待确认；提交动作依赖用户的 Partner Center 账号（个人或组织），由用户另行执行。提交后请在本文件追加「审核状态」小节（提交日期、审核结论、申诉记录）。
 
 依据：Microsoft Edge Add-ons《Developer policies》，官方页面最后更新 **2026-07-24**（learn.microsoft.com/en-us/legal/microsoft-edge/extensions/developer-policies，2026-11-03 经 browser-skill 抓取核对）。
 
@@ -9,7 +9,7 @@
 | 政策条目 | 要求摘要 | 本项目状态 | 证据 |
 | --- | --- | --- | --- |
 | Principles | 独特价值、不误导 | ✔ 声明式卡片渲染是独立价值；README/说明明确「非官方、与 DeepSeek 无关、依赖站点结构」 | README 首段；docs/privacy.md |
-| 1.1.1 单一目的 | 窄功能单一目的 | ✔ 单一目的：为 DeepSeek 网页回答提供可关闭的声明式交互界面增强（默认增强是该能力的引导部分，不是独立目的） | manifest.json description；README |
+| 1.1.1 单一目的 | 窄功能单一目的 | ✔ 单一目的：为 DeepSeek 网页回答提供可关闭的声明式交互界面增强（默认增强是该能力的引导部分，不是独立目的） | manifest.json（`__MSG_extensionDescription__` → `_locales/zh_CN/messages.json`）；README |
 | 1.1.2 准确描述 | 功能/限制/价值主张清楚，不冒充 | ✔ 明确依赖站点页面结构、可能改版失效；名称使用仅指被增强网站，带「非官方」声明 | README 权限说明；docs/prompt.md |
 | 1.1.3 完全可用 | 无阻断、坏链接 | ✔ 全功能可用 | 本阶段 e2e 与人工验收 |
 | 1.1.4 搜索词 | ≤7 个相关词 | ✔ 素材给出 7 词上限草稿 | 本文素材清单 |
@@ -35,20 +35,36 @@
 ## 上架素材（复制到 Partner Center 使用）
 
 - **显示名称**：DeepSeek GenUI（非官方）
-- **简短描述（manifest description 字段）**：为 DeepSeek 网页回答提供可关闭的声明式交互界面增强。（现值）
+- **简短描述（manifest `extensionDescription`，来自 `_locales/*/messages.json`）**：
+  - English：Adds closable, declarative interactive cards, charts, tables and local calculations to DeepSeek web answers.
+  - 中文：为 DeepSeek 网页回答提供可关闭的声明式交互界面增强。
 - **长描述草案**：
   > 为 chat.deepseek.com 的 AI 回答增加可交互界面：识别回答中的 `genui` 代码块并渲染为卡片，支持数值输入、滑块、选择器、图表（柱状/折线/饼图）与可排序筛选的表格，全部计算在本地白名单内完成，无需联网、无需任何账号权限。跟随站点明暗主题，可展开查看原始 JSON，可一键关闭恢复原样。另含默认增强：开始输入后自动把一份可见的「界面说明」追加到草稿末尾，发送前可完整核对并随时关闭；扩展不代发消息、不写隐藏内容。独立第三方项目，与 DeepSeek 官方无关；依赖该网站的页面结构与登录后的模型对话，网站改版可能导致功能失效，隐私说明见项目仓库 docs/privacy.md。
 - **搜索词（≤7）**：DeepSeek、GenUI、交互卡片、可视化、本地计算、对话增强、图表表格
 - **类别**：Productivity（生产力工具）；**年龄分级**：非 Mature
-- **视觉素材**：manifest 图标已包含在 0.1.1 发布包中；选定方案 02「交互节点」的方形组合 `assets/branding/responsive-node-v1/logo-stacked.png`（512×512）可用作商店 Logo。页面截图为可选项，建议提供以充实详情。
+- **视觉素材**：manifest 图标已包含在 0.2.1 提交包中；选定方案 02「交互节点」的方形组合 `assets/branding/responsive-node-v1/logo-stacked.png`（512×512）可用作商店 Logo。页面截图为可选项，建议提供以充实详情。
 - **隐私政策链接**：项目仓库 `docs/privacy.md` 的公开 URL（上架前确认仓库可公开访问，或在提交表单直接内嵌同文说明）。
 - **网站/支持**：项目 GitHub 仓库（Issues 作为支持入口）。
-- **当前提交包**：`release/deepseek-genui-v0.1.1.zip`（107040 B），含 manifest、内容脚本、4 个图标和页面 Logo，共 7 个文件。
-  SHA256 `70cdaca04a738a1666301cddbe1650cd4bced654f8e5174fb95cae02f5af8d6d`；逐文件清单见 `release/deepseek-genui-v0.1.1.sha256`，历史 0.1.0 验收基线见 [分层报告](phase8-verification.md)。
+- **当前提交包**：`release/deepseek-genui-v0.2.1.zip`（174896 B），含 `manifest.json`、内容脚本、4 个图标、页面 Logo 与 `_locales/en|zh_CN/messages.json`，共 9 个文件。
+  SHA256 `55469db296882fcd02ae903c49ff59eafdc87aa080e5c53d0b142c15f5e0e4dc`；逐文件清单见 `release/deepseek-genui-v0.2.1.sha256`，历史 0.1.0 验收基线见 [分层报告](phase8-verification.md)。
+
+## 国际化（i18n）与商店语言
+
+0.2.0 及更早版本 manifest 的 `name` / `description` 是写死的字符串，包内没有 `_locales`，Partner Center 因此只识别默认的 English (United States)，`Add a language` 按钮保持灰色。0.2.1 起按 Edge/Chrome 标准改为：
+
+- `public/manifest.json`：`"name": "__MSG_extensionName__"`、`"description": "__MSG_extensionDescription__"`、`"default_locale": "en"`；
+- `public/_locales/en/messages.json`、`public/_locales/zh_CN/messages.json`：各提供 `extensionName` 与 `extensionDescription` 的非空译文；
+- 构建时 Vite 将 `public/_locales/` 原样复制到 `dist/_locales/`，`scripts/check-dist.mjs` 校验占位符、`default_locale`、必需语言与每个语言的被引用键；`tests/unit/manifest-i18n.test.ts` 在源码层再做一遍。
+
+Partner Center 的识别规则（官方文档 “If a single locale appears, but the package includes multiple languages”）：manifest 必须用 `__MSG_` 引用名称/描述，`_locales` 中每种语言都要提供对应译文，商店会跳过缺少译文的语言。
+
+**操作顺序**：先上传新的 0.2.1 ZIP，再打开 Store listings；正常应看到 English (United States) 与中文（简体）两项，`Add a language` 可用。每种语言仍需单独填写长描述（≥250 字符）并上传 Logo。若重传后仍只显示一种语言，属于已知的 Partner Center 显示问题（microsoft/MicrosoftEdge-Extensions#169）：先退出重登、无痕窗口刷新，仍不行则通过 Partner Center 支持渠道反馈，附上包内 `_locales` 结构与上述官方文档链接。
+
+> 说明：本次只做商店/清单元数据国际化，页面内 UI 仍为中文；如后续需要英文界面，再单独做运行时的 `chrome.i18n` 改造。
 
 ## 上架前清单（建议在提交前完成）
 
-1. **完整复核与提交包（已完成）**：0.1.1 已通过 `npm run check` 与默认 Edge/Chrome e2e，ZIP 与逐文件 SHA256 已更新；后续若修改包内文件，应重新构建、验证并出包。
+1. **完整复核与提交包（已完成）**：0.2.1（含 `_locales` 国际化）已通过 `npm run check` 与默认 Edge/Chrome e2e，ZIP 与逐文件 SHA256 已更新；后续若修改包内文件，应重新构建、验证并出包。
 2. 商店 Logo 使用 `assets/branding/responsive-node-v1/logo-stacked.png`（512×512）；页面截图为可选项（建议提供以充实详情，非提交必需；可用模拟页/真实页面截图）。
 3. 确认隐私政策 URL 可公开访问。
 4. Partner Center 注册（开发者账号），提交时选择常规的自动审核即可；如预先获知需人工沟通证据，再选手动审核。

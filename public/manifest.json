@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "DeepSeek GenUI",
-  "version": "0.2.0",
-  "description": "为 DeepSeek 网页回答提供可关闭的声明式交互界面增强。",
+  "name": "__MSG_extensionName__",
+  "version": "0.2.1",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
   "permissions": [
     "storage"
   ],
