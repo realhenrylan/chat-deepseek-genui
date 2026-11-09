@@ -1,6 +1,6 @@
 # GenUI 默认增强提示词（v4.0）
 
-更新日期：2026-11-06。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；提供「本轮生成工具」变体（`GENUI_TOOL_PROMPT_TEXT`）与「普通回答」说明（`GENUI_PLAIN_PROMPT_NOTE`）。
+更新日期：2026-11-09。本文件记录当前正式投入使用的默认增强提示词。可执行源为 `src/content/prompt.ts` 中的 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START`、`GENUI_PROMPT_END`、`PROMPT_BODY` 与 `GENUI_PROMPT_TEXT`；提供「本轮生成工具」变体（`GENUI_TOOL_PROMPT_TEXT`）与「普通回答」说明（`GENUI_PLAIN_PROMPT_NOTE`）。
 
 ## v4.0 重大更新：智能界面与自然穿插
 
@@ -43,10 +43,12 @@
 - 选择题 quiz: {"w":"quiz","question":"题目","options":[{"label":"选项A","value":"A"},{"label":"选项B","value":"B"}],"answer":"B","explain":"解析说明"}
 - 概念卡 card: {"w":"card","title":"标题","subtitle":"副标题"?,"tags":["标签"]?,"points":["要点1","要点2"]?}
 - 方案对比 compare: {"w":"compare","title":"对比标题"?,"highlight":"推荐方案名"?,"items":[{"name":"方案名","pros":["优势"],"cons":["劣势"],"fields":{"指标":数值或字符串}}]}
-- 任务清单 checklist: {"w":"checklist","title":"清单标题"?,"items":[{"text":"步骤1","checked":true?,"note":"提示"?}]}
+- 任务清单 checklist: {"w":"checklist","title":"清单标题"?,"items":[{"text":"步骤1","note":"提示"?}]}
 - 快速滑块 slider: {"w":"slider","label":"参数名","min":0,"max":100,"step":5,"value":20,"unit":"单位"?}
 - 关键指标 result: {"w":"result","label":"指标说明"?,"value":数值或字符串,"unit":"单位"?,"emphasis":"normal|primary"?}
 - 提示说明 note: {"w":"note","text":"提示内容","tone":"info|warn|error"?}
+
+checklist 的 checked 表示"该步骤此刻已经完成"，只在该事项于本轮对话中确实已完成（用户明确说明，或你刚在本回答中完成了它并如实交代了结果）时才写 true；其余情况一律省略该字段（等同于未勾选）。不要用 checked 表达"计划完成""通常已完成"或"已经讲解过"这类推测与语义暗示。
 
 形态 2：多变量综合看板（高阶能力，复杂多变量联动时使用）
 版本固定为 5。根对象：{"type":"genui","version":5,"title":"可选标题","state":[...],"derived":[...],"models":[...],"elements":[...]}；state、derived、models、elements 必填，前三者可为空数组，models 为 0–4 个；elements 必填且至少包含 1 个元素。
