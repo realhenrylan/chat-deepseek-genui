@@ -10,6 +10,8 @@ import { createEnhancementManager, STATE_ATTR, REASON_ATTR } from '../../src/con
 import { findGenuiBlocks } from '../../src/content/detect';
 import { deliverRepairRequest } from '../../src/content/repair';
 import { appendDraftIntoInput } from '../../src/content/followup';
+import { readPendingRepairPrompt } from '../../src/content/bridge';
+import { SHORT_REPAIR_TRIGGER_TEXT } from '../../src/content/prompt';
 
 const VALID_TEXT = JSON.stringify({
   type: 'genui',
@@ -193,7 +195,7 @@ describe('失败面板与修复草稿', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('保留已有草稿，重复点击不会重复追加同一修复内容', async () => {
+  it('保留已有草稿：输入框只写短触发文本，完整详情暂存到桥状态', async () => {
     const doc = document.implementation.createHTMLDocument('test');
     const textarea = doc.createElement('textarea');
     textarea.name = 'search';
@@ -212,12 +214,15 @@ describe('失败面板与修复草稿', () => {
     );
     repair?.click();
     await vi.waitFor(() => {
-      expect(textarea.value).toContain('elements[0].initialSort.direction');
+      expect(textarea.value).toContain(SHORT_REPAIR_TRIGGER_TEXT);
     });
 
     const afterFirst = textarea.value;
-    expect(afterFirst.startsWith('用户已经写好的草稿')).toBe(true);
-    expect(afterFirst.split('elements[0].initialSort.direction').length).toBeGreaterThan(1);
+    expect(afterFirst).toBe(`用户已经写好的草稿\n\n${SHORT_REPAIR_TRIGGER_TEXT}`);
+    expect(afterFirst).not.toContain('elements[0].initialSort.direction');
+    expect(readPendingRepairPrompt(doc.documentElement)).toContain(
+      'elements[0].initialSort.direction',
+    );
 
     repair?.click();
     await vi.waitFor(() => {

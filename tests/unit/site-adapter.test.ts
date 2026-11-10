@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEEPSEEK_SITE_ADAPTER,
   STOP_GENERATION_PATH_PREFIX,
   UNKNOWN_SESSION_ID,
+  sanitizeUserMessages,
 } from '../../src/content/site-adapter';
+import { GENUI_PROMPT_END, GENUI_PROMPT_START, GENUI_PROMPT_TEXT } from '../../src/content/prompt';
 import { findGenuiBlocks } from '../../src/content/detect';
 
 const FIXTURES = join(process.cwd(), 'tests/fixtures/site-variants');
@@ -204,6 +206,108 @@ describe('站点适配层', () => {
       window.history.replaceState({}, '', '/a/chat/s/abc');
       document.body.innerHTML = '';
       expect(DEEPSEEK_SITE_ADAPTER.probe(document).route).toBe('chat');
+    });
+  });
+
+  describe('用户消息兜底清洗', () => {
+    beforeEach(() => {
+      document.body.innerHTML = '';
+    });
+
+    function renderMessage(doc: Document, text: string): HTMLElement {
+      const message = doc.createElement('div');
+      message.className = 'ds-message';
+      for (const line of text.split('\n')) {
+        const paragraph = doc.createElement('p');
+        paragraph.textContent = line;
+        message.append(paragraph);
+      }
+      return message;
+    }
+
+    it('剥离渲染成多段落的尾部协议块，保留用户原文', () => {
+      const doc = document;
+      doc.body.append(renderMessage(doc, `把这段话总结成三点\n\n${GENUI_PROMPT_TEXT}`));
+
+      expect(sanitizeUserMessages(doc)).toBe(1);
+      expect(doc.querySelector('.ds-message')?.textContent).toBe('把这段话总结成三点');
+      // 幂等：再次扫描没有可清洗的内容。
+      expect(sanitizeUserMessages(doc)).toBe(0);
+    });
+
+    it('回答容器内的同名节点与包含回答容器的节点都不清洗', () => {
+      const doc = document;
+      const user = renderMessage(doc, `用户原文\n${GENUI_PROMPT_TEXT}`);
+      doc.body.append(user);
+
+      const assistant = doc.createElement('div');
+      assistant.className = 'ds-assistant-message-main-content';
+      const nested = doc.createElement('div');
+      nested.className = 'ds-message';
+      nested.textContent = '回答内的同名节点';
+      assistant.append(nested);
+      doc.body.append(assistant);
+
+      const container = doc.createElement('div');
+      container.className = 'ds-message';
+      const innerAssistant = doc.createElement('div');
+      innerAssistant.className = 'ds-assistant-message-main-content';
+      container.append(innerAssistant);
+      doc.body.append(container);
+
+      expect(sanitizeUserMessages(doc)).toBe(1);
+      expect(user.textContent).toBe('用户原文');
+      expect(nested.textContent).toBe('回答内的同名节点');
+    });
+
+    it('尾部被用户改写或只引用了标记时保留原文', () => {
+      const doc = document;
+      doc.body.append(renderMessage(doc, `问题一\n\n${GENUI_PROMPT_TEXT}追加`));
+      doc.body.append(
+        renderMessage(doc, `问题二\n\n${GENUI_PROMPT_START}\n用户自己的段落\n${GENUI_PROMPT_END}`),
+      );
+
+      expect(sanitizeUserMessages(doc)).toBe(0);
+      expect(doc.querySelectorAll('.ds-message')[0]?.textContent).toContain('追加');
+    });
+
+    it('两个同文气泡都按内容剥离（不依赖消息 id）', () => {
+      const doc = document;
+      const first = renderMessage(doc, `同一句话\n\n${GENUI_PROMPT_TEXT}`);
+      const second = renderMessage(doc, `同一句话\n\n${GENUI_PROMPT_TEXT}`);
+      doc.body.append(first, second);
+
+      expect(sanitizeUserMessages(doc)).toBe(2);
+      expect(first.textContent).toBe('同一句话');
+      expect(second.textContent).toBe('同一句话');
+    });
+
+    it('清空尾部文本时保留文本节点，避免页面框架卸载异常', () => {
+      const doc = document;
+      const message = doc.createElement('div');
+      message.className = 'ds-message';
+      const keep = doc.createElement('p');
+      keep.textContent = '用户原文';
+      const tail = doc.createElement('p');
+      tail.textContent = GENUI_PROMPT_TEXT;
+      message.append(keep, tail);
+      doc.body.append(message);
+
+      expect(sanitizeUserMessages(doc)).toBe(1);
+      expect(message.textContent).toBe('用户原文');
+
+      const walker = doc.createTreeWalker(tail, NodeFilter.SHOW_TEXT);
+      const text = walker.nextNode();
+      expect(text).not.toBeNull();
+      expect((text as Text).isConnected).toBe(true);
+      expect((text as Text).data).toBe('');
+    });
+
+    it('没有协议块时保持原样', () => {
+      const doc = document;
+      doc.body.append(renderMessage(doc, '普通用户消息'));
+      expect(sanitizeUserMessages(doc)).toBe(0);
+      expect(doc.querySelector('.ds-message')?.textContent).toBe('普通用户消息');
     });
   });
 });

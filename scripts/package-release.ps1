@@ -35,6 +35,9 @@ if ($builtManifest.version -ne $version) {
 if (-not (Test-Path -LiteralPath (Join-Path $dist 'content.js') -PathType Leaf)) {
     throw 'dist/content.js is missing; run npm run check before packaging.'
 }
+if (-not (Test-Path -LiteralPath (Join-Path $dist 'interceptor.js') -PathType Leaf)) {
+    throw 'dist/interceptor.js is missing; run npm run check before packaging.'
+}
 
 $output = [System.IO.Path]::GetFullPath($OutputDirectory, $root)
 [System.IO.Directory]::CreateDirectory($output) | Out-Null

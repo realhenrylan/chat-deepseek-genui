@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { GENUI_PROMPT_TEXT } from '../../src/content/prompt';
+import { GENUI_PROMPT_TEXT, SHORT_REPAIR_TRIGGER_TEXT } from '../../src/content/prompt';
 
 /**
  * e2e：在真实 Edge / Chrome 中加载 dist 构建目录。
@@ -562,8 +562,8 @@ async function launchWithExtension(
 }
 
 /** 打开目标页并等待内容脚本写入注入标记（32 位扩展 id）。 */
-async function gotoAndAwaitMarker(page: Page): Promise<void> {
-  await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+async function gotoAndAwaitMarker(page: Page, path = '/'): Promise<void> {
+  await page.goto(`https://chat.deepseek.com${path}`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
     timeout: 30_000,
   });
@@ -892,12 +892,16 @@ for (const { label, channel } of CHANNELS) {
       const input = page.locator('#e2e-input');
       const repair = panel.locator('[data-genui-action="repair"]');
       await repair.click();
-      await expect(input).toHaveValue(/elements\[0\]\.initialSort\.direction/);
-      const firstDraft = await input.inputValue();
+      // 输入框只出现短触发文本；完整诊断详情暂存在桥状态，发送时由拦截器静默合并。
+      await expect(input).toHaveValue(SHORT_REPAIR_TRIGGER_TEXT);
+      const pending = await page.evaluate(() =>
+        document.documentElement.getAttribute('data-genui-pending-repair'),
+      );
+      expect(pending).toContain('elements[0].initialSort.direction');
 
       // 重复点击不重复追加，也不自动发送。
       await repair.click();
-      await expect(input).toHaveValue(firstDraft);
+      await expect(input).toHaveValue(SHORT_REPAIR_TRIGGER_TEXT);
 
       // 原始内容仍在，可用修复后的合法 v3 文档重新挂载。
       await block.locator('pre span').evaluate((el, raw) => {
@@ -906,11 +910,8 @@ for (const { label, channel } of CHANNELS) {
       await expect(block).toHaveAttribute('data-genui-state', 'mounted', { timeout: 8000 });
       await expect(page.locator('.genui-card-host + #e2e-block-sort')).toHaveCount(1);
       await expect(page.locator('#e2e-block-sort + .genui-status-host')).toHaveCount(0);
-      // 页面增强器可能继续往草稿追加说明，不要求整段相等；但修复内容仍只出现一次。
-      const finalDraft = await input.inputValue();
-      expect(finalDraft).toContain('elements[0].initialSort.direction');
-      // 修复请求中「错误摘要」和「错误路径」各引用一次；重复点击后仍是 2 次，没有整段重复追加。
-      expect(finalDraft.match(/elements\[0\]\.initialSort\.direction/g)?.length ?? 0).toBe(2);
+      // 静默链路不再改写草稿：始终只有一句短触发文本。
+      expect(await input.inputValue()).toBe(SHORT_REPAIR_TRIGGER_TEXT);
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
       expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
@@ -936,10 +937,10 @@ for (const { label, channel } of CHANNELS) {
       const controlButton = control.locator('button').first();
       await expect(control).toContainText('GenUI 已开启');
 
-      // 输入、滚动与普通 Markdown 的事件仍由页面正常处理。
+      // 输入、滚动与普通 Markdown 的事件仍由页面正常处理；草稿不会被扩展改写。
       await page.locator('#e2e-input').fill('保留的输入草稿');
-      // 默认增强会在停止输入后追加可见说明；此处只验证用户原文仍在开头。
-      await expect(page.locator('#e2e-input')).toHaveValue(/^保留的输入草稿/);
+      await page.waitForTimeout(1200);
+      await expect(page.locator('#e2e-input')).toHaveValue('保留的输入草稿');
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
       await page.locator('#e2e-link').click();
@@ -1055,10 +1056,8 @@ for (const { label, channel } of CHANNELS) {
       await expect(first.locator('input[type="number"]')).toHaveValue('40');
       await expect(first.locator('select')).toHaveValue('food');
       await expect(first.locator('.genui-value-output').nth(1)).toHaveText('60 元');
-      // 默认增强已生效：草稿保留在开头，可见说明追加在其后。
-      await expect(page.locator('#e2e-input')).toHaveValue(
-        `保留的本地草稿\n\n${GENUI_PROMPT_TEXT}`,
-      );
+      // 静默增强：草稿保持原文，协议只在发送请求时于后台附加。
+      await expect(page.locator('#e2e-input')).toHaveValue('保留的本地草稿');
       expect(interactionRequests, '控件操作期间不得产生网络请求').toEqual([]);
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
@@ -1189,6 +1188,8 @@ for (const { label, channel } of CHANNELS) {
 
       await numberInput.fill('');
       await expect(host.locator('.genui-input-error')).toContainText('请输入有限数字');
+      // 边框/文字颜色有 0.15s 过渡，等过渡结束再采样，避免读到中间色导致对比度抖动。
+      await page.waitForTimeout(250);
       const darkInvalid = ratios(await readColors());
       expect(darkInvalid.border).toBeGreaterThanOrEqual(3);
       expect(darkInvalid.error).toBeGreaterThanOrEqual(4.5);
@@ -1775,7 +1776,7 @@ for (const { label, channel } of CHANNELS) {
     }
   });
 
-  test(`阶段 7 · ${label} 默认增强可见追加、说明面板与关闭恢复`, async () => {
+  test(`阶段 7 · ${label} 静默增强：说明面板、开关与草稿不受影响`, async () => {
     test.skip(REAL_SITE, '阶段 7 自动断言使用模拟页；真实网页验收见验收记录');
     const { context, page, profileDir } = await launchWithExtension(channel);
     const buckets = watchErrors(page);
@@ -1789,34 +1790,166 @@ for (const { label, channel } of CHANNELS) {
 
       await expect(toggle).toHaveText('GenUI 已开启');
 
-      // 只有用户输入后、停止输入达到延迟，才把可见说明追加到草稿末尾。
+      // 输入不再触发草稿追加：协议只在发送请求时于后台附加。
       const original = '帮我做一份月度预算';
       await input.fill(original);
-      await expect(input).toHaveValue(`${original}\n\n${GENUI_PROMPT_TEXT}`, {
-        timeout: 5_000,
-      });
-      await expect(input).toHaveValue(/〔GenUI 增强说明结束〕$/);
+      await page.waitForTimeout(1200);
+      await expect(input).toHaveValue(original);
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.getAttribute('data-genui-enabled'),
+        ),
+      ).toBe('true');
+      expect(
+        await page.evaluate(() => document.documentElement.getAttribute('data-genui-mode')),
+      ).toBe('auto');
 
-      // 说明面板逐字展示真正参与对话的追加文本，并说明不会自动发送。
+      // 说明面板逐字展示真正参与请求的协议文本，并说明不写入输入框、不会自动发送。
       await info.click();
       const panel = control.locator('#genui-panel');
       await expect(panel).toBeVisible();
       expect(await panel.locator('pre').textContent()).toBe(GENUI_PROMPT_TEXT);
-      await expect(panel.locator('.status')).toHaveText(/已追加到当前草稿/);
+      await expect(panel.locator('.status')).toHaveText(/静默增强已就绪/);
       await expect(panel).toContainText('不会自动发送消息');
+      await expect(panel).toContainText('不占用你的输入框');
       await panel.locator('button').click();
       await expect(panel).toBeHidden();
 
-      // 关闭增强：移除自动追加的说明，草稿原文保留；不触发发送。
+      // 关闭增强：草稿始终保留原文，桥状态同步为关闭。
       await toggle.click();
       await expect(input).toHaveValue(original);
       await expect(toggle).toHaveText('GenUI 已关闭');
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.getAttribute('data-genui-enabled'),
+        ),
+      ).toBe('false');
 
-      // 重新开启后，现有草稿在停止输入后再次得到可见说明。
+      // 重新开启后回到自动适配，草稿仍不被改写。
       await toggle.click();
-      await expect(input).toHaveValue(`${original}\n\n${GENUI_PROMPT_TEXT}`, {
-        timeout: 5_000,
+      await expect(toggle).toHaveText('GenUI 已开启');
+      await page.waitForTimeout(300);
+      await expect(input).toHaveValue(original);
+      expect(
+        await page.evaluate(() => document.documentElement.getAttribute('data-genui-mode')),
+      ).toBe('auto');
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`阶段 7d · ${label} 真实发送请求注入与历史响应按内容剥离`, async () => {
+    test.skip(REAL_SITE, '阶段 7d 使用模拟页核对请求体与历史响应，不读取真实聊天内容');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+    const original = '把这段话总结成三点';
+    const sent = `${original}\n\n${GENUI_PROMPT_TEXT}`;
+    let sentPrompt: string | null = null;
+
+    try {
+      await context.route('https://chat.deepseek.com/api/v0/**', async (route) => {
+        const request = route.request();
+        const path = new URL(request.url()).pathname;
+        if (request.method() === 'POST' && path === '/api/v0/chat/completion') {
+          const payload = request.postDataJSON() as { prompt?: string };
+          sentPrompt = payload.prompt ?? null;
+          // 协议只随请求发送；历史剥离不依赖服务端返回用户消息 id。
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: '{"code":0}',
+          });
+          return;
+        }
+        if (request.method() === 'GET' && path === '/api/v0/chat/history_messages') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              code: 0,
+              data: {
+                chat_messages: [
+                  { message_id: 'msg-1', role: 'user', content: sent },
+                  { message_id: 'msg-2', role: 'assistant', content: '已收到' },
+                ],
+              },
+            }),
+          });
+          return;
+        }
+        await route.fallback();
       });
+
+      await gotoAndAwaitMarker(page, '/a/chat/s/e2e-session');
+      const input = page.locator('#e2e-input');
+      await input.fill(original);
+
+      const status = await page.evaluate(async (text) => {
+        const response = await fetch('/api/v0/chat/completion', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: text }),
+        });
+        return response.status;
+      }, original);
+
+      expect(status).toBe(200);
+      expect(sentPrompt, '发送请求体应在后台附加协议，而不是改写草稿').toBe(sent);
+      await expect(input).toHaveValue(original);
+
+      const history = await page.evaluate(async () => {
+        const response = await fetch('/api/v0/chat/history_messages');
+        return (await response.json()) as {
+          data: { chat_messages: { content: string }[] };
+        };
+      });
+      expect(history.data.chat_messages[0].content, '历史响应中的用户消息应恢复为用户原文').toBe(
+        original,
+      );
+      expect(history.data.chat_messages[1].content, '助手消息不受影响').toBe('已收到');
+
+      // 站点渲染的气泡即使没有 message id，也按正文内容剥离尾部协议。
+      await page.evaluate((text) => {
+        const message = document.createElement('div');
+        message.className = 'ds-message';
+        message.id = 'e2e-sent-bubble';
+        const paragraph = document.createElement('p');
+        paragraph.textContent = text;
+        message.append(paragraph);
+        document.body.append(message);
+      }, sent);
+      await expect
+        .poll(() => page.evaluate(() => document.querySelector('#e2e-sent-bubble')?.textContent ?? null))
+        .toBe(original);
+
+      // 刷新后不依赖任何本地索引：历史与气泡同样按内容剥离。
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
+        timeout: 30_000,
+      });
+      const reloaded = await page.evaluate(async () => {
+        const response = await fetch('/api/v0/chat/history_messages');
+        return (await response.json()) as {
+          data: { chat_messages: { content: string }[] };
+        };
+      });
+      expect(reloaded.data.chat_messages[0].content, '刷新后历史仍恢复为用户原文').toBe(original);
+      await page.evaluate((text) => {
+        const message = document.createElement('div');
+        message.className = 'ds-message';
+        message.id = 'e2e-sent-bubble';
+        const paragraph = document.createElement('p');
+        paragraph.textContent = text;
+        message.append(paragraph);
+        document.body.append(message);
+      }, sent);
+      await expect
+        .poll(() => page.evaluate(() => document.querySelector('#e2e-sent-bubble')?.textContent ?? null))
+        .toBe(original);
 
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
       expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);

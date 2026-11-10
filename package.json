@@ -9,7 +9,7 @@
     "test:e2e": "playwright test",
     "gen-validator": "node scripts/gen-validator.ts",
     "prebuild": "node scripts/gen-validator.ts",
-    "build": "vite build",
+    "build": "vite build && vite build --mode interceptor",
     "postbuild": "node scripts/check-dist.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },

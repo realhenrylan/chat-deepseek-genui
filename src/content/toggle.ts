@@ -7,14 +7,9 @@ import { copyText } from './repair';
 const CONTROL_ATTR = 'data-genui-control';
 
 export const AUGMENT_STATUS_LABELS: Record<AugmentStatus, string> = {
-  idle: '等待输入',
-  scheduled: '将在停止输入后追加',
-  appended: '已追加到当前草稿',
-  dismissed: '你删除了增强说明，本草稿不再自动追加',
-  disabled: '增强已关闭，不会追加',
-  'no-input': '未找到聊天输入框',
-  plain: '普通回答：本轮不追加增强说明',
-  edited: '说明已被你修改：扩展不会自动替换或重复追加',
+  ready: '静默增强已就绪：发送消息时在后台自动附加协议，不占用输入框',
+  plain: '普通回答：本轮发送不会附加增强协议',
+  disabled: '增强已关闭：发送消息不会附加协议',
 };
 
 /** 本轮模式在浮标上的展示标签；AUGMENT_MODE_ORDER 即循环切换顺序。 */
@@ -253,15 +248,15 @@ export function createToggleControl(
   const description = doc.createElement('p');
   description.id = 'genui-panel-desc';
   description.textContent =
-    '下面这段文本会逐字追加在你输入框草稿的末尾，作为你消息的一部分发送。扩展不会自动发送消息，也不使用隐藏消息；发送前你可以在输入框里完整查看和修改它。';
+    '下面这段协议文本只读展示：发送消息时由扩展在后台附加到请求中，不写入、不占用你的输入框，也不会自动发送消息。';
 
   const behavior = doc.createElement('p');
   behavior.textContent =
-    '关闭开关时，扩展会移除仍在草稿末尾的自动追加说明（即使你已在说明前继续输入），并保留你的原文；如果你修改过说明文本本身，则不会覆盖你的内容。手动删除说明后，本草稿不再重复追加。';
+    '关闭开关后，发送消息不再附加任何协议；已经发送的历史消息会由扩展在读取时自动清理，页面上的气泡与输入框始终只显示你的原文。';
 
   const modeHint = doc.createElement('p');
   modeHint.textContent =
-    '「本轮」按钮只影响这一轮草稿会追加的内容（自动适配 / 明确生成工具 / 普通回答），不改变持久设置；发送、清空草稿或重开会话后会回到自动适配。只有说明仍在草稿末尾且与你逐字未改时，切换才会替换或移除它；修改过的说明不会被自动覆盖，plain 模式中面板会如实显示残留内容。';
+    '「本轮」按钮只影响下一次发送（自动适配 / 明确生成工具 / 普通回答）；发送后会回到自动适配。普通回答不会附加任何协议。';
 
   const statusLine = doc.createElement('p');
   statusLine.className = 'status';

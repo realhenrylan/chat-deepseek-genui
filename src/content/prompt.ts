@@ -298,7 +298,203 @@ export const GENUI_TOOL_PROMPT_TEXT = `${GENUI_PROMPT_TOOL_START}\n${TOOL_LEAD}\
 
 /** plain 模式不追加任何文本；浮标面板用这段说明代替逐字内容展示。 */
 export const GENUI_PLAIN_PROMPT_NOTE =
-  '本轮选择「普通回答」：不会向你的草稿追加任何 GenUI 增强文本。';
+  '本轮选择「普通回答」：发送消息时不会在后台附加 GenUI 增强协议。';
+
+/** 修复请求的短触发文本：只写入输入框，完整诊断详情由拦截器在发送时静默附加。 */
+export const SHORT_REPAIR_TRIGGER_TEXT = '请修复上一条回答中的 GenUI 界面代码块格式错误。';
+
+/** 静默修复详情的边界标记：随用户消息进入历史，但会由响应剥离与 DOM 兜底移除。 */
+export const GENUI_REPAIR_DETAIL_START = '〔GenUI 修复请求详情｜仅模型可见〕';
+export const GENUI_REPAIR_DETAIL_END = '〔GenUI 修复请求结束〕';
+
+/** 修复详情正文的自校验标记：只有扩展拼装的详情块才带有匹配的校验码。 */
+const REPAIR_CHECKSUM_PREFIX = '〔GenUI 修复详情校验：';
+/** 比较时忽略空白差异（渲染后的 Markdown 会折叠换行）。 */
+function normalizeBlockText(value: string): string {
+  return value.replace(/\s+/g, '');
+}
+
+/** 去空白后的校验标记：正文先归一化再查找时必须使用这个形式。 */
+const NORMALIZED_REPAIR_CHECKSUM_PREFIX = normalizeBlockText(REPAIR_CHECKSUM_PREFIX);
+
+/**
+ * 修复详情正文的校验码（FNV-1a 32 位，按去空白后的正文计算）。
+ *
+ * 目的不是防篡改，而是把「扩展拼装的块」与「用户自己写的同形文字」区分开：
+ * 用户引用首尾标记或模仿固定开头时不会带出正确校验码，历史清洗因此保留原文。
+ */
+function repairDetailsChecksum(normalized: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+interface GenuiProtocolBlock {
+  start: string;
+  end: string;
+  text: string;
+  normalized: string;
+}
+
+/**
+ * 所有已知版本的协议全文。
+ *
+ * 注入使用这些常量，因此历史清洗可以按「完整文本」校验：
+ * 只有尾部块与某个已知版本逐字相等（或仅空白差异）时才删除。
+ * 用户可以放心引用标记文本而不担心自己的消息被截断。
+ */
+const GENUI_PROTOCOL_BLOCKS: ReadonlyArray<GenuiProtocolBlock> = [
+  GENUI_PROMPT_TEXT,
+  GENUI_TOOL_PROMPT_TEXT,
+  GENUI_PROMPT_V32_TEXT,
+  GENUI_TOOL_PROMPT_V32_TEXT,
+  GENUI_PROMPT_V31_TEXT,
+  GENUI_TOOL_PROMPT_V31_TEXT,
+  GENUI_PROMPT_V30_TEXT,
+  GENUI_TOOL_PROMPT_V30_TEXT,
+].map((text) => ({
+  start: text.slice(0, text.indexOf('\n')),
+  end: GENUI_PROMPT_END,
+  text,
+  normalized: normalizeBlockText(text),
+}));
+
+export interface StripGenuiPromptResult {
+  text: string;
+  stripped: boolean;
+}
+
+export interface StripGenuiPromptOptions {
+  /**
+   * 放宽「块起点必须位于行首」的约束。
+   *
+   * 仅用于 DOM 兜底：渲染后的 Markdown 段落边界不会反映在 `textContent` 里，
+   * 用户原文与块起点之间可能没有换行。网络层与文本场景仍使用严格模式。
+   */
+  relaxedBoundary?: boolean;
+}
+
+function isLineBoundary(tail: string, index: number, relaxed: boolean): boolean {
+  if (relaxed) return true;
+  const before = index > 0 ? tail[index - 1] : '\n';
+  return before === '\n' || before === '\r' || before === ' ' || before === '\t';
+}
+
+function isVerifiedProtocolBlock(candidate: string, block: GenuiProtocolBlock): boolean {
+  if (candidate === block.text) return true;
+  return normalizeBlockText(candidate) === block.normalized;
+}
+
+/**
+ * 校验标记之间确实是一份由扩展拼装的修复详情。
+ *
+ * 详情块末尾带有按正文计算的校验码；用户只引用首尾标记、或模仿固定开头时
+ * 校验码对不上，清洗会保留原文。
+ */
+function isVerifiedRepairDetails(content: string): boolean {
+  const normalized = normalizeBlockText(content);
+  // 正文在比较前已去掉空白，标记本身也要按去空白后的形式查找。
+  const checksumIndex = normalized.lastIndexOf(NORMALIZED_REPAIR_CHECKSUM_PREFIX);
+  if (checksumIndex <= 0 || !normalized.endsWith('〕')) return false;
+  const declared = normalized.slice(checksumIndex + NORMALIZED_REPAIR_CHECKSUM_PREFIX.length, -1);
+  if (declared === '' || !/^[0-9a-z]+$/.test(declared)) return false;
+  const body = normalized.slice(0, checksumIndex);
+  if (body === '') return false;
+  return repairDetailsChecksum(body) === declared;
+}
+
+/** 找到尾部可验证的扩展块起点；找不到返回 -1。 */
+function findVerifiedTailStart(tail: string, relaxed: boolean): number {
+  let bestStart = -1;
+
+  for (const block of GENUI_PROTOCOL_BLOCKS) {
+    if (!tail.endsWith(block.end)) continue;
+    let index = tail.lastIndexOf(block.start);
+    while (index >= 0) {
+      if (
+        isLineBoundary(tail, index, relaxed) &&
+        isVerifiedProtocolBlock(tail.slice(index), block)
+      ) {
+        if (index > bestStart) bestStart = index;
+        break;
+      }
+      index = index > 0 ? tail.lastIndexOf(block.start, index - 1) : -1;
+    }
+  }
+
+  if (tail.endsWith(GENUI_REPAIR_DETAIL_END)) {
+    const contentEnd = tail.length - GENUI_REPAIR_DETAIL_END.length;
+    let index = tail.lastIndexOf(GENUI_REPAIR_DETAIL_START);
+    while (index >= 0) {
+      if (index < contentEnd) {
+        const content = tail.slice(index + GENUI_REPAIR_DETAIL_START.length, contentEnd);
+        if (isLineBoundary(tail, index, relaxed) && isVerifiedRepairDetails(content)) {
+          if (index > bestStart) bestStart = index;
+          break;
+        }
+      }
+      index = index > 0 ? tail.lastIndexOf(GENUI_REPAIR_DETAIL_START, index - 1) : -1;
+    }
+  }
+
+  return bestStart;
+}
+
+/**
+ * 从消息文本末尾移除扩展附加的 GenUI 协议块或修复详情块。
+ *
+ * 只有尾部块与某个已知版本的完整文本逐字相等（允许空白差异）时才删除协议块；
+ * 修复详情块要求首尾标记完整且校验码与正文一致。用户引用首尾标记、模仿固定
+ * 开头时校验码对不上，原文会被保留。连续相邻的多个块（如修复详情 + 协议说明）
+ * 会被逐个移除；对已清洗文本再次调用是幂等的。
+ *
+ * 已知取舍：「用户把完整的 3500 字协议、或一段带合法校验码的修复块逐字粘贴在
+ * 消息最末尾」属于极端假想场景，不为此引入消息身份索引；这类文本会被视为
+ * 扩展追加内容而剥离。
+ */
+export function stripGenuiPrompt(
+  value: string,
+  options: StripGenuiPromptOptions = {},
+): StripGenuiPromptResult {
+  if (typeof value !== 'string' || value === '') {
+    return { text: value, stripped: false };
+  }
+  const relaxed = options.relaxedBoundary === true;
+  let current = value;
+  let stripped = false;
+  for (;;) {
+    const tail = current.replace(/[ \t\r\n]+$/, '');
+    const index = findVerifiedTailStart(tail, relaxed);
+    if (index < 0) break;
+    current = tail.slice(0, index).replace(/[ \t\r\n]+$/, '');
+    stripped = true;
+  }
+  return stripped ? { text: current, stripped: true } : { text: value, stripped: false };
+}
+
+/**
+ * 用边界标记包裹修复详情，并附带按正文计算的校验码。
+ *
+ * 校验码让响应剥离与 DOM 兜底能确认「这段文字确实是扩展拼装的」，
+ * 而不是用户自己引用标记或模仿固定开头写出来的同形内容。
+ */
+export function wrapRepairDetails(details: string): string {
+  const body = details.replace(/\s+$/, '');
+  const checksum = repairDetailsChecksum(normalizeBlockText(body));
+  return `${GENUI_REPAIR_DETAIL_START}\n${body}\n${REPAIR_CHECKSUM_PREFIX}${checksum}〕\n${GENUI_REPAIR_DETAIL_END}`;
+}
+
+/** 发送时把暂存的修复详情合并到短触发文本之后；已包含详情时不重复追加。 */
+export function mergeRepairDetails(prompt: string, details: string | null | undefined): string {
+  if (!details || details.trim() === '') return prompt;
+  if (!prompt.includes(SHORT_REPAIR_TRIGGER_TEXT)) return prompt;
+  if (prompt.includes(GENUI_REPAIR_DETAIL_START)) return prompt;
+  const separator = prompt.endsWith('\n\n') ? '' : prompt.endsWith('\n') ? '\n' : '\n\n';
+  return `${prompt}${separator}${wrapRepairDetails(details)}`;
+}
 
 /** 读取某个本轮模式对应的完整说明文本；plain 不追加，返回 null。 */
 export function getGenuiPromptTextForMode(mode: GenuiPromptMode): string | null {

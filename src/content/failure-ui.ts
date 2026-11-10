@@ -94,9 +94,10 @@ const PENDING_TEXT: Record<'pending' | 'validating' | 'deferred', { title: strin
 };
 
 const FEEDBACK: Record<RepairDeliveryResult, string> = {
-  filled: '已填入输入框；请检查草稿后自行发送。',
-  appended: '草稿已保留：修复请求已写入；若草稿中已有相同内容则不会重复追加，请检查后发送。',
-  copied: '修复请求已复制；可粘贴到输入框，检查后发送。',
+  filled: '已填入输入框（简短触发文本）；发送时会自动附带完整诊断详情，请检查草稿后自行发送。',
+  appended:
+    '草稿已保留：已写入简短触发文本，完整诊断详情会在发送时自动附带；草稿中已有相同内容时不会重复追加，请检查后发送。',
+  copied: '完整修复请求已复制；可粘贴到输入框，检查后发送。',
   'copy-failed': '未找到聊天输入框，自动复制也失败；请展开「手动复制完整修复请求」选择文本。',
 };
 

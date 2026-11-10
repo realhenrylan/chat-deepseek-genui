@@ -896,3 +896,10 @@ export function buildRepairPrompt(diagnostic: GenuiDiagnostic, raw: string): str
   return prompt.length > 4000 ? `${prompt.slice(0, 3950)}
 …（修复请求已截断）` : prompt;
 }
+
+/**
+ * 修复请求在输入框中只展示短触发文本，完整诊断详情由 MAIN world 拦截器在发送时
+ * 静默合并。常量定义在 `content/prompt.ts`（拦截器与 UI 共用），此处重新导出，
+ * 便于协议层消费者按同一份文案工作。
+ */
+export { SHORT_REPAIR_TRIGGER_TEXT } from '../content/prompt';

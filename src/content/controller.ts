@@ -2,10 +2,16 @@ import { LOG_PREFIX, resolveContentVersion } from './lifecycle';
 import { createEnhancementManager, type EnhanceOptions } from './enhance';
 import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
-import { DEEPSEEK_SITE_ADAPTER, type SiteAdapter } from './site-adapter';
+import { DEEPSEEK_SITE_ADAPTER, sanitizeUserMessages, type SiteAdapter } from './site-adapter';
 import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
+import {
+  clearPendingRepairPrompt,
+  readPendingRepairState,
+  REQUEST_SENT_EVENT,
+  type RequestSentDetail,
+} from './bridge';
 import { fillContinueIntoInput } from './followup';
 import { deliverRepairRequest } from './repair';
 import {
@@ -19,10 +25,14 @@ import {
   GENUI_PROMPT_TEXT,
   GENUI_PROMPT_VERSION,
   GENUI_TOOL_PROMPT_TEXT,
+  SHORT_REPAIR_TRIGGER_TEXT,
 } from './prompt';
 
 /** 停止图标路径前缀由适配层维护；控制器保留导出以兼容既有测试与文档。 */
 export { STOP_GENERATION_PATH_PREFIX } from './site-adapter';
+
+/** 发送后站点清空草稿的豁免窗口：只用于区分「提交清空」与「用户主动取消」。 */
+const SUBMIT_CLEAR_WINDOW_MS = 2000;
 
 export interface PageLifecycleOptions extends EnhanceOptions {
   /** 单元测试注入；生产环境自动使用 chrome.storage.local。 */
@@ -31,7 +41,7 @@ export interface PageLifecycleOptions extends EnhanceOptions {
   debounceMs?: number;
   /** 生成结束后的稳定等待时间；生产默认 700ms。 */
   settleMs?: number;
-  /** 草稿停止输入后追加默认增强的等待时间；生产默认 700ms。 */
+  /** @deprecated 草稿追加已移除；保留字段以兼容旧调用方。 */
   augmentDelayMs?: number;
   /** 轮询路由/会话键的间隔，用于感知 SPA 纯 pushState 导航；生产默认 1000ms。 */
   navigationPollMs?: number;
@@ -157,6 +167,14 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   let stableSnapshot: CandidateSnapshot[] | null = null;
   let navigationKey = '';
   let navigationTimer: number | null = null;
+  /**
+   * 最近一次真正携带了修复暂存的发送请求。
+   *
+   * 站点在发起请求后会同步清空输入框并派发 input；两秒内的空草稿按提交清空处理，
+   * 不清除暂存（请求成功送达后由 `genui:request-delivered` 按 id 精确消费）。
+   */
+  let lastSubmitAt = 0;
+  let lastSubmitStashId: string | null = null;
 
   /**
    * 当前页面的脱敏诊断快照：适配层自检只含数量/布尔值，页面段只含
@@ -192,9 +210,19 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     enabled = next;
     control?.setEnabled(next);
     manager.setEnabled(next);
-    // 关闭时移除仍完整位于草稿末尾的自动追加说明；用户修改过说明文本则保持原样。
+    // 只同步开关状态；输入框与草稿保持原样，协议由拦截器在发送时附加。
     augmenter?.setEnabled(next);
+    // 关闭增强时丢弃修复暂存：旧会话的诊断不应带进新请求。
+    if (!next) {
+      clearPendingRepairPrompt(doc.documentElement);
+      lastSubmitStashId = null;
+    }
     if (!changed) return;
+    // 开启时重新确认输入框：静默链路不再依赖草稿监听来发现缺失/歧义。
+    if (next) {
+      const probe = adapter.probe(doc);
+      if (!probe.inputFound) handleInputFailure();
+    }
     stableSnapshot = null;
     clearSettleTimer();
     if (next) scheduleScan(0);
@@ -210,6 +238,9 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
 
   const scan = (): void => {
     if (!started || !settingsLoaded) return;
+
+    // 按内容特征剥离扩展追加的协议/修复详情块（与历史响应使用同一实现）。
+    sanitizeUserMessages(doc);
 
     const candidates = findGenuiBlocks(doc, adapter);
     // 页面上已有 genui 标签却找不到任何回答容器：站点改版导致识别失效的强信号。
@@ -315,6 +346,9 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     const next = adapter.readNavigationKey(doc);
     if (next === navigationKey) return;
     navigationKey = next;
+    // 离开原会话后，旧会话的修复暂存不再适用（拦截器也会校验会话 id）。
+    clearPendingRepairPrompt(doc.documentElement);
+    lastSubmitStashId = null;
     stableSnapshot = null;
     clearSettleTimer();
     // 先撤销旧身份绑定，避免生成中/等待稳定期间旧会话卡片继续展示。
@@ -326,6 +360,40 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     checkNavigation();
   };
 
+  /**
+   * 暂存详情与草稿里的短触发文本绑定：用户把触发文本改掉或删掉后，
+   * 暂存立即失效，避免之后手动发送同一句话时误带旧诊断。
+   *
+   * 站点发送消息时会同步清空输入框并派发 input；两秒内、且正是本次提交携带的
+   * 那份暂存被清空，按「提交清空」处理，等请求成功送达后再按 id 精确消费。
+   */
+  const onDraftInput = (): void => {
+    const pending = readPendingRepairState(doc.documentElement);
+    if (pending === null) return;
+    const input = adapter.findChatInput(doc);
+    if (input === null) return;
+    const value = input.value;
+    if (value.includes(SHORT_REPAIR_TRIGGER_TEXT)) return;
+    if (value.trim() !== '') {
+      // 草稿被替换成别的内容，原修复意图不再成立。
+      clearPendingRepairPrompt(doc.documentElement);
+      return;
+    }
+    const submitting =
+      pending.id === lastSubmitStashId && Date.now() - lastSubmitAt < SUBMIT_CLEAR_WINDOW_MS;
+    if (submitting) return;
+    // 空草稿且没有正在发出的请求：用户主动取消修复。
+    clearPendingRepairPrompt(doc.documentElement);
+    lastSubmitStashId = null;
+  };
+
+  /** 记录最近一次真正携带修复暂存的发送，用于识别紧随其后的草稿清空。 */
+  const onRequestSent = (event: Event): void => {
+    const detail = (event as CustomEvent<RequestSentDetail>).detail;
+    if (!detail || typeof detail.repairStashId !== 'string') return;
+    lastSubmitAt = Date.now();
+    lastSubmitStashId = detail.repairStashId;
+  };
   const onPageHide = (): void => {
     stop();
   };
@@ -347,7 +415,13 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     observer = nextObserver;
     nextObserver.observe(doc.documentElement ?? doc, {
       attributes: true,
-      attributeFilter: ['aria-label', 'class', 'd', 'role', 'title'],
+      attributeFilter: [
+        'aria-label',
+        'class',
+        'd',
+        'role',
+        'title',
+      ],
       characterData: true,
       childList: true,
       subtree: true,
@@ -369,15 +443,9 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     });
     augmenter = createDraftAugmenter(doc, {
       enabled,
-      adapter,
-      debounceMs: options.augmentDelayMs ?? 700,
       window: win,
-      onStatus: (status) => {
-        control?.setAugmentStatus(status);
-        if (status === 'no-input') handleInputFailure();
-      },
+      onStatus: (status) => control?.setAugmentStatus(status),
       onModeChange: (mode) => control?.setAugmentMode(mode),
-      onPlainNote: (note) => control?.setAugmentPlainNote(note),
     });
     unsubscribe = store?.subscribe(handleStorageChange) ?? null;
 
@@ -398,15 +466,17 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     applyEnabled(pendingStorageValue ?? pendingUserValue ?? saved ?? true);
     pendingStorageValue = undefined;
     pendingUserValue = undefined;
-    // 设置读取完成后再开始监听草稿，避免已保存为关闭的用户被短暂追加。
+    // 设置读取完成后再启动状态桥，避免已保存为关闭的用户被短暂标记为就绪。
     augmenter?.start();
     control?.setAugmentStatus(augmenter?.getStatus() ?? null);
-    // 启动时增强器只报 idle；在聊天路由上主动检查一次，覆盖输入框缺失/歧义。
+    // 启动时在聊天路由上主动检查一次，覆盖输入框缺失/歧义。
     if (enabled) {
       const probe = adapter.probe(doc);
       if (probe.route === 'chat' && !probe.inputFound) handleInputFailure();
     }
     navigationKey = adapter.readNavigationKey(doc);
+    doc.addEventListener('input', onDraftInput, true);
+    doc.addEventListener(REQUEST_SENT_EVENT, onRequestSent, true);
     win.addEventListener('popstate', onPopState);
     win.addEventListener('hashchange', onPopState);
     navigationTimer = win.setInterval(checkNavigation, options.navigationPollMs ?? 1000);
@@ -419,6 +489,11 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     settingsLoaded = false;
     pendingStorageValue = undefined;
     pendingUserValue = undefined;
+    // 页面隐藏/卸载后不再保留一次性修复暂存与提交保护。
+    clearPendingRepairPrompt(doc.documentElement);
+    lastSubmitStashId = null;
+    doc.removeEventListener('input', onDraftInput, true);
+    doc.removeEventListener(REQUEST_SENT_EVENT, onRequestSent, true);
     clearScanTimer();
     clearSettleTimer();
     if (navigationTimer !== null) {

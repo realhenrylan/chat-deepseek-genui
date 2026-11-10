@@ -3,7 +3,7 @@ import { createPageLifecycle, STOP_GENERATION_PATH_PREFIX } from '../../src/cont
 import type { ExtensionSettingsStore } from '../../src/content/settings';
 import type { CardStateStore } from '../../src/runtime/card-state-store';
 import { DEEPSEEK_SITE_ADAPTER } from '../../src/content/site-adapter';
-import { GENUI_PROMPT_TEXT } from '../../src/content/prompt';
+import { BRIDGE_ENABLED_ATTR } from '../../src/content/bridge';
 
 const VALID = (value: string): string =>
   JSON.stringify({ type: 'genui', version: 1, elements: [{ kind: 'text', value }] });
@@ -288,7 +288,7 @@ describe('本地诊断与页面生命周期', () => {
     lifecycle.dispose();
   });
 
-  it('注入的适配器同时用于草稿增强，而不是退回页面默认输入框', async () => {
+  it('静默增强不会改写站点输入框或注入适配器返回的草稿', async () => {
     const doc = buildDoc(
       `<textarea name="search" id="real"></textarea>${assistant('ready', VALID('就绪'))}`,
     );
@@ -315,9 +315,9 @@ describe('本地诊断与页面生命周期', () => {
     custom.dispatchEvent(new Event('input', { bubbles: true }));
     await advance(800);
 
-    expect(custom.value).toContain('保留的草稿');
-    expect(custom.value).toContain(GENUI_PROMPT_TEXT);
+    expect(custom.value).toBe('保留的草稿');
     expect(real.value).toBe('');
+    expect(doc.documentElement.getAttribute(BRIDGE_ENABLED_ATTR)).toBe('true');
 
     lifecycle.dispose();
   });

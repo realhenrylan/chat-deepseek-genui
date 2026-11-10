@@ -6,7 +6,8 @@
  * 1. dist/manifest.json 存在且为 MV3，匹配范围严格限定 https://chat.deepseek.com/*；
  * 2. 按实际 API 调用检查权限：仅允许阶段 3 本地开关所需的 storage；
  *    不申请 host_permissions 或 background（开发指南 §3）；
- * 3. 内容脚本产物 content.js 存在且非空，manifest 与 package.json 版本一致；
+ * 3. 内容脚本产物 content.js 与 MAIN world 拦截器 interceptor.js 均存在且非空，
+ *    manifest 与 package.json 版本一致；
  * 4. Edge 商店国际化：manifest 的 name/description 为 __MSG_<key>__ 引用，声明 default_locale，
  *    每个 _locales/<locale>/messages.json 都提供被引用键的非空译文（Partner Center 据此识别语言）；
  * 5. 全包扫描：禁止 eval / new Function / importScripts、远程脚本与样式 URL、常见 CDN 域名、
@@ -66,7 +67,9 @@ try {
 if (manifest) {
   if (manifest.manifest_version !== 3) fail(`manifest_version 应为 3，实际 ${manifest.manifest_version}`);
 
-  const matches = manifest.content_scripts?.flatMap((cs) => cs.matches ?? []) ?? [];
+  const matches = [
+    ...new Set(manifest.content_scripts?.flatMap((cs) => cs.matches ?? []) ?? []),
+  ];
   const expected = ['https://chat.deepseek.com/*'];
   if (JSON.stringify([...matches].sort()) !== JSON.stringify(expected)) {
     fail(`content_scripts 匹配范围应严格为 ${expected.join(', ')}，实际：${matches.join(', ') || '(空)'}`);
@@ -83,8 +86,21 @@ if (manifest) {
   if (manifest.background) fail('不应包含 background（阶段 0 结论：无后台逻辑需求）');
 
   const js = manifest.content_scripts?.flatMap((cs) => cs.js ?? []) ?? [];
-  if (JSON.stringify(js) !== JSON.stringify(['content.js'])) {
-    fail(`content_scripts js 应为 ["content.js"]，实际：[${js.join(', ')}]`);
+  if (JSON.stringify(js) !== JSON.stringify(['interceptor.js', 'content.js'])) {
+    fail(`content_scripts js 应为 ["interceptor.js", "content.js"]，实际：[${js.join(', ')}]`);
+  }
+  const interceptorEntry = (manifest.content_scripts ?? []).find((cs) =>
+    (cs.js ?? []).includes('interceptor.js'),
+  );
+  if (!interceptorEntry) {
+    fail('缺少 interceptor.js 的 content_scripts 条目');
+  } else {
+    if (interceptorEntry.world !== 'MAIN') {
+      fail(`interceptor 条目 world 应为 "MAIN"，实际：${String(interceptorEntry.world)}`);
+    }
+    if (interceptorEntry.run_at !== 'document_start') {
+      fail(`interceptor 条目 run_at 应为 "document_start"，实际：${String(interceptorEntry.run_at)}`);
+    }
   }
 
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
@@ -96,6 +112,10 @@ if (manifest) {
 const contentJs = join(dist, 'content.js');
 if (!exists(contentJs) || statSync(contentJs).size === 0) {
   fail('dist/content.js 缺失或为空');
+}
+const interceptorJs = join(dist, 'interceptor.js');
+if (!exists(interceptorJs) || statSync(interceptorJs).size === 0) {
+  fail('dist/interceptor.js 缺失或为空');
 }
 
 // ---- 4：Edge 商店国际化 ----

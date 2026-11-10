@@ -7,17 +7,24 @@ import {
   GENUI_PROMPT_TEXT,
   GENUI_PROMPT_TOOL_START,
   GENUI_PROMPT_VERSION,
+  GENUI_PROMPT_V32_TEXT,
   GENUI_TOOL_PROMPT_TEXT,
+  GENUI_TOOL_PROMPT_V32_TEXT,
   GENUI_PROMPT_V31_TEXT,
   GENUI_TOOL_PROMPT_V31_TEXT,
   GENUI_PROMPT_V30_START,
   GENUI_PROMPT_TOOL_V30_START,
   GENUI_PROMPT_V30_TEXT,
   GENUI_TOOL_PROMPT_V30_TEXT,
+  GENUI_REPAIR_DETAIL_END,
+  GENUI_REPAIR_DETAIL_START,
+  SHORT_REPAIR_TRIGGER_TEXT,
   appendGenuiPrompt,
   describeGenuiDraftPrompt,
   getGenuiPromptTextForMode,
   hasGenuiPrompt,
+  mergeRepairDetails,
+  stripGenuiPrompt,
 } from '../../src/content/prompt';
 import { parseGenui } from '../../src/protocol/validate';
 
@@ -163,7 +170,7 @@ describe('issue7 本轮模式变体', () => {
     expect(getGenuiPromptTextForMode('tool')).toBe(GENUI_TOOL_PROMPT_TEXT);
     expect(getGenuiPromptTextForMode('plain')).toBeNull();
     expect(GENUI_PLAIN_PROMPT_NOTE).toContain('普通回答');
-    expect(GENUI_PLAIN_PROMPT_NOTE).toContain('不会向你的草稿追加任何');
+    expect(GENUI_PLAIN_PROMPT_NOTE).toContain('不会在后台附加');
   });
 
   it('tool 文本独立标记，且与 auto 逐字节共享协议主体', () => {
@@ -326,5 +333,136 @@ describe('v4.0 智能界面内联穿插协议提示词特性', () => {
       const parsed = parseGenui(block);
       expect(parsed.ok).toBe(true);
     }
+  });
+});
+
+describe('stripGenuiPrompt：响应剥离与 DOM 兜底共用同一实现', () => {
+  const DRAFT = '把这段话总结成三点';
+  const NL = String.fromCharCode(10);
+  const PROTOCOL_TEXTS = [
+    GENUI_PROMPT_TEXT,
+    GENUI_TOOL_PROMPT_TEXT,
+    GENUI_PROMPT_V32_TEXT,
+    GENUI_TOOL_PROMPT_V32_TEXT,
+    GENUI_PROMPT_V31_TEXT,
+    GENUI_TOOL_PROMPT_V31_TEXT,
+    GENUI_PROMPT_V30_TEXT,
+    GENUI_TOOL_PROMPT_V30_TEXT,
+  ];
+  const REPAIR_DETAILS = [
+    '请修复下面这段 GenUI（genui）界面内容的格式错误，并只返回修复后的完整 `genui` 代码块。',
+    '',
+    '错误路径：/elements/0',
+    '错误摘要：缺少 elements',
+    '',
+    '修复要求：',
+    '- 只返回一个 genui 代码块',
+  ].join(NL);
+
+  it('移除任意版本的尾部协议块并逐字节保留用户原文', () => {
+    for (const text of PROTOCOL_TEXTS) {
+      const result = stripGenuiPrompt(`${DRAFT}${NL}${NL}${text}`);
+      expect(result).toEqual({ text: DRAFT, stripped: true });
+      // 幂等：清洗后的文本再次剥离不产生变化。
+      expect(stripGenuiPrompt(result.text)).toEqual({ text: DRAFT, stripped: false });
+    }
+  });
+
+  it('移除末尾协议块后不留多余空白', () => {
+    expect(stripGenuiPrompt(`${DRAFT}${NL}${NL}${GENUI_PROMPT_TEXT}${NL}${NL}`)).toEqual({
+      text: DRAFT,
+      stripped: true,
+    });
+  });
+
+  it('纯用户消息、行内引用与残缺标记都不做改动', () => {
+    expect(stripGenuiPrompt(DRAFT)).toEqual({ text: DRAFT, stripped: false });
+    expect(stripGenuiPrompt('')).toEqual({ text: '', stripped: false });
+
+    const inline = `第一段${GENUI_PROMPT_START} 第二段${NL}${NL}${GENUI_PROMPT_END}`;
+    expect(stripGenuiPrompt(inline).stripped).toBe(false);
+
+    const partial = `${DRAFT}${NL}${NL}${GENUI_PROMPT_START}${NL}未写完`;
+    expect(stripGenuiPrompt(partial)).toEqual({ text: partial, stripped: false });
+  });
+
+  it('用户引用首尾标记、但内容不是扩展协议时不会被截断', () => {
+    const quotedRepair = `${DRAFT}${NL}${GENUI_REPAIR_DETAIL_START}${NL}这是用户自己引用的内容${NL}${GENUI_REPAIR_DETAIL_END}`;
+    expect(stripGenuiPrompt(quotedRepair)).toEqual({ text: quotedRepair, stripped: false });
+
+    const quotedProtocol = `${DRAFT}${NL}${GENUI_PROMPT_START}${NL}用户自己的段落${NL}${GENUI_PROMPT_END}`;
+    expect(stripGenuiPrompt(quotedProtocol).stripped).toBe(false);
+  });
+
+  it('修复详情缺少校验码或校验码不匹配时保留原文', () => {
+    const forged = [
+      DRAFT,
+      GENUI_REPAIR_DETAIL_START,
+      '请修复下面这段 GenUI（genui）界面内容的格式错误，并只返回修复后的完整 `genui` 代码块。',
+      '',
+      '修复要求：',
+      '- 保留我的原文',
+      GENUI_REPAIR_DETAIL_END,
+    ].join(NL);
+    expect(stripGenuiPrompt(forged)).toEqual({ text: forged, stripped: false });
+
+    const merged = mergeRepairDetails(SHORT_REPAIR_TRIGGER_TEXT, REPAIR_DETAILS);
+    const tampered = merged.replace(/〔GenUI 修复详情校验：[0-9a-z]+〕/, '〔GenUI 修复详情校验：zzzz〕');
+    expect(tampered).not.toBe(merged);
+    expect(stripGenuiPrompt(tampered).stripped).toBe(false);
+  });
+
+  it('修复详情块可被剥离，只保留短触发文本', () => {
+    const merged = mergeRepairDetails(SHORT_REPAIR_TRIGGER_TEXT, REPAIR_DETAILS);
+    expect(merged).toContain(GENUI_REPAIR_DETAIL_START);
+    expect(merged.endsWith(GENUI_REPAIR_DETAIL_END)).toBe(true);
+    expect(stripGenuiPrompt(merged)).toEqual({
+      text: SHORT_REPAIR_TRIGGER_TEXT,
+      stripped: true,
+    });
+  });
+
+  it('修复详情与协议块相邻时会被逐个移除', () => {
+    const merged = mergeRepairDetails(SHORT_REPAIR_TRIGGER_TEXT, REPAIR_DETAILS);
+    const outgoing = `${merged}${NL}${NL}${GENUI_PROMPT_TEXT}`;
+    expect(stripGenuiPrompt(outgoing)).toEqual({
+      text: SHORT_REPAIR_TRIGGER_TEXT,
+      stripped: true,
+    });
+    const cleaned = SHORT_REPAIR_TRIGGER_TEXT;
+    expect(stripGenuiPrompt(cleaned)).toEqual({ text: cleaned, stripped: false });
+  });
+});
+
+describe('mergeRepairDetails：发送时静默合并修复详情', () => {
+  const DETAILS = [
+    '请修复下面这段 GenUI（genui）界面内容的格式错误，并只返回修复后的完整 `genui` 代码块。',
+    '',
+    '错误路径：/elements/0',
+    '期望：至少包含 1 个元素',
+    '',
+    '修复要求：',
+    '- 只返回一个 genui 代码块',
+  ].join(String.fromCharCode(10));
+
+  it('只在短触发文本中出现时合并，且不重复追加', () => {
+    const plainDraft = '帮我改一下这段代码';
+    expect(mergeRepairDetails(plainDraft, DETAILS)).toBe(plainDraft);
+
+    const merged = mergeRepairDetails(SHORT_REPAIR_TRIGGER_TEXT, DETAILS);
+    expect(merged.startsWith(SHORT_REPAIR_TRIGGER_TEXT)).toBe(true);
+    expect(merged).toContain(GENUI_REPAIR_DETAIL_START);
+    expect(merged).toContain(DETAILS);
+
+    expect(mergeRepairDetails(merged, DETAILS)).toBe(merged);
+    expect(mergeRepairDetails(SHORT_REPAIR_TRIGGER_TEXT, null)).toBe(SHORT_REPAIR_TRIGGER_TEXT);
+    expect(mergeRepairDetails(SHORT_REPAIR_TRIGGER_TEXT, '   ')).toBe(SHORT_REPAIR_TRIGGER_TEXT);
+  });
+
+  it('用户保留的草稿在触发文本之前时，详情仍追加到末尾', () => {
+    const draft = `保留的补充说明${String.fromCharCode(10)}${String.fromCharCode(10)}${SHORT_REPAIR_TRIGGER_TEXT}`;
+    const merged = mergeRepairDetails(draft, DETAILS);
+    expect(merged.startsWith(draft)).toBe(true);
+    expect(stripGenuiPrompt(merged).text).toBe(draft);
   });
 });

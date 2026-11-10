@@ -10,8 +10,12 @@
  * genui」为准并保留 banner 叶子节点回退。
  */
 
+import { stripGenuiPrompt } from './prompt.ts';
+
 /** AI 回复容器选择器（阶段 0 实测）。 */
 export const ASSISTANT_SELECTOR = 'div.ds-assistant-message-main-content';
+/** 用户消息容器选择器（发送后由站点渲染，内部是用户原文）。 */
+export const USER_MESSAGE_SELECTOR = 'div.ds-message';
 /** 代码块根节点选择器。 */
 export const CODE_BLOCK_SELECTOR = 'div.md-code-block';
 /** 代码块 banner 容器；标签精确类名失配时在其内部回退扫描。 */
@@ -292,3 +296,58 @@ export const DEEPSEEK_SITE_ADAPTER: SiteAdapter = {
     };
   },
 };
+
+/**
+ * 判断一个 `.ds-message` 是否是用户消息：回答容器内部的同类节点、以及包含回答
+ * 容器的节点都不属于用户消息。
+ */
+function isUserMessageElement(element: Element): boolean {
+  if (element.closest(ASSISTANT_SELECTOR)) return false;
+  if (element.querySelector(ASSISTANT_SELECTOR)) return false;
+  return true;
+}
+
+/** 从元素末尾删除指定数量的字符（跨文本节点），不改动其前面的用户原文。 */
+function removeTrailingCharacters(element: Element, count: number): void {
+  let remaining = count;
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    nodes.push(node as Text);
+    node = walker.nextNode();
+  }
+  for (let index = nodes.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const text = nodes[index];
+    if (text.data.length <= remaining) {
+      remaining -= text.data.length;
+      // 不摘除节点：消息由页面框架渲染，移除节点会让其卸载子树时抛 NotFoundError。
+      text.data = '';
+    } else {
+      text.data = text.data.slice(0, text.data.length - remaining);
+      remaining = 0;
+    }
+  }
+}
+
+/**
+ * DOM 兜底：剥离用户消息末尾由本扩展追加的协议块/修复详情块。
+ *
+ * 与响应剥离使用同一套内容判断：协议块必须与内置完整协议逐字相等（忽略空白
+ * 差异），修复详情块必须带首尾标记与匹配的校验码。渲染后的 Markdown 段落边界
+ * 不会保留在 `textContent` 里，因此这里放宽「块起点在行首」的约束。
+ * 返回被清洗的消息数量。
+ */
+export function sanitizeUserMessages(root: ParentNode): number {
+  let stripped = 0;
+  for (const element of root.querySelectorAll(USER_MESSAGE_SELECTOR)) {
+    if (!isUserMessageElement(element)) continue;
+    const text = element.textContent ?? '';
+    if (text === '') continue;
+    const result = stripGenuiPrompt(text, { relaxedBoundary: true });
+    if (!result.stripped) continue;
+    removeTrailingCharacters(element, text.length - result.text.length);
+    stripped += 1;
+  }
+  return stripped;
+}
