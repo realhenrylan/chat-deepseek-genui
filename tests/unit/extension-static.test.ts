@@ -8,14 +8,14 @@ import { describe, expect, it } from 'vitest';
  * 请求」与站点自身请求（Playwright 未暴露可信的 initiator 归因）。因此由本
  * 测试静态锁定：除 MAIN world 拦截器外，src/ 下的生产源码不得引用任何网络 API。
  * 维度互补：manifest（零 host_permissions、无后台）→ 构建期 dist 校验（无远程
- * 资源/动态执行）→ 本测试（源码零网络 API，拦截器只包裹原生 fetch）→ 真实 origin
- * URL 红线。
+ * 资源/动态执行）→ 本测试（源码零网络 API，拦截器只包裹原生 fetch 与 XHR）→
+ * 真实 origin URL 红线。
  */
 
 // 注意：不用 new URL(…, import.meta.url)——Vite 会静态改写该模式导致解析失真。
 // vitest 的 root 恒定为本仓库根（npm scripts 均从根目录运行），按 cwd 解析即可。
 const SOURCE_ROOT = join(process.cwd(), 'src');
-/** 唯一允许接触网络 API 的文件：MAIN world 拦截器包裹原生 fetch，不自行发起请求。 */
+/** 唯一允许接触网络 API 的文件：MAIN world 拦截器包裹原生 fetch 与 XHR，不自行发起请求。 */
 const INTERCEPTOR_FILE = join(SOURCE_ROOT, 'content', 'interceptor.ts');
 
 const collectTypeScriptFiles = (dir: string): string[] => {
@@ -55,10 +55,11 @@ describe('内容脚本静态不变量：生产源码零网络调用', () => {
     ).toEqual([]);
   });
 
-  it('拦截器只包裹原生 fetch，不自行发起请求、不引用远程地址或扩展 API', () => {
+  it('拦截器只包裹原生 fetch 与 XMLHttpRequest，不引用其他网络 API、远程地址或扩展 API', () => {
     const source = readFileSync(INTERCEPTOR_FILE, 'utf8');
     expect(source).toContain('fetch');
-    expect(source).not.toMatch(/XMLHttpRequest|sendBeacon|WebSocket|EventSource/);
+    expect(source).toContain('XMLHttpRequest');
+    expect(source).not.toMatch(/sendBeacon|WebSocket|EventSource/);
     expect(source).not.toMatch(/https?:\/\//);
     expect(source).not.toMatch(/\bchrome\./);
   });

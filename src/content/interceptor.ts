@@ -20,12 +20,13 @@ import {
 /**
  * MAIN world 网络层拦截器（document_start）。
  *
- * 只做两件事，并且任何异常都会静默回退到原生 fetch：
+ * 同时包裹 `window.fetch` 与 `XMLHttpRequest`（线上 `@lylajs/web` 默认走 XHR），
+ * 只做两件事，并且任何异常都会静默回退到原生请求：
  * 1. 发送侧：把 GenUI 协议文本附加到聊天生成请求体的 `prompt` 字段，页面输入框与消息气泡不受影响。
  * 2. 读取侧：历史消息 JSON 进入前端状态树之前，剥离扩展追加的尾部块。
  *
  * 状态消费规则（避免旧请求影响新一轮选择）：
- * - 调用 fetch 后派发 `genui:request-sent`，携带当前模式版本号与本次是否合并了修复详情；
+ * - 调用原生请求后派发 `genui:request-sent`，携带当前模式版本号与本次是否合并了修复详情；
  *   模式切换以版本号为准，迟到的旧事件不会复位新一轮选择。
  * - 只有请求成功返回后才派发 `genui:request-delivered`，且只清除被该请求真正合并过的修复暂存。
  *
@@ -35,10 +36,17 @@ import {
  */
 
 const INTERCEPTOR_FLAG = '__dsgenuiFetchInterceptor';
+const XHR_INTERCEPTOR_FLAG = '__dsgenuiXhrInterceptor';
 
-const CHAT_GENERATION_PATHS = ['/api/v0/chat/completion', '/api/v0/chat/edit'];
+// 线上编辑消息接口为 edit_message；edit 为兼容旧版本保留。
+const CHAT_GENERATION_PATHS = [
+  '/api/v0/chat/completion',
+  '/api/v0/chat/edit',
+  '/api/v0/chat/edit_message',
+];
 
-const HISTORY_PATHS = ['/api/v0/chat/history_messages'];
+// 历史消息与分享内容都会回放用户原文。
+const HISTORY_PATHS = ['/api/v0/chat/history_messages', '/api/v0/share/content'];
 
 // DeepSeek 的历史接口把用户正文放在 `fragments[{ type: "REQUEST", content }]` 里，
 // 只检查外层 `role: "USER"` 会漏掉这些片段。
@@ -50,11 +58,12 @@ const HISTORY_METHOD = 'GET';
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 interface InterceptorTarget {
-  fetch: FetchLike;
+  fetch?: FetchLike;
   document: Document;
   Response: typeof Response;
   Headers: typeof Headers;
   Request?: typeof Request;
+  XMLHttpRequest?: typeof XMLHttpRequest;
 }
 
 interface InjectedBody {
@@ -301,18 +310,305 @@ async function cleanResponse(
   });
 }
 
+interface XhrRequestState {
+  url: URL;
+  method: string;
+  history: boolean;
+  textSource?: string;
+  textClean?: string | null;
+  jsonProcessed?: boolean;
+}
+
+function dispatchDocumentEvent<TDetail>(
+  doc: Document,
+  name: string,
+  detail: TDetail,
+): void {
+  try {
+    doc.dispatchEvent(new CustomEvent(name, { detail }));
+  } catch {
+    // 事件派发失败不影响聊天。
+  }
+}
+
+/** 历史接口的文本响应清洗；没有 GenUI 文本或解析失败时返回 null。 */
+function cleanHistoryText(text: string): string | null {
+  if (!text.includes('GenUI')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return stripUserMessageValues(parsed) ? JSON.stringify(parsed) : null;
+}
+
+function findPropertyDescriptor(
+  start: object | null,
+  key: string,
+): PropertyDescriptor | undefined {
+  let current: object | null = start;
+  while (current !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor !== undefined) return descriptor;
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  return undefined;
+}
+
+function readNativeProperty(
+  instance: object,
+  descriptor: PropertyDescriptor | undefined,
+): unknown {
+  if (descriptor === undefined) return undefined;
+  if (typeof descriptor.get === 'function') return descriptor.get.call(instance);
+  return descriptor.value;
+}
+
 /**
- * 安装 fetch 拦截器；对同一个 fetch 函数重复调用是幂等的。
+ * 安装 XMLHttpRequest 拦截器；对同一个构造器重复调用是幂等的。
  *
- * 返回 true 表示本次完成了安装，false 表示该 fetch 已被本拦截器包裹。
+ * 线上请求库通过 XHR 发送 SSE，发送侧与 fetch 共用同一份注入与事件逻辑；
+ * 历史读取侧在实例上覆写 `response` / `responseText` getter，不改动原生传输。
+ */
+function installGenuiXhrInterceptor(target: InterceptorTarget): boolean {
+  const XhrCtor =
+    target.XMLHttpRequest ??
+    (typeof XMLHttpRequest === 'function' ? XMLHttpRequest : undefined);
+  if (typeof XhrCtor !== 'function') return false;
+
+  const proto = XhrCtor.prototype as XMLHttpRequest;
+  if ((proto as unknown as Record<string, unknown>)[XHR_INTERCEPTOR_FLAG] === true) {
+    return false;
+  }
+
+  const nativeOpen = proto.open as (
+    method: string,
+    url: string | URL,
+    async?: boolean,
+    username?: string | null,
+    password?: string | null,
+  ) => void;
+  const nativeSend = proto.send as (
+    this: XMLHttpRequest,
+    body?: Document | XMLHttpRequestBodyInit | null,
+  ) => void;
+  if (typeof nativeOpen !== 'function' || typeof nativeSend !== 'function') return false;
+
+  const doc = target.document;
+  const responseTextDescriptor = findPropertyDescriptor(proto, 'responseText');
+  const responseDescriptor = findPropertyDescriptor(proto, 'response');
+  const states = new WeakMap<XMLHttpRequest, XhrRequestState>();
+  const overridden = new WeakSet<XMLHttpRequest>();
+
+  const isHistoryResponse = (
+    xhr: XMLHttpRequest,
+    state: XhrRequestState | undefined,
+  ): state is XhrRequestState =>
+    state !== undefined &&
+    state.history &&
+    xhr.readyState === 4 &&
+    xhr.status >= 200 &&
+    xhr.status < 300;
+
+  const readText = (xhr: XMLHttpRequest, state: XhrRequestState | undefined): string => {
+    const raw = readNativeProperty(xhr, responseTextDescriptor);
+    const text = typeof raw === 'string' ? raw : '';
+    if (!isHistoryResponse(xhr, state)) return text;
+    const responseType = xhr.responseType;
+    if (responseType !== '' && responseType !== 'text') return text;
+    if (state.textSource === text) return state.textClean ?? text;
+    const cleaned = cleanHistoryText(text);
+    state.textSource = text;
+    state.textClean = cleaned;
+    return cleaned ?? text;
+  };
+
+  const readResponse = (
+    xhr: XMLHttpRequest,
+    state: XhrRequestState | undefined,
+  ): unknown => {
+    const raw = readNativeProperty(xhr, responseDescriptor);
+    if (!isHistoryResponse(xhr, state)) return raw;
+    const responseType = xhr.responseType;
+    if (responseType === '' || responseType === 'text') return readText(xhr, state);
+    if (responseType !== 'json') return raw;
+    if (state.jsonProcessed === true) return raw;
+    state.jsonProcessed = true;
+    try {
+      if (typeof raw === 'object' && raw !== null) stripUserMessageValues(raw);
+    } catch {
+      // 原生对象保持不变。
+    }
+    return raw;
+  };
+
+  const installResponseOverrides = (xhr: XMLHttpRequest): void => {
+    if (overridden.has(xhr)) return;
+    let installed = false;
+    try {
+      if (responseTextDescriptor !== undefined) {
+        Object.defineProperty(xhr, 'responseText', {
+          configurable: true,
+          enumerable: true,
+          get: () => readText(xhr, states.get(xhr)),
+        });
+        installed = true;
+      }
+      if (responseDescriptor !== undefined) {
+        Object.defineProperty(xhr, 'response', {
+          configurable: true,
+          enumerable: true,
+          get: () => readResponse(xhr, states.get(xhr)),
+        });
+        installed = true;
+      }
+    } catch {
+      // 平台对象拒绝覆写时保持原生行为。
+    }
+    if (installed) overridden.add(xhr);
+  };
+
+  const wrappedOpen = function (
+    this: XMLHttpRequest,
+    method: string,
+    url: string | URL,
+    async?: boolean,
+    username?: string | null,
+    password?: string | null,
+  ): void {
+    let state: XhrRequestState | null = null;
+    try {
+      const resolved = resolveRequestUrl(url, doc);
+      if (resolved !== null) {
+        const normalizedMethod = String(method).toUpperCase();
+        state = {
+          url: resolved,
+          method: normalizedMethod,
+          history: normalizedMethod === HISTORY_METHOD && isHistoryPath(resolved.pathname),
+        };
+      }
+    } catch {
+      state = null;
+    }
+
+    nativeOpen.call(this, method, url, async, username, password);
+
+    if (state === null) {
+      states.delete(this);
+      return;
+    }
+    states.set(this, state);
+    if (state.history) installResponseOverrides(this);
+  };
+
+  const wrappedSend = function (
+    this: XMLHttpRequest,
+    body?: Document | XMLHttpRequestBodyInit | null,
+  ): void {
+    const state = states.get(this);
+    const isChat =
+      state !== undefined &&
+      state.method === CHAT_GENERATION_METHOD &&
+      isChatGenerationPath(state.url.pathname);
+
+    if (!isChat) {
+      nativeSend.call(this, body);
+      return;
+    }
+
+    const snapshot = readRequestSnapshot(doc);
+    const detail: RequestSentDetail = {
+      mode: snapshot.mode,
+      modeRevision: snapshot.modeRevision,
+      injected: false,
+      repairStashId: null,
+    };
+    let outgoingBody = body;
+
+    if (typeof body === 'string') {
+      try {
+        const outcome = injectIntoBody(body, snapshot);
+        if (outcome.status === 'injected') {
+          outgoingBody = outcome.result.body;
+          detail.injected = outcome.result.injected;
+          detail.repairStashId = outcome.result.repairStashId;
+        }
+      } catch {
+        // 任何改写失败都退回原请求：聊天不能因为增强而中断。
+        outgoingBody = body;
+        detail.injected = false;
+        detail.repairStashId = null;
+      }
+    }
+
+    let deliveryListener: (() => void) | null = null;
+    if (detail.repairStashId !== null) {
+      const repairStashId = detail.repairStashId;
+      deliveryListener = () => {
+        if (this.status >= 200 && this.status < 300) {
+          dispatchDocumentEvent<RequestDeliveredDetail>(doc, REQUEST_DELIVERED_EVENT, {
+            repairStashId,
+          });
+        }
+      };
+      try {
+        this.addEventListener('loadend', deliveryListener, { once: true });
+      } catch {
+        deliveryListener = null;
+      }
+    }
+
+    try {
+      nativeSend.call(this, outgoingBody);
+    } catch (error) {
+      if (deliveryListener !== null) {
+        try {
+          this.removeEventListener('loadend', deliveryListener);
+        } catch {
+          // 忽略移除失败。
+        }
+      }
+      dispatchDocumentEvent<RequestSentDetail>(doc, REQUEST_SENT_EVENT, detail);
+      throw error;
+    }
+
+    dispatchDocumentEvent<RequestSentDetail>(doc, REQUEST_SENT_EVENT, detail);
+  };
+
+  try {
+    proto.open = wrappedOpen;
+    proto.send = wrappedSend;
+    Object.defineProperty(proto, XHR_INTERCEPTOR_FLAG, {
+      value: true,
+      configurable: false,
+    });
+  } catch {
+    try {
+      proto.open = nativeOpen;
+      proto.send = nativeSend;
+    } catch {
+      // 忽略回滚失败。
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 安装 fetch 与 XMLHttpRequest 拦截器；对同一目标重复调用是幂等的。
+ *
+ * 返回 true 表示本次至少安装了一层拦截，false 表示目标上的 fetch 与 XHR
+ * 都已被包裹（或都不存在）。
  */
 export function installGenuiFetchInterceptor(target: InterceptorTarget): boolean {
+  const xhrInstalled = installGenuiXhrInterceptor(target);
   const original = target.fetch;
   if (
     typeof original !== 'function' ||
     (original as unknown as Record<string, unknown>)[INTERCEPTOR_FLAG]
   ) {
-    return false;
+    return xhrInstalled;
   }
   const doc = target.document;
   const RequestCtor = target.Request ?? (typeof Request === 'function' ? Request : undefined);
@@ -419,14 +715,17 @@ export function installGenuiFetchInterceptor(target: InterceptorTarget): boolean
   try {
     target.fetch = wrapped;
   } catch {
-    return false;
+    return xhrInstalled;
   }
   return true;
 }
 
 if (typeof globalThis !== 'undefined') {
   const scope = globalThis as unknown as Partial<InterceptorTarget>;
-  if (typeof scope.fetch === 'function' && scope.document) {
+  if (
+    scope.document &&
+    (typeof scope.fetch === 'function' || typeof scope.XMLHttpRequest === 'function')
+  ) {
     installGenuiFetchInterceptor(scope as InterceptorTarget);
   }
 }

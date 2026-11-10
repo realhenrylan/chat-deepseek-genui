@@ -1842,21 +1842,39 @@ for (const { label, channel } of CHANNELS) {
     }
   });
 
-  test(`阶段 7d · ${label} 真实发送请求注入与历史响应按内容剥离`, async () => {
+  test(`阶段 7d · ${label} fetch 与 XHR 发送注入、历史响应按内容剥离`, async () => {
     test.skip(REAL_SITE, '阶段 7d 使用模拟页核对请求体与历史响应，不读取真实聊天内容');
     const { context, page, profileDir } = await launchWithExtension(channel);
     const buckets = watchErrors(page);
     const original = '把这段话总结成三点';
     const sent = `${original}\n\n${GENUI_PROMPT_TEXT}`;
-    let sentPrompt: string | null = null;
+    const sentPrompts: Record<string, string[]> = {};
+    const historyPayload = (content: string) => ({
+      code: 0,
+      data: {
+        chat_messages: [
+          { message_id: 'msg-1', fragments: [{ type: 'REQUEST', content }] },
+          { message_id: 'msg-2', fragments: [{ type: 'RESPONSE', content: '已收到' }] },
+        ],
+      },
+    });
+    const sharePayload = (content: string) => ({
+      code: 0,
+      data: {
+        messages: [{ message_id: 'share-1', fragments: [{ type: 'REQUEST', content }] }],
+      },
+    });
 
     try {
       await context.route('https://chat.deepseek.com/api/v0/**', async (route) => {
         const request = route.request();
         const path = new URL(request.url()).pathname;
-        if (request.method() === 'POST' && path === '/api/v0/chat/completion') {
+        if (
+          request.method() === 'POST' &&
+          (path === '/api/v0/chat/completion' || path === '/api/v0/chat/edit_message')
+        ) {
           const payload = request.postDataJSON() as { prompt?: string };
-          sentPrompt = payload.prompt ?? null;
+          (sentPrompts[path] ??= []).push(payload.prompt ?? '');
           // 协议只随请求发送；历史剥离不依赖服务端返回用户消息 id。
           await route.fulfill({
             status: 200,
@@ -1865,19 +1883,16 @@ for (const { label, channel } of CHANNELS) {
           });
           return;
         }
-        if (request.method() === 'GET' && path === '/api/v0/chat/history_messages') {
+        if (
+          request.method() === 'GET' &&
+          (path === '/api/v0/chat/history_messages' || path === '/api/v0/share/content')
+        ) {
+          const body =
+            path === '/api/v0/chat/history_messages' ? historyPayload(sent) : sharePayload(sent);
           await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({
-              code: 0,
-              data: {
-                chat_messages: [
-                  { message_id: 'msg-1', role: 'user', content: sent },
-                  { message_id: 'msg-2', role: 'assistant', content: '已收到' },
-                ],
-              },
-            }),
+            body: JSON.stringify(body),
           });
           return;
         }
@@ -1888,7 +1903,7 @@ for (const { label, channel } of CHANNELS) {
       const input = page.locator('#e2e-input');
       await input.fill(original);
 
-      const status = await page.evaluate(async (text) => {
+      const fetchStatus = await page.evaluate(async (text) => {
         const response = await fetch('/api/v0/chat/completion', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1897,20 +1912,83 @@ for (const { label, channel } of CHANNELS) {
         return response.status;
       }, original);
 
-      expect(status).toBe(200);
-      expect(sentPrompt, '发送请求体应在后台附加协议，而不是改写草稿').toBe(sent);
+      expect(fetchStatus).toBe(200);
       await expect(input).toHaveValue(original);
 
       const history = await page.evaluate(async () => {
         const response = await fetch('/api/v0/chat/history_messages');
         return (await response.json()) as {
-          data: { chat_messages: { content: string }[] };
+          data: { chat_messages: { fragments: { content: string }[] }[] };
         };
       });
-      expect(history.data.chat_messages[0].content, '历史响应中的用户消息应恢复为用户原文').toBe(
-        original,
+      expect(
+        history.data.chat_messages[0].fragments[0].content,
+        '历史响应中的用户消息应恢复为用户原文',
+      ).toBe(original);
+      expect(history.data.chat_messages[1].fragments[0].content, '助手消息不受影响').toBe(
+        '已收到',
       );
-      expect(history.data.chat_messages[1].content, '助手消息不受影响').toBe('已收到');
+
+      // 线上 @lylajs/web 走 XMLHttpRequest：发送、默认/text/json 读取都覆盖。
+      const xhrResults = await page.evaluate(async (text) => {
+        const post = (path: string) =>
+          new Promise<number>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', path, true);
+            xhr.setRequestHeader('content-type', 'application/json');
+            xhr.onloadend = () => resolve(xhr.status);
+            xhr.onerror = () => reject(new Error(`XHR POST 失败：${path}`));
+            xhr.send(JSON.stringify({ prompt: text }));
+          });
+        const get = (path: string, responseType: '' | 'text' | 'json') =>
+          new Promise<{ status: number; text: string | null; response: unknown }>(
+            (resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open('GET', path, true);
+              xhr.responseType = responseType;
+              xhr.onloadend = () => {
+                resolve({
+                  status: xhr.status,
+                  text: responseType === 'json' ? null : xhr.responseText,
+                  response: xhr.response,
+                });
+              };
+              xhr.onerror = () => reject(new Error(`XHR GET 失败：${path}`));
+              xhr.send();
+            },
+          );
+
+        return {
+          completionStatus: await post('/api/v0/chat/completion'),
+          editStatus: await post('/api/v0/chat/edit_message'),
+          historyDefault: await get('/api/v0/chat/history_messages', ''),
+          historyText: await get('/api/v0/chat/history_messages', 'text'),
+          shareText: await get('/api/v0/share/content', 'text'),
+          shareJson: await get('/api/v0/share/content', 'json'),
+        };
+      }, original);
+
+      expect(xhrResults.completionStatus).toBe(200);
+      expect(xhrResults.editStatus).toBe(200);
+      expect(sentPrompts['/api/v0/chat/completion'], 'fetch 与 XHR 的请求体都应附加协议').toEqual([
+        sent,
+        sent,
+      ]);
+      expect(sentPrompts['/api/v0/chat/edit_message']).toEqual([sent]);
+
+      const expectedHistory = JSON.stringify(historyPayload(original));
+      for (const result of [xhrResults.historyDefault, xhrResults.historyText]) {
+        expect(result.status).toBe(200);
+        expect(result.text, '历史 XHR 的 responseText 应恢复为用户原文').toBe(expectedHistory);
+        expect(result.response, '历史 XHR 的 response 应恢复为用户原文').toBe(expectedHistory);
+      }
+
+      const expectedShare = JSON.stringify(sharePayload(original));
+      expect(xhrResults.shareText.status).toBe(200);
+      expect(xhrResults.shareText.text).toBe(expectedShare);
+      expect(xhrResults.shareText.response).toBe(expectedShare);
+      expect(xhrResults.shareJson.status).toBe(200);
+      expect(xhrResults.shareJson.response).toEqual(JSON.parse(expectedShare) as unknown);
 
       // 站点渲染的气泡即使没有 message id，也按正文内容剥离尾部协议。
       await page.evaluate((text) => {
@@ -1926,7 +2004,7 @@ for (const { label, channel } of CHANNELS) {
         .poll(() => page.evaluate(() => document.querySelector('#e2e-sent-bubble')?.textContent ?? null))
         .toBe(original);
 
-      // 刷新后不依赖任何本地索引：历史与气泡同样按内容剥离。
+      // 刷新后不依赖任何本地索引：fetch/XHR 历史与气泡同样按内容剥离。
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
         timeout: 30_000,
@@ -1934,10 +2012,27 @@ for (const { label, channel } of CHANNELS) {
       const reloaded = await page.evaluate(async () => {
         const response = await fetch('/api/v0/chat/history_messages');
         return (await response.json()) as {
-          data: { chat_messages: { content: string }[] };
+          data: { chat_messages: { fragments: { content: string }[] }[] };
         };
       });
-      expect(reloaded.data.chat_messages[0].content, '刷新后历史仍恢复为用户原文').toBe(original);
+      expect(
+        reloaded.data.chat_messages[0].fragments[0].content,
+        '刷新后 fetch 历史仍恢复为用户原文',
+      ).toBe(original);
+      const reloadedXhr = await page.evaluate(
+        () =>
+          new Promise<{ status: number; text: string }>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', '/api/v0/chat/history_messages', true);
+            xhr.onloadend = () => resolve({ status: xhr.status, text: xhr.responseText });
+            xhr.onerror = () => reject(new Error('刷新后 XHR 历史请求失败'));
+            xhr.send();
+          }),
+      );
+      expect(reloadedXhr.status).toBe(200);
+      expect(reloadedXhr.text, '刷新后 XHR 历史仍恢复为用户原文').toBe(
+        JSON.stringify(historyPayload(original)),
+      );
       await page.evaluate((text) => {
         const message = document.createElement('div');
         message.className = 'ds-message';
