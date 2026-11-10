@@ -649,17 +649,21 @@ interface ViewportRect {
 
 interface ToggleBounds {
   panel: ViewportRect;
+  panelHidden: boolean;
+  menu: ViewportRect;
+  menuHidden: boolean;
   host: ViewportRect;
   viewportWidth: number;
   viewportHeight: number;
 }
 
-/** 读取 shadow DOM 中说明面板与浮标宿主的视口矩形（只通过公开 DOM 观测）。 */
+/** 读取 shadow DOM 中说明面板、折叠菜单与浮标宿主的视口矩形（只通过公开 DOM 观测）。 */
 async function readToggleBounds(page: Page): Promise<ToggleBounds> {
   return page.evaluate(() => {
     const host = document.querySelector('[data-genui-control]');
-    const panel = host?.shadowRoot?.querySelector('.panel');
-    if (!host || !panel) throw new Error('未找到 GenUI 浮标或说明面板');
+    const panel = host?.shadowRoot?.querySelector<HTMLElement>('#genui-panel');
+    const menu = host?.shadowRoot?.querySelector<HTMLElement>('#genui-toolbar-menu');
+    if (!host || !panel || !menu) throw new Error('未找到 GenUI 浮标或工具菜单');
     const toRect = (element: Element): ViewportRect => {
       const rect = element.getBoundingClientRect();
       return {
@@ -672,6 +676,9 @@ async function readToggleBounds(page: Page): Promise<ToggleBounds> {
     };
     return {
       panel: toRect(panel),
+      panelHidden: panel.hidden !== false,
+      menu: toRect(menu),
+      menuHidden: menu.hidden !== false,
       host: toRect(host),
       viewportWidth: innerWidth,
       viewportHeight: innerHeight,
@@ -679,19 +686,23 @@ async function readToggleBounds(page: Page): Promise<ToggleBounds> {
   });
 }
 
-/** 说明面板与浮标都应完整留在视口内（容忍 0.5px 子像素取整）。 */
+/** 可见浮层与浮标都应完整留在视口内（容忍 0.5px 子像素取整）。 */
 function expectToggleInsideViewport(bounds: ToggleBounds): void {
-  const targets = [
-    { name: '说明面板', rect: bounds.panel },
-    { name: '浮标', rect: bounds.host },
-  ];
+  const targets = [{ name: '浮标', rect: bounds.host }];
+  if (!bounds.panelHidden) targets.push({ name: '说明面板', rect: bounds.panel });
+  if (!bounds.menuHidden) targets.push({ name: '工具菜单', rect: bounds.menu });
   for (const { name, rect } of targets) {
     expect(rect.left, `${name}左缘不应超出视口`).toBeGreaterThanOrEqual(-0.5);
     expect(rect.top, `${name}上缘不应超出视口`).toBeGreaterThanOrEqual(-0.5);
     expect(rect.right, `${name}右缘不应超出视口`).toBeLessThanOrEqual(bounds.viewportWidth + 0.5);
     expect(rect.bottom, `${name}下缘不应超出视口`).toBeLessThanOrEqual(bounds.viewportHeight + 0.5);
   }
-  expect(bounds.panel.width, '窄视口下说明面板仍应保留可读宽度').toBeGreaterThanOrEqual(200);
+  if (!bounds.panelHidden) {
+    expect(bounds.panel.width, '窄视口下说明面板仍应保留可读宽度').toBeGreaterThanOrEqual(200);
+  }
+  if (!bounds.menuHidden) {
+    expect(bounds.menu.width, '工具菜单应保留可读宽度').toBeGreaterThanOrEqual(120);
+  }
 }
 
 for (const { label, channel } of CHANNELS) {
@@ -1786,9 +1797,17 @@ for (const { label, channel } of CHANNELS) {
       const input = page.locator('#e2e-input');
       const control = page.locator('[data-genui-control]');
       const toggle = control.locator('button').first();
+      const menu = control.locator('#genui-toolbar-menu');
+      const menuToggle = control.locator('button.menu-toggle');
       const info = control.locator('button', { hasText: '查看增强说明' });
 
       await expect(toggle).toHaveText('GenUI 已开启');
+
+      // 折叠面板默认收起：主胶囊仍是第一个 button，箭头独立控制菜单。
+      await expect(menu).toBeHidden();
+      await expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(menuToggle).toHaveAttribute('aria-label', '展开 GenUI 工具菜单');
+      await expect(menuToggle).toHaveAttribute('aria-controls', 'genui-toolbar-menu');
 
       // 输入不再触发草稿追加：协议只在发送请求时于后台附加。
       const original = '帮我做一份月度预算';
@@ -1805,6 +1824,16 @@ for (const { label, channel } of CHANNELS) {
       ).toBe('auto');
 
       // 说明面板逐字展示真正参与请求的协议文本，并说明不写入输入框、不会自动发送。
+      // 行项位于折叠菜单内，需先点箭头展开才可见可点。
+      await menuToggle.click();
+      await expect(menu).toBeVisible();
+      await expect(menuToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(menuToggle).toHaveAttribute('aria-label', '收起 GenUI 工具菜单');
+      await expect(menu.locator('button')).toHaveText([
+        '本轮：自动适配',
+        '查看增强说明',
+        '本地诊断',
+      ]);
       await info.click();
       const panel = control.locator('#genui-panel');
       await expect(panel).toBeVisible();
@@ -2064,10 +2093,13 @@ for (const { label, channel } of CHANNELS) {
       await page.setViewportSize({ width: 420, height: 900 });
       await gotoAndAwaitMarker(page);
       const control = page.locator('[data-genui-control]');
+      const menuToggle = control.locator('button.menu-toggle');
       const info = control.locator('button', { hasText: '查看增强说明' });
       const panel = control.locator('#genui-panel');
 
       await expect(panel).toBeHidden();
+      // 420px 窄视口下展开折叠菜单也不得溢出，随后再打开说明面板。
+      await menuToggle.click();
       await info.click();
       await expect(panel).toBeVisible();
 
@@ -2093,6 +2125,8 @@ for (const { label, channel } of CHANNELS) {
       await gotoAndAwaitMarker(page);
       const control = page.locator('[data-genui-control]');
       const toggle = control.locator('button').first();
+      const menu = control.locator('#genui-toolbar-menu');
+      const menuToggle = control.locator('button.menu-toggle');
       const info = control.locator('button', { hasText: '查看增强说明' });
       const panel = control.locator('#genui-panel');
       const viewport = page.viewportSize();
@@ -2100,11 +2134,16 @@ for (const { label, channel } of CHANNELS) {
       const box = await toggle.boundingBox();
       if (!box) throw new Error('缺少浮标位置');
 
-      // 关闭态宿主只有按钮列高，可拖到接近屏幕底部；展开面板后必须自动回夹。
+      // 收起态宿主只有胶囊栏高，可拖到接近屏幕底部；展开菜单与面板后必须自动回夹。
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
       await page.mouse.move(viewport.width - 80, viewport.height - 8, { steps: 8 });
       await page.mouse.up();
+
+      await expect(menu).toBeHidden();
+      await menuToggle.click();
+      await expect(menu).toBeVisible();
+      expectToggleInsideViewport(await readToggleBounds(page));
 
       await info.click();
       await expect(panel).toBeVisible();

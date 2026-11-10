@@ -5,6 +5,27 @@ import type { GenuiPromptMode } from './prompt';
 import { copyText } from './repair';
 
 const CONTROL_ATTR = 'data-genui-control';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** 内联折线箭头：默认画「向上」，收起态由 CSS rotate(180deg) 翻成「向下」。 */
+function createChevron(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, 'svg');
+  svg.classList.add('chevron');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('width', '12');
+  svg.setAttribute('height', '12');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const polyline = doc.createElementNS(SVG_NS, 'polyline');
+  polyline.setAttribute('points', '2.5 7.5 6 4 9.5 7.5');
+  polyline.setAttribute('fill', 'none');
+  polyline.setAttribute('stroke', 'currentColor');
+  polyline.setAttribute('stroke-width', '1.8');
+  polyline.setAttribute('stroke-linecap', 'round');
+  polyline.setAttribute('stroke-linejoin', 'round');
+  svg.append(polyline);
+  return svg;
+}
 
 export const AUGMENT_STATUS_LABELS: Record<AugmentStatus, string> = {
   ready: '静默增强已就绪：发送消息时在后台自动附加协议，不占用输入框',
@@ -82,6 +103,13 @@ export function createToggleControl(
       align-items: flex-end;
       gap: 6px;
     }
+    /* 顶部状态胶囊：主开关占左段、独立箭头占右段，组成一体式双段胶囊。 */
+    .toolbar-bar {
+      display: flex;
+      align-items: stretch;
+      border-radius: 999px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, .14);
+    }
     button {
       appearance: none;
       display: inline-flex;
@@ -100,13 +128,67 @@ export function createToggleControl(
       user-select: none;
       -webkit-user-select: none;
     }
+    /* 作者样式优先于 UA 的 [hidden]{display:none}，显式兜底避免隐藏按钮仍然显示。 */
+    button[hidden] { display: none; }
     .brand-mark { display: block; width: 16px; height: 16px; flex: 0 0 auto; }
-    .column > button:first-child { cursor: grab; }
-    .column > button:first-child:active,
-    .column > button:first-child[data-dragging] { cursor: grabbing; }
+    .toolbar-bar > button { box-shadow: none; }
+    .toolbar-bar > button:first-child {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+      cursor: grab;
+    }
+    /* 没有可显示菜单项时箭头隐藏，主开关恢复完整胶囊。 */
+    .toolbar-bar[data-solo] > button:first-child { border-radius: 999px; }
+    .toolbar-bar > button:first-child:active,
+    .toolbar-bar > button:first-child[data-dragging] { cursor: grabbing; }
+    .menu-toggle {
+      margin-left: -1px;
+      padding: 0 8px;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      color: #444;
+    }
+    .menu-toggle .chevron {
+      display: block;
+      transition: transform .18s ease;
+      transform: rotate(180deg);
+    }
+    .menu-toggle[aria-expanded="true"] .chevron { transform: rotate(0deg); }
     button:hover { background: #f4f4f4; }
     button:focus-visible { outline: 3px solid #4f8cff; outline-offset: 2px; }
     button[aria-pressed="false"] { color: #555; background: #f3f3f3; }
+    /* 阶段 6：折叠工具菜单，右对齐圆角面板，行项撑满宽度。 */
+    .toolbar-menu {
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      width: max-content;
+      min-width: 148px;
+      max-width: calc(100vw - 24px);
+      padding: 6px;
+      border: 1px solid rgba(120, 120, 120, .3);
+      border-radius: 12px;
+      color: #202124;
+      background: #fff;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .18);
+      text-align: left;
+    }
+    .toolbar-menu[hidden] { display: none; }
+    .toolbar-menu button {
+      display: flex;
+      width: 100%;
+      justify-content: flex-start;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 8px;
+      color: #202124;
+      background: transparent;
+      box-shadow: none;
+      font-weight: 500;
+      text-align: left;
+    }
+    .toolbar-menu button:hover { background: rgba(120, 120, 120, .16); }
     /* 阶段 7：说明面板；order:-1 让它出现在浮标左侧，但不改变按钮的 DOM 首项。 */
     .panel {
       order: -1;
@@ -167,6 +249,9 @@ export function createToggleControl(
       :host(:not([data-site-theme])) button { color: #eee; background: #282828; border-color: #555; }
       :host(:not([data-site-theme])) button:hover { background: #383838; }
       :host(:not([data-site-theme])) button[aria-pressed="false"] { color: #bbb; background: #202020; }
+      :host(:not([data-site-theme])) .toolbar-menu { color: #eee; background: #242424; border-color: #555; }
+      :host(:not([data-site-theme])) .toolbar-menu button { color: #eee; background: transparent; }
+      :host(:not([data-site-theme])) .toolbar-menu button:hover { background: #383838; }
       :host(:not([data-site-theme])) .panel { color: #eee; background: #242424; border-color: #555; }
       :host(:not([data-site-theme])) .panel p { color: #bbb; }
       :host(:not([data-site-theme])) .panel .status { color: #8ab4f8; }
@@ -176,6 +261,9 @@ export function createToggleControl(
     :host([data-site-theme="dark"]) button { color: #eee; background: #282828; border-color: #555; }
     :host([data-site-theme="dark"]) button:hover { background: #383838; }
     :host([data-site-theme="dark"]) button[aria-pressed="false"] { color: #bbb; background: #202020; }
+    :host([data-site-theme="dark"]) .toolbar-menu { color: #eee; background: #242424; border-color: #555; }
+    :host([data-site-theme="dark"]) .toolbar-menu button { color: #eee; background: transparent; }
+    :host([data-site-theme="dark"]) .toolbar-menu button:hover { background: #383838; }
     :host([data-site-theme="dark"]) .panel { color: #eee; background: #242424; border-color: #555; }
     :host([data-site-theme="dark"]) .panel p { color: #bbb; }
     :host([data-site-theme="dark"]) .panel .status { color: #8ab4f8; }
@@ -207,6 +295,12 @@ export function createToggleControl(
   button.addEventListener('pointercancel', handlePointerCancel);
   button.addEventListener('keydown', handleKeyDown);
 
+  // 折叠菜单第 1 行：本轮模式循环按钮（无 tool 文本时隐藏）。
+  const modeButton = doc.createElement('button');
+  modeButton.type = 'button';
+  modeButton.addEventListener('click', handleModeClick);
+
+  // 折叠菜单第 2 行：说明面板入口。
   const infoButton = doc.createElement('button');
   infoButton.type = 'button';
   infoButton.textContent = '查看增强说明';
@@ -215,11 +309,8 @@ export function createToggleControl(
   infoButton.hidden = !options.promptText;
   infoButton.addEventListener('click', handleInfoClick);
 
-  const modeButton = doc.createElement('button');
-  modeButton.type = 'button';
-  modeButton.addEventListener('click', handleModeClick);
-
   // issue #9：独立诊断入口，不放进 #genui-panel，避免改变说明面板的结构约定。
+  // 折叠菜单第 3 行：本地诊断入口。
   const diagnosticsButton = doc.createElement('button');
   diagnosticsButton.type = 'button';
   diagnosticsButton.textContent = '本地诊断';
@@ -228,6 +319,31 @@ export function createToggleControl(
   diagnosticsButton.setAttribute('aria-controls', 'genui-diagnostics');
   diagnosticsButton.hidden = !options.diagnostics;
   diagnosticsButton.addEventListener('click', handleDiagnosticsClick);
+
+  // 折叠箭头独立于主开关：点击只控制菜单，绝不触发 GenUI 开关。
+  const menuToggleButton = doc.createElement('button');
+  menuToggleButton.type = 'button';
+  menuToggleButton.className = 'menu-toggle';
+  menuToggleButton.setAttribute('aria-expanded', 'false');
+  menuToggleButton.setAttribute('aria-controls', 'genui-toolbar-menu');
+  menuToggleButton.setAttribute('aria-label', '展开 GenUI 工具菜单');
+  menuToggleButton.title = '展开或收起工具菜单';
+  menuToggleButton.append(createChevron(doc));
+  menuToggleButton.addEventListener('click', handleMenuToggleClick);
+
+  const bar = doc.createElement('div');
+  bar.className = 'toolbar-bar';
+  bar.append(button, menuToggleButton);
+
+  const toolbarMenu = doc.createElement('div');
+  toolbarMenu.id = 'genui-toolbar-menu';
+  toolbarMenu.className = 'toolbar-menu';
+  toolbarMenu.hidden = true;
+  toolbarMenu.setAttribute('role', 'group');
+  toolbarMenu.setAttribute('aria-label', 'GenUI 工具菜单');
+  // 行项顺序即展示顺序：本轮模式 → 查看增强说明 → 本地诊断。
+  toolbarMenu.append(modeButton, infoButton, diagnosticsButton);
+  toolbarMenu.addEventListener('keydown', handleMenuKeyDown);
 
   const panel = doc.createElement('section');
   panel.id = 'genui-panel';
@@ -335,7 +451,7 @@ export function createToggleControl(
     diagActions,
   );
 
-  column.append(button, infoButton, modeButton, diagnosticsButton);
+  column.append(bar, toolbarMenu);
   wrap.append(column, panel, diagnosticsPanel);
   shadow.append(style, wrap);
   (doc.documentElement ?? doc.body).append(host);
@@ -391,20 +507,71 @@ export function createToggleControl(
     options.onModeSelect?.(next);
   }
 
+  /** 收起工具菜单；折叠子浮层但不抢焦点（焦点归属由调用方决定）。 */
+  function setToolbarMenuOpen(open: boolean): void {
+    const wasOpen = !toolbarMenu.hidden;
+    toolbarMenu.hidden = !open;
+    menuToggleButton.setAttribute('aria-expanded', String(open));
+    menuToggleButton.setAttribute(
+      'aria-label',
+      open ? '收起 GenUI 工具菜单' : '展开 GenUI 工具菜单',
+    );
+    if (open) {
+      // 菜单展开后宿主变高；拖到屏幕底部的浮标要按新尺寸重新夹取，否则菜单会溢出视口。
+      if (position) setPosition(position.left, position.top);
+      return;
+    }
+    if (!wasOpen) return;
+    // 收起菜单时一并收起仍在悬空的子浮层，避免「菜单已折叠但面板还开着」。
+    closeInfoPanel(false);
+    closeDiagnosticsPanel(false);
+  }
+
+  function handleMenuToggleClick(event: MouseEvent): void {
+    event.stopPropagation();
+    // hidden 的类型是 boolean | "until-found"，显式归一为「是否已展开」。
+    setToolbarMenuOpen(toolbarMenu.hidden !== false);
+  }
+
+  /** 焦点在菜单内且子浮层未打开时，Escape 收起菜单并把焦点还给箭头按钮。 */
+  function handleMenuKeyDown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || toolbarMenu.hidden) return;
+    if (!panel.hidden || !diagnosticsPanel.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setToolbarMenuOpen(false);
+    menuToggleButton.focus();
+  }
+
+  /** 没有任何可显示行项时隐藏箭头按钮，主开关恢复单段胶囊。 */
+  function updateMenuAvailability(): void {
+    const hasItem = !modeButton.hidden || !infoButton.hidden || !diagnosticsButton.hidden;
+    menuToggleButton.hidden = !hasItem;
+    bar.toggleAttribute('data-solo', !hasItem);
+    if (!hasItem) setToolbarMenuOpen(false);
+  }
+
+  function closeInfoPanel(restoreFocus: boolean): void {
+    if (panel.hidden) return;
+    panel.hidden = true;
+    infoButton.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) infoButton.focus();
+  }
+
   function setPanelOpen(open: boolean): void {
     if (!options.promptText) return;
-    // 同一浮标旁只保留一个面板；打开说明时收起诊断。
-    if (open) closeDiagnosticsPanel(false);
-    panel.hidden = !open;
-    infoButton.setAttribute('aria-expanded', String(open));
-    if (open) {
-      // 面板显示后宿主会变宽、变高；拖动过的浮标按新尺寸重新夹取，
-      // 避免说明面板连同按钮被挤出视口。
-      if (position) setPosition(position.left, position.top);
-      closeButton.focus();
-    } else {
-      infoButton.focus();
+    if (!open) {
+      closeInfoPanel(true);
+      return;
     }
+    // 同一浮标旁只保留一个面板；打开说明时收起诊断。
+    closeDiagnosticsPanel(false);
+    panel.hidden = false;
+    infoButton.setAttribute('aria-expanded', 'true');
+    // 面板显示后宿主会变宽、变高；拖动过的浮标按新尺寸重新夹取，
+    // 避免说明面板连同按钮被挤出视口。
+    if (position) setPosition(position.left, position.top);
+    closeButton.focus();
   }
 
   function handleInfoClick(event: MouseEvent): void {
@@ -626,6 +793,7 @@ export function createToggleControl(
   renderStatus();
   // 未提供 tool 文本时没有可切换的模式集合，隐藏循环按钮，保持旧行为。
   modeButton.hidden = modeTexts.tool === '';
+  updateMenuAvailability();
   button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight');
   button.setAttribute('aria-description', '可拖动移动；按住 Alt 并使用方向键移动，Shift 加方向键可快速移动。');
   win?.addEventListener('resize', handleResize);
@@ -678,6 +846,8 @@ export function createToggleControl(
       button.removeEventListener('keydown', handleKeyDown);
       infoButton.removeEventListener('click', handleInfoClick);
       modeButton.removeEventListener('click', handleModeClick);
+      menuToggleButton.removeEventListener('click', handleMenuToggleClick);
+      toolbarMenu.removeEventListener('keydown', handleMenuKeyDown);
       closeButton.removeEventListener('click', handleCloseClick);
       panel.removeEventListener('keydown', handlePanelKeyDown);
       diagnosticsButton.removeEventListener('click', handleDiagnosticsClick);
