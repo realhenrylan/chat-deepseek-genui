@@ -7,6 +7,10 @@ import {
   GENUI_PROMPT_TEXT,
   GENUI_PROMPT_TOOL_START,
   GENUI_PROMPT_VERSION,
+  GENUI_PROMPT_V40_START,
+  GENUI_PROMPT_V40_TEXT,
+  GENUI_PROMPT_TOOL_V40_START,
+  GENUI_TOOL_PROMPT_V40_TEXT,
   GENUI_PROMPT_V32_TEXT,
   GENUI_TOOL_PROMPT_TEXT,
   GENUI_TOOL_PROMPT_V32_TEXT,
@@ -48,7 +52,7 @@ describe('默认增强提示词', () => {
   });
 
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe('4.0');
+    expect(GENUI_PROMPT_VERSION).toBe('4.1');
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
@@ -336,12 +340,40 @@ describe('v4.0 智能界面内联穿插协议提示词特性', () => {
   });
 });
 
+describe('v4.1 内联组件与历史版本兼容', () => {
+  it('新增 timeline/spoiler/poll 语法与穿插分工', () => {
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"timeline"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"spoiler"');
+    expect(GENUI_PROMPT_TEXT).toContain('"w":"poll"');
+    expect(GENUI_PROMPT_TEXT).toContain('在演进脉络与故障时序处配 timeline');
+    expect(GENUI_PROMPT_START).toContain('v4.1');
+    expect(GENUI_PROMPT_TOOL_START).toContain('v4.1');
+  });
+
+  it('v4.0 完整文本逐字保留且仍可识别为未编辑草稿', () => {
+    expect(GENUI_PROMPT_V40_TEXT.includes('"w":"timeline"')).toBe(false);
+    expect(GENUI_PROMPT_V40_TEXT.startsWith(GENUI_PROMPT_V40_START)).toBe(true);
+    expect(GENUI_TOOL_PROMPT_V40_TEXT.startsWith(GENUI_PROMPT_TOOL_V40_START)).toBe(true);
+    expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${GENUI_PROMPT_V40_TEXT}`).kind).toBe('intact');
+    expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${GENUI_TOOL_PROMPT_V40_TEXT}`).kind).toBe('intact');
+  });
+
+  it('v4.0 与 v4.1 版本标记都能被识别为已追加', () => {
+    expect(hasGenuiPrompt(GENUI_PROMPT_V40_TEXT)).toBe(true);
+    expect(hasGenuiPrompt(GENUI_TOOL_PROMPT_V40_TEXT)).toBe(true);
+    expect(hasGenuiPrompt(GENUI_PROMPT_TEXT)).toBe(true);
+    expect(hasGenuiPrompt(GENUI_TOOL_PROMPT_TEXT)).toBe(true);
+  });
+});
+
 describe('stripGenuiPrompt：响应剥离与 DOM 兜底共用同一实现', () => {
   const DRAFT = '把这段话总结成三点';
   const NL = String.fromCharCode(10);
   const PROTOCOL_TEXTS = [
     GENUI_PROMPT_TEXT,
     GENUI_TOOL_PROMPT_TEXT,
+    GENUI_PROMPT_V40_TEXT,
+    GENUI_TOOL_PROMPT_V40_TEXT,
     GENUI_PROMPT_V32_TEXT,
     GENUI_TOOL_PROMPT_V32_TEXT,
     GENUI_PROMPT_V31_TEXT,

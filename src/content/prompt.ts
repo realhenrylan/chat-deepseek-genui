@@ -1,9 +1,14 @@
 /**
- * 智能界面默认增强提示词（v4.0）。
+ * 智能界面默认增强提示词（v4.1）。
+ *
+ * v4.1 升级（作答回流与三种新内联组件）：
+ * - 新增 timeline（时间线）、spoiler（折叠思考块）、poll（倾向投票）三种原子内联组件；
+ * - checklist 与 compare 支持一键回流：把进度/选型写成纯文本带入输入框（追加不覆盖、不发送）；
+ * - 保留 v4.0 完整文本用于历史消息剥离与草稿识别，升级不破坏已发出的旧说明。
  *
  * v4.0 重大升级（智能界面自然穿插）：
  * - 引入 w1 轻量内联组件协议：单组件单块，无样板代码，随文字流式自然穿插（0–3 个）；
- * - 7 种原子内联组件：quiz（选择题）、card（概念卡）、compare（方案对比）、
+ * - 原子内联组件：quiz（选择题）、card（概念卡）、compare（方案对比）、
  *   checklist（任务清单）、slider（快速滑块）、result（关键指标）、note（提示贴片）；
  * - 废弃“仅在末尾输出一个块”与“正文保持 1-3 句”的陈旧约束，正文可充分展开，组件就地配合；
  * - 复杂多变量连续联动、函数曲线与模型测算保留 v5 综合看板协议；
@@ -12,15 +17,24 @@
 
 export type GenuiPromptMode = 'auto' | 'tool' | 'plain';
 
-export const GENUI_PROMPT_VERSION = '4.0';
+export const GENUI_PROMPT_VERSION = '4.1';
 
 export const GENUI_PROMPT_START =
-  '〔GenUI 智能界面 v4.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 智能界面 v4.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 
 export const GENUI_PROMPT_TOOL_START =
-  '〔GenUI 本轮生成工具 v4.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+  '〔GenUI 本轮生成工具 v4.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
 
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
+
+/**
+ * v4.0 历史标记与完整文本：逐字保留，确保已发出的旧消息在刷新与拉取历史时
+ * 依然能被 stripGenuiPrompt 100% 剥离，也用于识别未编辑的旧草稿。
+ */
+export const GENUI_PROMPT_V40_START =
+  '〔GenUI 智能界面 v4.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+export const GENUI_PROMPT_TOOL_V40_START =
+  '〔GenUI 本轮生成工具 v4.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
 
 /** 历史版本标记用于安全识别旧草稿，避免重复追加或模式切换时误改/误删。 */
 export const GENUI_PROMPT_V32_START =
@@ -114,8 +128,9 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
 
 /**
  * v4.0 提示词：全面支持自然穿插排版（w1 内联组件）与综合看板（v5 协议）。
+ * 逐字保留，作为历史版本剥离与草稿识别的基准；v4.1 在其上做最小增量替换。
  */
-const PROMPT_BODY = `你正在与用户对话。用户的浏览器装有 GenUI 扩展：它会把回复中的 \`\`\`genui 代码块解析为本地可交互界面，不执行任意脚本、HTML、CSS 或网络请求。请根据问题自然融合交互元素：在文字讲解中自然穿插轻量小组件（如单选题、小卡片、方案对比、清单、滑块、关键结果、提示框），或在需要综合测算时使用完整看板。事实问答、写作、代码、闲聊等直接用普通文字回答，不要为了展示而强行生成界面。
+const PROMPT_BODY_V40 = `你正在与用户对话。用户的浏览器装有 GenUI 扩展：它会把回复中的 \`\`\`genui 代码块解析为本地可交互界面，不执行任意脚本、HTML、CSS 或网络请求。请根据问题自然融合交互元素：在文字讲解中自然穿插轻量小组件（如单选题、小卡片、方案对比、清单、滑块、关键结果、提示框），或在需要综合测算时使用完整看板。事实问答、写作、代码、闲聊等直接用普通文字回答，不要为了展示而强行生成界面。
 
 内容分工与穿插排版：
 - 自然穿插（推荐）：单次回答可根据内容逻辑穿插 0 到 3 个轻量小组件。在概念解释后配 card 或 compare；在步骤指引后配 checklist；在测试理解时配 quiz；在参数测算时配 slider 或 result；在注意事项处配 note。小组件紧密嵌入在自然段落之间，正文无需为了压缩而刻意变成简短几句，可正常展开详实解释与推导。
@@ -241,11 +256,37 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
 }
 \`\`\``;
 
+/**
+ * v4.1 提示词：在 v4.0 基础上补充三种新内联组件的语法与分工提示，
+ * 其余段落与全部示例代码块的顺序逐字保留，避免破坏既有排版与一致性校验。
+ */
+const NOTE_LINE_V40 =
+  '- 提示说明 note: {"w":"note","text":"提示内容","tone":"info|warn|error"?}';
+const NEW_WIDGET_LINES_V41 = [
+  '- 时间线 timeline: {"w":"timeline","title":"标题"?,"items":[{"time":"阶段/时间","title":"节点标题","desc":"说明"?,"highlight":true?}]}',
+  '- 折叠思考块 spoiler: {"w":"spoiler","summary":"思考题或折叠标题","hint":"提示"?,"content":"展开后的详细解析"}',
+  '- 倾向投票 poll: {"w":"poll","question":"投票问题","options":[{"id":"opt1","label":"选项A","ratio":60},{"id":"opt2","label":"选项B","ratio":40}]}',
+].join('\n');
+
+const PROMPT_BODY = PROMPT_BODY_V40
+  .replace(NOTE_LINE_V40, `${NOTE_LINE_V40}\n${NEW_WIDGET_LINES_V41}`)
+  .replace(
+    '在注意事项处配 note。',
+    '在注意事项处配 note；在演进脉络与故障时序处配 timeline，在思考自测处配 spoiler，在观点倾向处配 poll。',
+  );
+
 /** tool 变体首段：能力说明加本轮明确生成意图；其后与 auto 共享同一协议主体。 */
 const TOOL_LEAD = '你正在与用户对话。用户的浏览器装有 GenUI 扩展：它会把回复中的 ```genui 代码块解析为本地可交互界面，不执行任意脚本、HTML、CSS 或网络请求。用户已在浮标中明确选择本轮回答工具：优先用 ```genui 代码块把本轮任务表达为可交互界面（可穿插使用轻量组件或综合看板），正文与界面按下方分工互补。纯事实问答、闲聊或过短的请求仍可直接用普通文字回答；现有协议能力确实无法表达任务时不要硬造界面，改用普通文字回答，并简短说明未能生成界面的原因。';
 
 /** 共享协议主体：从 auto 正文截取「内容分工」起至示例结束围栏，保证逐字节一致。 */
 const PROTOCOL_BODY = PROMPT_BODY.slice(PROMPT_BODY.indexOf('内容分工与穿插排版'));
+
+/** v4.0 历史文本：内容与 v4.0 发布时逐字一致，仅用于历史剥离与旧草稿识别。 */
+const PROTOCOL_BODY_V40 = PROMPT_BODY_V40.slice(
+  PROMPT_BODY_V40.indexOf('内容分工与穿插排版'),
+);
+export const GENUI_PROMPT_V40_TEXT = `${GENUI_PROMPT_V40_START}\n${PROMPT_BODY_V40}\n${GENUI_PROMPT_END}`;
+export const GENUI_TOOL_PROMPT_V40_TEXT = `${GENUI_PROMPT_TOOL_V40_START}\n${TOOL_LEAD}\n\n${PROTOCOL_BODY_V40}\n${GENUI_PROMPT_END}`;
 
 /**
  * v3.1 协议主体：用于精确识别旧草稿末尾的未编辑说明。
@@ -349,6 +390,8 @@ interface GenuiProtocolBlock {
 const GENUI_PROTOCOL_BLOCKS: ReadonlyArray<GenuiProtocolBlock> = [
   GENUI_PROMPT_TEXT,
   GENUI_TOOL_PROMPT_TEXT,
+  GENUI_PROMPT_V40_TEXT,
+  GENUI_TOOL_PROMPT_V40_TEXT,
   GENUI_PROMPT_V32_TEXT,
   GENUI_TOOL_PROMPT_V32_TEXT,
   GENUI_PROMPT_V31_TEXT,
@@ -523,6 +566,8 @@ export function hasGenuiPrompt(value: string): boolean {
   return (
     value.includes(GENUI_PROMPT_START) ||
     value.includes(GENUI_PROMPT_TOOL_START) ||
+    value.includes(GENUI_PROMPT_V40_START) ||
+    value.includes(GENUI_PROMPT_TOOL_V40_START) ||
     value.includes(GENUI_PROMPT_V32_START) ||
     value.includes(GENUI_PROMPT_TOOL_V32_START) ||
     value.includes(GENUI_PROMPT_V31_START) ||
@@ -542,6 +587,8 @@ export function describeGenuiDraftPrompt(value: string): GenuiDraftPromptInfo {
   const candidateStarts = [
     GENUI_PROMPT_START,
     GENUI_PROMPT_TOOL_START,
+    GENUI_PROMPT_V40_START,
+    GENUI_PROMPT_TOOL_V40_START,
     GENUI_PROMPT_V32_START,
     GENUI_PROMPT_TOOL_V32_START,
     GENUI_PROMPT_V31_START,
@@ -567,6 +614,13 @@ export function describeGenuiDraftPrompt(value: string): GenuiDraftPromptInfo {
   }
   if (value.endsWith(GENUI_TOOL_PROMPT_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_TEXT.length) {
     return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_TEXT, start: GENUI_PROMPT_TOOL_START };
+  }
+
+  if (value.endsWith(GENUI_PROMPT_V40_TEXT) && startIndex === value.length - GENUI_PROMPT_V40_TEXT.length) {
+    return { kind: 'intact', suffix: GENUI_PROMPT_V40_TEXT, start: GENUI_PROMPT_V40_START };
+  }
+  if (value.endsWith(GENUI_TOOL_PROMPT_V40_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_V40_TEXT.length) {
+    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_V40_TEXT, start: GENUI_PROMPT_TOOL_V40_START };
   }
 
   if (value.endsWith(GENUI_PROMPT_V32_TEXT) && startIndex === value.length - GENUI_PROMPT_V32_TEXT.length) {

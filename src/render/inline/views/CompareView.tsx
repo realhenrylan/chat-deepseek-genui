@@ -1,6 +1,21 @@
+import { useState } from 'react';
 import type { CompareWidget } from '../../../protocol/widget/types';
+import { CONTINUE_FEEDBACK, buildCompareContinue, type ContinueHandler } from '../feedback';
 
-export function CompareView({ widget }: { widget: CompareWidget }) {
+export function CompareView({
+  widget,
+  onContinue,
+}: {
+  widget: CompareWidget;
+  onContinue?: ContinueHandler;
+}) {
+  const [selected, setSelected] = useState<{ index: number; feedback: string } | null>(null);
+
+  const handleSelect = (index: number, name: string) => {
+    const result = onContinue?.(buildCompareContinue(name)) ?? 'unavailable';
+    setSelected({ index, feedback: CONTINUE_FEEDBACK[result] });
+  };
+
   return (
     <div className="inline-compare-body">
       {widget.title && (
@@ -44,6 +59,21 @@ export function CompareView({ widget }: { widget: CompareWidget }) {
                   ))}
                 </div>
               )}
+
+              <div className="inline-compare-actions">
+                <button
+                  type="button"
+                  className={`inline-compare-select-btn ${selected?.index === idx ? 'selected' : ''}`}
+                  onClick={() => handleSelect(idx, item.name)}
+                >
+                  👉 采用此方案继续细化
+                </button>
+                {selected?.index === idx && (
+                  <span className="inline-feedback-status" role="status">
+                    {selected.feedback}
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}

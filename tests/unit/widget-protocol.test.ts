@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { parseGenui } from '../../src/protocol/validate.ts';
-import type { SliderWidget, QuizWidget, CompareWidget, ChecklistWidget } from '../../src/protocol/widget/types.ts';
+import type {
+  SliderWidget,
+  QuizWidget,
+  CompareWidget,
+  ChecklistWidget,
+  TimelineWidget,
+  SpoilerWidget,
+  PollWidget,
+} from '../../src/protocol/widget/types.ts';
 
 describe('w1 内联组件协议与宽容解析套件 (M2)', () => {
   it('正确分流并解析标准 slider 组件', () => {
@@ -196,5 +204,174 @@ describe('w1 内联组件协议与宽容解析套件 (M2)', () => {
       expect(res.code).toBe('schema-violation');
       expect(res.detail).toContain('未知的内联组件类型');
     }
+  });
+});
+
+describe('timeline 时间线组件', () => {
+  it('解析标准结构并保留节点描述与高亮', () => {
+    const raw = JSON.stringify({
+      w: 'timeline',
+      title: '一次线上故障的时间线',
+      items: [
+        { time: '09:02', title: '监控告警', desc: '错误率突增', highlight: true },
+        { time: '09:15', title: '定位到连接池', desc: '连接数耗尽' },
+      ],
+    });
+
+    const res = parseGenui(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const timeline = res.widget as TimelineWidget;
+      expect(timeline.w).toBe('timeline');
+      expect(timeline.title).toBe('一次线上故障的时间线');
+      expect(timeline.items).toHaveLength(2);
+      expect(timeline.items[0]).toEqual({
+        time: '09:02',
+        title: '监控告警',
+        desc: '错误率突增',
+        highlight: true,
+      });
+      expect(timeline.items[1].highlight).toBeUndefined();
+    }
+  });
+
+  it('缺 time 自动推导 Step 序号，字符串节点直接作为标题', () => {
+    const raw = JSON.stringify({
+      w: 'timeline',
+      items: [
+        '需求评审',
+        { title: '方案设计', description: '输出架构图' },
+        { step: '', name: '上线验收' },
+      ],
+    });
+
+    const res = parseGenui(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const timeline = res.widget as TimelineWidget;
+      expect(timeline.items[0]).toEqual({ time: 'Step 1', title: '需求评审' });
+      expect(timeline.items[1]).toMatchObject({
+        time: 'Step 2',
+        title: '方案设计',
+        desc: '输出架构图',
+      });
+      expect(timeline.items[2]).toMatchObject({ time: 'Step 3', title: '上线验收' });
+    }
+  });
+
+  it('空数组按 schema-violation 拒绝', () => {
+    const res = parseGenui(JSON.stringify({ w: 'timeline', items: [] }));
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe('schema-violation');
+      expect(res.detail).toContain('至少需要 1 个节点');
+    }
+  });
+});
+
+describe('spoiler 折叠思考块组件', () => {
+  it('解析标准结构', () => {
+    const raw = JSON.stringify({
+      w: 'spoiler',
+      summary: '为什么这里要用二分？',
+      hint: '先看单调性',
+      content: '因为答案区间单调，二分可以把复杂度降到 O(log n)。',
+    });
+
+    const res = parseGenui(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const spoiler = res.widget as SpoilerWidget;
+      expect(spoiler.w).toBe('spoiler');
+      expect(spoiler.summary).toBe('为什么这里要用二分？');
+      expect(spoiler.hint).toBe('先看单调性');
+      expect(spoiler.content).toContain('O(log n)');
+    }
+  });
+
+  it('只有 text 时作为 content，且 summary 使用默认文案', () => {
+    const res = parseGenui(JSON.stringify({ w: 'spoiler', text: '推导细节' }));
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const spoiler = res.widget as SpoilerWidget;
+      expect(spoiler.content).toBe('推导细节');
+      expect(spoiler.summary).toBe('点击查看推导细节');
+      expect(spoiler.hint).toBeUndefined();
+    }
+  });
+
+  it('缺少内容按 schema-violation 拒绝', () => {
+    const res = parseGenui(JSON.stringify({ w: 'spoiler', summary: '只有标题' }));
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe('schema-violation');
+      expect(res.detail).toContain('缺少 content');
+    }
+  });
+});
+
+describe('poll 倾向投票组件', () => {
+  it('解析标准结构并保留百分比', () => {
+    const raw = JSON.stringify({
+      w: 'poll',
+      question: '你更倾向哪种方案？',
+      options: [
+        { id: 'a', label: '方案 A', ratio: 60 },
+        { id: 'b', label: '方案 B', ratio: 40 },
+      ],
+    });
+
+    const res = parseGenui(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const poll = res.widget as PollWidget;
+      expect(poll.w).toBe('poll');
+      expect(poll.question).toBe('你更倾向哪种方案？');
+      expect(poll.options).toEqual([
+        { id: 'a', label: '方案 A', ratio: 60 },
+        { id: 'b', label: '方案 B', ratio: 40 },
+      ]);
+    }
+  });
+
+  it('缺 ratio 时自动均分且总和恰为 100', () => {
+    const res = parseGenui(JSON.stringify({
+      w: 'poll',
+      question: '三选一',
+      options: [{ label: 'A' }, { label: 'B' }, { label: 'C' }],
+    }));
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const poll = res.widget as PollWidget;
+      expect(poll.options.map((opt) => opt.id)).toEqual(['opt_1', 'opt_2', 'opt_3']);
+      expect(poll.options.map((opt) => opt.ratio)).toEqual([34, 33, 33]);
+      expect(poll.options.reduce((acc, opt) => acc + opt.ratio, 0)).toBe(100);
+    }
+  });
+
+  it('纯字符串选项宽容为 id/label 并均分百分比', () => {
+    const res = parseGenui(JSON.stringify({
+      w: 'poll',
+      question: '二选一',
+      options: ['保持现状', '立即重构'],
+    }));
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const poll = res.widget as PollWidget;
+      expect(poll.options).toEqual([
+        { id: 'opt_1', label: '保持现状', ratio: 50 },
+        { id: 'opt_2', label: '立即重构', ratio: 50 },
+      ]);
+    }
+  });
+
+  it('缺少问题或选项按 schema-violation 拒绝', () => {
+    const noQuestion = parseGenui(JSON.stringify({ w: 'poll', options: ['A'] }));
+    expect(noQuestion.ok).toBe(false);
+    if (!noQuestion.ok) expect(noQuestion.detail).toContain('缺少 question');
+
+    const noOptions = parseGenui(JSON.stringify({ w: 'poll', question: '选？', options: [] }));
+    expect(noOptions.ok).toBe(false);
+    if (!noOptions.ok) expect(noOptions.detail).toContain('至少需要 1 个选项');
   });
 });

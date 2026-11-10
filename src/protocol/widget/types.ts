@@ -8,7 +8,17 @@
  * - 运行时仍保持绝对安全边界：纯文本与受控 UI 渲染，不执行任意脚本或外部请求。
  */
 
-export type WidgetKind = 'slider' | 'result' | 'note' | 'quiz' | 'card' | 'compare' | 'checklist';
+export type WidgetKind =
+  | 'slider'
+  | 'result'
+  | 'note'
+  | 'quiz'
+  | 'card'
+  | 'compare'
+  | 'checklist'
+  | 'timeline'
+  | 'spoiler'
+  | 'poll';
 
 export interface BaseWidget {
   w: WidgetKind;
@@ -98,6 +108,41 @@ export interface ChecklistWidget extends BaseWidget {
   items: ChecklistItem[];
 }
 
+/** 时间线组件：阶段/时间脉络 */
+export interface TimelineItem {
+  time: string;
+  title: string;
+  desc?: string;
+  highlight?: boolean;
+}
+
+export interface TimelineWidget extends BaseWidget {
+  w: 'timeline';
+  title?: string;
+  items: TimelineItem[];
+}
+
+/** 折叠思考块组件：先给摘要，展开后看推导细节 */
+export interface SpoilerWidget extends BaseWidget {
+  w: 'spoiler';
+  summary: string;
+  hint?: string;
+  content: string;
+}
+
+/** 观点倾向投票组件 */
+export interface PollOption {
+  id: string;
+  label: string;
+  ratio: number;
+}
+
+export interface PollWidget extends BaseWidget {
+  w: 'poll';
+  question: string;
+  options: PollOption[];
+}
+
 export type GenuiWidget =
   | SliderWidget
   | ResultWidget
@@ -105,7 +150,10 @@ export type GenuiWidget =
   | QuizWidget
   | CardWidget
   | CompareWidget
-  | ChecklistWidget;
+  | ChecklistWidget
+  | TimelineWidget
+  | SpoilerWidget
+  | PollWidget;
 
 export interface NormalizedWidgetResult {
   ok: true;

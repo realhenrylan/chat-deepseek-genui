@@ -8,6 +8,10 @@ import { ChecklistView } from './views/ChecklistView';
 import { SliderView } from './views/SliderView';
 import { ResultView } from './views/ResultView';
 import { NoteView } from './views/NoteView';
+import { TimelineView } from './views/TimelineView';
+import { SpoilerView } from './views/SpoilerView';
+import { PollView } from './views/PollView';
+import type { ContinueHandler } from './feedback';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -50,6 +54,8 @@ export interface InlineWidgetRootProps {
   bus?: InlineStateBus;
   onToggleRaw?: (showRaw: boolean) => void;
   onFatal?: (err: Error) => void;
+  /** 作答回流：点击清单/对比组件的回流按钮时以纯文本摘要调用（追加不覆盖、不发送）。 */
+  onContinue?: ContinueHandler;
 }
 
 export function InlineWidgetRoot({
@@ -58,6 +64,7 @@ export function InlineWidgetRoot({
   bus,
   onToggleRaw,
   onFatal,
+  onContinue,
 }: InlineWidgetRootProps) {
   const [showRaw, setShowRaw] = useState(false);
 
@@ -74,15 +81,21 @@ export function InlineWidgetRoot({
       case 'card':
         return <CardView widget={widget} />;
       case 'compare':
-        return <CompareView widget={widget} />;
+        return <CompareView widget={widget} onContinue={onContinue} />;
       case 'checklist':
-        return <ChecklistView widget={widget} />;
+        return <ChecklistView widget={widget} onContinue={onContinue} />;
       case 'slider':
         return <SliderView widget={widget} bus={bus} />;
       case 'result':
         return <ResultView widget={widget} bus={bus} />;
       case 'note':
         return <NoteView widget={widget} />;
+      case 'timeline':
+        return <TimelineView widget={widget} />;
+      case 'spoiler':
+        return <SpoilerView widget={widget} />;
+      case 'poll':
+        return <PollView widget={widget} />;
       default:
         return (
           <div className="inline-note-box info">

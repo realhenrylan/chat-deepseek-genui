@@ -8,6 +8,9 @@ import type {
   QuizWidget,
   ResultWidget,
   SliderWidget,
+  TimelineWidget,
+  SpoilerWidget,
+  PollWidget,
 } from '../../src/protocol/widget/types';
 import { QuizView } from '../../src/render/inline/views/QuizView';
 import { CardView } from '../../src/render/inline/views/CardView';
@@ -16,6 +19,9 @@ import { ChecklistView } from '../../src/render/inline/views/ChecklistView';
 import { SliderView } from '../../src/render/inline/views/SliderView';
 import { ResultView } from '../../src/render/inline/views/ResultView';
 import { NoteView } from '../../src/render/inline/views/NoteView';
+import { TimelineView } from '../../src/render/inline/views/TimelineView';
+import { SpoilerView } from '../../src/render/inline/views/SpoilerView';
+import { PollView } from '../../src/render/inline/views/PollView';
 import { mountInlineWidget } from '../../src/render/inline/mount';
 import { enhanceDocument } from '../../src/content/enhance';
 
@@ -272,5 +278,205 @@ describe('内联小组件渲染与微交互 (w1 / M3 & M4)', () => {
 
     // ResultView 自动被 bus 驱动更新为 7
     expect(resultHost.shadowRoot?.textContent).toContain('7');
+  });
+});
+
+describe('作答一键回流与三种新内联组件', () => {
+  it('ChecklistView: 勾选后把未完成任务写成回流模板并显示带入状态', () => {
+    const checklist: ChecklistWidget = {
+      w: 'checklist',
+      title: '上线准备清单',
+      items: [
+        { text: '完成单元测试', checked: true },
+        { text: '代码审查通过' },
+        { text: '部署到生产环境' },
+      ],
+    };
+    const onContinue = vi.fn(() => 'filled' as const);
+
+    render(<ChecklistView widget={checklist} onContinue={onContinue} />);
+    // 初始仅 1/3 完成，回流栏已经出现。
+    const feedbackButton = screen.getByText('📋 将未完成任务带入下一步规划');
+    expect(feedbackButton).toBeTruthy();
+    expect(screen.queryByText('✓ 已带入输入框')).toBeNull();
+
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+    fireEvent.click(feedbackButton);
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onContinue).toHaveBeenCalledWith(
+      [
+        '【任务跟进】',
+        '已完成（2/3）：1. 完成单元测试、2. 代码审查通过',
+        '待完成（1/3）：1. 部署到生产环境',
+        '请帮我针对以上未完成的步骤，制定详细的执行步骤与注意事项。',
+      ].join('\n'),
+    );
+    expect(screen.getByText('✓ 已带入输入框')).toBeTruthy();
+
+    // 再次勾选会清空旧的状态文字。
+    fireEvent.click(screen.getAllByRole('checkbox')[2]);
+    expect(screen.queryByText('✓ 已带入输入框')).toBeNull();
+    expect(screen.getByText('📋 将已完成清单带入下一步规划')).toBeTruthy();
+  });
+
+  it('ChecklistView: 全部完成时改用下一阶段规划模板，并反馈输入框缺失', () => {
+    const checklist: ChecklistWidget = {
+      w: 'checklist',
+      items: [
+        { text: '写方案', checked: true },
+        { text: '评审', checked: true },
+      ],
+    };
+    const onContinue = vi.fn(() => 'no-input' as const);
+
+    const { container } = render(<ChecklistView widget={checklist} onContinue={onContinue} />);
+    const feedbackButton = container.querySelector<HTMLButtonElement>('.inline-feedback-btn')!;
+    expect(feedbackButton.textContent).toBe('📋 将已完成清单带入下一步规划');
+    fireEvent.click(feedbackButton);
+
+    expect(onContinue).toHaveBeenCalledWith(
+      [
+        '【任务跟进】',
+        '已完成（2/2）：1. 写方案、2. 评审',
+        '以上任务已全部完成，请帮我规划下一阶段的推进重点与验收事项。',
+      ].join('\n'),
+    );
+    expect(screen.getByText('未找到聊天输入框')).toBeTruthy();
+  });
+
+  it('CompareView: 点击采用方案写入选型模板，且反馈只出现在所选方案', () => {
+    const compare: CompareWidget = {
+      w: 'compare',
+      items: [
+        { name: '方案 A' },
+        { name: '方案 B' },
+      ],
+    };
+    const onContinue = vi.fn(() => 'appended' as const);
+
+    render(<CompareView widget={compare} onContinue={onContinue} />);
+    const buttons = screen.getAllByText('👉 采用此方案继续细化');
+    expect(buttons).toHaveLength(2);
+    expect(screen.queryByText('✓ 已带入输入框')).toBeNull();
+
+    fireEvent.click(buttons[1]);
+
+    expect(onContinue).toHaveBeenCalledWith(
+      [
+        '【方案选型确认】',
+        '在对比方案中，我决定采用【方案 B】。请帮我细化该方案的落地架构图与第一阶段实施计划。',
+      ].join('\n'),
+    );
+    expect(screen.getAllByText('✓ 已带入输入框')).toHaveLength(1);
+    expect(buttons[1].className).toContain('selected');
+    expect(buttons[0].className).not.toContain('selected');
+  });
+
+  it('TimelineView: 渲染时间、标题、描述与高亮节点', () => {
+    const timeline: TimelineWidget = {
+      w: 'timeline',
+      title: '故障时间线',
+      items: [
+        { time: '09:02', title: '监控告警', desc: '错误率突增', highlight: true },
+        { time: '09:15', title: '定位到连接池' },
+      ],
+    };
+
+    const { container } = render(<TimelineView widget={timeline} />);
+    expect(screen.getByText('故障时间线')).toBeTruthy();
+    expect(screen.getByText('09:02')).toBeTruthy();
+    expect(screen.getByText('定位到连接池')).toBeTruthy();
+
+    const items = container.querySelectorAll('.inline-timeline-item');
+    expect(items).toHaveLength(2);
+    expect(items[0].className).toContain('highlighted');
+    expect(items[1].className).not.toContain('highlighted');
+    expect(items[0].querySelector('.inline-timeline-desc')?.textContent).toBe('错误率突增');
+  });
+
+  it('SpoilerView: 默认收起，展开与收起切换内容与 aria 状态', () => {
+    const spoiler: SpoilerWidget = {
+      w: 'spoiler',
+      summary: '为什么这里用二分？',
+      hint: '先看单调性',
+      content: '因为区间单调，可以二分。',
+    };
+
+    render(<SpoilerView widget={spoiler} />);
+    expect(screen.getByText('为什么这里用二分？')).toBeTruthy();
+    expect(screen.getByText('先看单调性')).toBeTruthy();
+    expect(screen.queryByText('因为区间单调，可以二分。')).toBeNull();
+
+    const toggle = screen.getByRole('button', { name: '展开思考与解析' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+
+    expect(screen.getByText('因为区间单调，可以二分。')).toBeTruthy();
+    const collapse = screen.getByRole('button', { name: '收起思考与解析' });
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+
+    fireEvent.click(collapse);
+    expect(screen.queryByText('因为区间单调，可以二分。')).toBeNull();
+  });
+
+  it('PollView: 投票后展示百分比与选中标记，重新投票可复位', () => {
+    const poll: PollWidget = {
+      w: 'poll',
+      question: '你更倾向哪种方案？',
+      options: [
+        { id: 'a', label: '方案 A', ratio: 60 },
+        { id: 'b', label: '方案 B', ratio: 40 },
+      ],
+    };
+
+    const { container } = render(<PollView widget={poll} />);
+    const options = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.inline-poll-option'));
+    expect(screen.getByText('你更倾向哪种方案？')).toBeTruthy();
+    expect(container.querySelector('.inline-poll-bar')).toBeNull();
+    expect(container.querySelector('.inline-poll-reset')).toBeNull();
+
+    fireEvent.click(options()[0]);
+
+    expect(options()[0].textContent).toContain('60%');
+    expect(options()[1].textContent).toContain('40%');
+    expect(options()[0].textContent).toContain('✓ 方案 A');
+    expect(options()[0].classList.contains('selected')).toBe(true);
+
+    fireEvent.click(container.querySelector<HTMLButtonElement>('.inline-poll-reset')!);
+    expect(container.querySelector('.inline-poll-bar')).toBeNull();
+    expect(container.querySelector('.inline-poll-reset')).toBeNull();
+    expect(options()[0].textContent).toBe('方案 A');
+  });
+
+  it('enhanceDocument: 内联组件回流接线到 onContinue', () => {
+    const doc = document.implementation.createHTMLDocument('test');
+    doc.body.innerHTML = `
+      <div class="ds-assistant-message-main-content">
+        <div class="md-code-block" id="block-checklist">
+          <div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>
+          <pre><span>{"w": "checklist", "items": ["完成单元测试", "部署到生产环境"]}</span></pre>
+        </div>
+      </div>
+    `;
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+
+    const res = enhanceDocument(doc, { onContinue });
+    expect(res.mounted).toBe(1);
+
+    const host = doc.querySelector<HTMLElement>('.genui-card-host')!;
+    const shadow = host.shadowRoot!;
+    expect(shadow.textContent).toContain('完成单元测试');
+
+    // 该文档由 createHTMLDocument 创建，没有 defaultView，fireEvent 无法定位 window；
+    // 原生 click() 直接在该文档内派发事件，React 的合成事件仍会冒泡到 root 容器。
+    shadow.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    const feedbackButton = shadow.querySelector<HTMLButtonElement>('.inline-feedback-btn')!;
+    expect(feedbackButton.textContent).toContain('将未完成任务带入下一步规划');
+    feedbackButton.click();
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onContinue.mock.calls[0][0]).toContain('【任务跟进】');
+    expect(onContinue.mock.calls[0][0]).toContain('待完成（1/2）：1. 部署到生产环境');
   });
 });

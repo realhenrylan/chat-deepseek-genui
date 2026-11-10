@@ -663,6 +663,7 @@ export class EnhancementManager {
         mountedCard = mountInlineWidget(host, {
           widget,
           rawJson: raw,
+          onContinue: this.options.onContinue,
           onToggleRaw: (showRaw) => {
             block.style.display = showRaw ? originalDisplay : 'none';
           },

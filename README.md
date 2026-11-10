@@ -32,6 +32,7 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 | 重置与收起 | 一键恢复初始参数、表格排序和筛选；收起界面时保留当前卡片状态 |
 | 状态保持 | 生成新回答、同页重新挂载时保留已调整的参数与筛选；点击「保存当前界面」后，刷新同一文档自动恢复；未保存的刷新回到初始值 |
 | 继续讨论 | 把参数、表格筛选、排序与选中项汇总成可预览、可修改的摘要，确认后填入输入框；保留已有草稿，由你决定是否发送 |
+| 内联小组件 | 回答中可嵌入选择题、概念卡、方案对比、任务清单、时间线、折叠思考块、倾向投票等 10 种轻量组件；清单勾选与方案选定可一键把进度带回输入框 |
 | 出错恢复 | 原始代码块下方区分等待、离屏补齐、需要修复或页面兼容；可展开原始内容并生成修复请求（发送时自动附带完整诊断） |
 | 本地诊断 | 浮标「本地诊断」面板按识别、等待、协议、挂载分类显示脱敏计数；只在需要时预览、复制或下载，不含聊天文本、草稿或账号 |
 | 主题与开关 | 跟随站点明暗主题，随时关闭增强并恢复原始代码块 |
@@ -68,7 +69,7 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 ## 怎么使用
 
 1. 打开 DeepSeek，确认页面右侧显示「GenUI 已开启」。
-2. 输入问题。扩展不占用输入框：开启增强后，发送消息时由扩展在后台把界面生成说明附进这条聊天请求，输入框里始终只有你自己写的内容；点「查看增强说明」可预览实际附加的协议文本。
+2. 输入问题。扩展不占用输入框：开启增强后，发送消息时由扩展在页面 MAIN world 同时包裹 `window.fetch` 与 `XMLHttpRequest`，把界面生成说明附进这条聊天请求，输入框里始终只有你自己写的内容；点「查看增强说明」可预览实际附加的协议文本。
 3. 自行发送消息。模型回答中的合法 `genui` 代码块会渲染为交互卡片；必要时滚动到代码块位置，等待站点补齐内容。若格式不合法或页面暂不兼容，原代码块会保留并在下方说明原因；需要时点「生成修复请求」，扩展只填入一句简短修复指令，完整诊断详情会在发送时自动附带。若当前页找不到输入框且自动复制受限，可展开状态面板中的「手动复制完整修复请求」。
 4. 调整卡片参数，查看实时结果；点击「继续讨论」会先展示当前参数、表格筛选/排序与选中项组成的摘要，可直接修改，确认后再填入输入框发送。
 
@@ -108,11 +109,11 @@ npm run build
 
 工作流 [Build extension and prepare release draft](.github/workflows/build-release.yml) 在推送到 `main` 时，自动检查、测试、构建，并在 Actions 页面提供 ZIP 和 SHA256 校验文件（保留 30 天）。准备发布时，在 Actions 点 **Run workflow** 并填写最终插件版本号，工作流会按你填写的版本打包，只创建附带这两个文件的 **Release 草稿**。
 
-**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v3.2` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
+**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v4.1` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
 
 Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、更改、修复、移除等类别展示，并附 GitHub 自动生成的变更记录；发布前可在草稿页继续编辑。
 
-当前 main 的 0.1.1 + Unreleased 已通过完整检查（56 个测试文件、656 项单测通过（3 项按既有条件跳过，共 659 项），类型检查、lint、双入口构建与生产包校验）；Edge/Chrome 默认端到端测试最近一次为 34 通过、6 个真实 origin 用例按模式跳过。历史真实网页验收与本轮自动化结果分别记录在 [分层验证报告](docs/phase8-verification.md)。
+当前 main 的 0.2.2（Unreleased）已通过完整检查（56 个测试文件、695 项单测通过（3 项按既有条件跳过，共 698 项），类型检查、lint、双入口构建与生产包校验）；Edge/Chrome 默认端到端测试最近一次为 34 通过、6 个真实 origin 用例按模式跳过。历史真实网页验收与本轮自动化结果分别记录在 [分层验证报告](docs/phase8-verification.md)。
 
 **卸载**：在扩展管理页移除扩展，本地开关设置与已保存的卡片设置随之删除；刷新或关闭已打开的 DeepSeek 标签页后，页面上的卡片、浮标和注入标记消失。
 
@@ -144,7 +145,7 @@ npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
 
-协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)、[v5 真实模型对比](docs/phase9-model-comparison.md)及 [侧栏承载评估](docs/side-panel-evaluation.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释），并提供 10 种 `w1` 轻量内联小组件（含 `timeline`、`spoiler`、`poll`）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)、[v5 真实模型对比](docs/phase9-model-comparison.md)及 [侧栏承载评估](docs/side-panel-evaluation.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

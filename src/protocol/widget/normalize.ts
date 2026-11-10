@@ -209,6 +209,111 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
       return { ok: true, widget };
     }
 
+    case 'timeline': {
+      const title = typeof raw.title === 'string' ? raw.title : undefined;
+      const rawItems = Array.isArray(raw.items) ? raw.items : [];
+      if (rawItems.length === 0) {
+        return { ok: false, code: 'schema-violation', detail: 'timeline 组件至少需要 1 个节点' };
+      }
+      const items = rawItems.map((item, idx) => {
+        if (typeof item === 'string') {
+          return { time: `Step ${idx + 1}`, title: item };
+        }
+        if (typeof item === 'object' && item !== null) {
+          const rec = item as Record<string, unknown>;
+          const timeText = toStr(rec.time ?? rec.date ?? rec.step, `Step ${idx + 1}`).trim();
+          return {
+            time: timeText === '' ? `Step ${idx + 1}` : timeText,
+            title: toStr(rec.title ?? rec.name ?? rec.label, `节点 ${idx + 1}`),
+            desc: typeof rec.desc === 'string'
+              ? rec.desc
+              : typeof rec.description === 'string'
+                ? rec.description
+                : undefined,
+            highlight: rec.highlight === true ? true : undefined,
+          };
+        }
+        return { time: `Step ${idx + 1}`, title: `节点 ${idx + 1}` };
+      });
+
+      const widget: GenuiWidget = {
+        w: 'timeline',
+        title,
+        items,
+      };
+      return { ok: true, widget };
+    }
+
+    case 'spoiler': {
+      const content = toStr(raw.content ?? raw.text ?? raw.value, '').trim();
+      if (!content) {
+        return { ok: false, code: 'schema-violation', detail: 'spoiler 组件缺少 content 内容' };
+      }
+      const summary = toStr(raw.summary ?? raw.title, '').trim() || '点击查看推导细节';
+      const hint = typeof raw.hint === 'string' && raw.hint.trim() !== '' ? raw.hint : undefined;
+
+      const widget: GenuiWidget = {
+        w: 'spoiler',
+        summary,
+        hint,
+        content,
+      };
+      return { ok: true, widget };
+    }
+
+    case 'poll': {
+      const question = toStr(raw.question ?? raw.title, '').trim();
+      if (!question) {
+        return { ok: false, code: 'schema-violation', detail: 'poll 组件缺少 question 问题内容' };
+      }
+      const rawOptions = Array.isArray(raw.options) ? raw.options : [];
+      if (rawOptions.length === 0) {
+        return { ok: false, code: 'schema-violation', detail: 'poll 组件至少需要 1 个选项' };
+      }
+
+      const extracted = rawOptions.map((item, idx) => {
+        if (typeof item === 'string') {
+          return { id: `opt_${idx + 1}`, label: item, ratio: Number.NaN };
+        }
+        if (typeof item === 'object' && item !== null) {
+          const rec = item as Record<string, unknown>;
+          return {
+            id: toStr(rec.id ?? rec.value, `opt_${idx + 1}`),
+            label: toStr(rec.label ?? rec.text ?? rec.name, `选项 ${idx + 1}`),
+            ratio: toNum(rec.ratio, Number.NaN),
+          };
+        }
+        return { id: `opt_${idx + 1}`, label: `选项 ${idx + 1}`, ratio: Number.NaN };
+      });
+
+      // 比例宽容补全：全部提供合法非负值且总和大于 0 时保留（取整并夹取），否则按数量均分且总和恰为 100。
+      const allRatiosValid = extracted.every((o) => Number.isFinite(o.ratio) && o.ratio >= 0);
+      const ratioSum = extracted.reduce((acc, o) => acc + (Number.isFinite(o.ratio) ? o.ratio : 0), 0);
+      let options;
+      if (allRatiosValid && ratioSum > 0) {
+        options = extracted.map((o) => ({
+          id: o.id,
+          label: o.label,
+          ratio: Math.min(100, Math.max(0, Math.round(o.ratio))),
+        }));
+      } else {
+        const base = Math.floor(100 / extracted.length);
+        const remainder = 100 - base * extracted.length;
+        options = extracted.map((o, idx) => ({
+          id: o.id,
+          label: o.label,
+          ratio: base + (idx < remainder ? 1 : 0),
+        }));
+      }
+
+      const widget: GenuiWidget = {
+        w: 'poll',
+        question,
+        options,
+      };
+      return { ok: true, widget };
+    }
+
     default:
       return {
         ok: false,
