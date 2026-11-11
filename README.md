@@ -8,7 +8,7 @@
 <p align="center"><strong>让 DeepSeek 的回答变成可以调整、计算和比较的交互界面。</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.1-4D6BFE" alt="版本 0.1.1">
+  <img src="https://img.shields.io/badge/version-0.2.2-4D6BFE" alt="版本 0.2.2">
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white" alt="Powered by dsh"></a>
 </p>
 
@@ -18,7 +18,7 @@
 
 DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏览器扩展。在原有文字回答中加入滑块、输入框、图表和表格，让你直接调整条件、查看结果，再把当前条件带回对话。
 
-本项目为独立开发的第三方扩展，与 DeepSeek 官方无关。当前版本 **0.1.1**，支持在桌面 Edge、Chrome 中手动加载；尚未上架扩展商店。
+本项目为独立开发的第三方扩展，与 DeepSeek 官方无关。当前版本 **0.2.2**，支持在桌面 Edge、Chrome 中手动加载；尚未上架扩展商店。
 
 ## 功能
 
