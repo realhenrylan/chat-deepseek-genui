@@ -5,7 +5,14 @@ import { chromium, expect, test, type BrowserContext, type Page } from '@playwri
 import { GENUI_PROMPT_TEXT, SHORT_REPAIR_TRIGGER_TEXT } from '../../src/content/prompt';
 
 /**
- * e2e：在真实 Edge / Chrome 中加载 dist 构建目录。
+ * e2e：在真实 Edge 与 Playwright 自带 Chromium 中加载 dist 构建目录。
+ *
+ * 浏览器渠道说明：不使用品牌版 Google Chrome。GitHub Actions runner（及企业
+ * 环境）的 Chrome 由企业版 MSI 渠道安装，该渠道的品牌版二进制会忽略
+ * `--load-extension`，扩展无法侧载（版本号无关、与 Edge 无关，本地零售版
+ * Chrome 无法复现）。Playwright 官方文档因此推荐扩展测试使用自带 Chromium
+ * （channel: 'chromium'，支持相同的侧载旗标）；Edge 的企业版仍支持侧载，
+ * 继续使用真实 Edge。
  *
  * 阶段 1（注入与错误归因）：
  *   - 扩展（脚本 URL 为 chrome-extension://browser-extension://，或 [dsgenui] 日志前缀）→ 测试失败；
@@ -37,7 +44,7 @@ const EXT_PREFIX = '[dsgenui]';
 
 const CHANNELS = [
   { label: 'Edge', channel: 'msedge' },
-  { label: 'Chrome', channel: 'chrome' },
+  { label: 'Chromium', channel: 'chromium' },
 ] as const;
 
 /** 真实取证的代码块结构（阶段 0 §3.3）：banner 链 + 语言标签 span.d813de27 + pre>span。 */
@@ -544,7 +551,6 @@ async function launchWithExtension(
     args: [
       `--disable-extensions-except=${DIST}`,
       `--load-extension=${DIST}`,
-      '--enable-unsafe-extension-testing',
       '--no-first-run',
       '--no-default-browser-check',
     ],

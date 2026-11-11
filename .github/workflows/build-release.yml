@@ -53,10 +53,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Install Playwright bundled Chromium
+        run: npx playwright install chromium
+
       - name: Check, test and build
         run: npm run check
 
-      - name: Test extension in Edge and Chrome
+      - name: Test extension in Edge and Chromium
         run: npm run test:e2e
 
       - name: Package extension and checksum

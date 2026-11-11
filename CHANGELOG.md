@@ -19,6 +19,8 @@
 
 ### Fixed
 
+- **修复发布流水线 Chrome e2e 全量失败**：GitHub Actions runner 的 Chrome 由企业版 MSI 渠道安装，该渠道的品牌版二进制忽略 `--load-extension`，扩展无法侧载，导致全部 Chrome 用例自 e2e 引入以来在 CI 必然超时失败（本地零售版 Chrome 无法复现；与版本号、Windows Server 无关，Edge 企业版不受影响）。Chromium 腿改用 Playwright 自带 Chromium（`channel: 'chromium'`，官方文档对扩展测试的推荐渠道，支持相同的侧载旗标），Edge 腿继续使用真实 Edge；移除无效旗标 `--enable-unsafe-extension-testing`，发布工作流新增 `npx playwright install chromium` 步骤，相关文档与用例名称同步更新。
+
 - **`checklist` 不再被模型预勾选**：默认增强提示词里 checklist 的协议示例长期写作 `{"text":"步骤1","checked":true?,"note":"提示"?}`，且从未定义 `checked` 的语义，模型据此把 `"checked":true` 当成默认写法，导致生成的清单常在首项直接勾选（出现「1/5 已完成」）。现将示例改为 `{"text":"步骤1","note":"提示"?}`，并补充约束：`checked` 表示「该步骤此刻已经完成」，仅当用户明确说明已完成、或本轮回答中确实完成并如实交代时才写 `true`，其余情况一律省略；同时补上提示词回归断言，防止示例再次带回 `"checked":true`。渲染层与 `normalize.ts` 行为不变（仍忠实透传 `checked`，保留「清单可带初始已完成项」的能力）。
 
 ## 0.2.0（2026-11-06）

@@ -140,10 +140,10 @@ Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、�
 
 ```bash
 npm run check       # 类型检查、lint、单测、构建与生产包校验
-npm run test:e2e    # Edge/Chrome 本地模拟页端到端验证
+npm run test:e2e    # Edge/Chromium 本地模拟页端到端验证
 ```
 
-真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。
+真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。Chromium 腿使用 Playwright 自带浏览器（首跑前 `npx playwright install chromium`），原因是品牌版 Chrome 的企业 MSI 渠道忽略 `--load-extension`、无法侧载扩展。
 
 协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释），并提供 10 种 `w1` 轻量内联小组件（含 `timeline`、`spoiler`、`poll`）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)、[v5 真实模型对比](docs/phase9-model-comparison.md)及 [侧栏承载评估](docs/side-panel-evaluation.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 

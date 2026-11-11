@@ -94,9 +94,11 @@ MV3 不允许远程托管代码，可执行的 JavaScript 应随扩展包提供�
 | `npm test` | `vitest run` 单元测试 |
 | `npm run build` | `vite build` 产出 `dist/`，postbuild 自动执行 `scripts/check-dist.mjs` 静态校验 |
 | `npm run check` | 聚合：typecheck + lint + test + build（含生产包校验） |
-| `npm run test:e2e` | Playwright 在 Edge/Chrome 加载 `dist/` 验证注入、生命周期、开关和页面交互；`REAL_SITE=1` 在真实网页 origin 注入合成回复结构，`HEADED=1` 强制有头 |
+| `npm run test:e2e` | Playwright 在真实 Edge 与自带 Chromium 加载 `dist/` 验证注入、生命周期、开关和页面交互；`REAL_SITE=1` 在真实网页 origin 注入合成回复结构，`HEADED=1` 强制有头 |
 
 产物路径：`dist/manifest.json` 与 `dist/content.js`（IIFE 单文件），本地加载选择 `dist/` 目录。
+
+e2e 不用品牌版 Chrome：企业 MSI 渠道（GitHub Actions runner 与企业环境的标准安装方式）的品牌版二进制会忽略 `--load-extension`，扩展无法侧载，与版本号无关；本地零售版 Chrome 无法复现该问题。因此 Chromium 腿使用 Playwright 自带 Chromium（官方文档对扩展测试的推荐渠道），本地首跑前执行 `npx playwright install chromium`；Edge 企业版仍支持侧载，继续使用真实 Edge。
 
 真实网页调试只查看当前 UI 增强所需信息，记录时避开认证信息和无关对话。测试优先使用合成或脱敏数据，不提交个人聊天内容。
 
