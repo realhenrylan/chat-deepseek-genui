@@ -18,7 +18,7 @@
 
 DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏览器扩展。在原有文字回答中加入滑块、输入框、图表和表格，让你直接调整条件、查看结果，再把当前条件带回对话。
 
-本项目为独立开发的第三方扩展，与 DeepSeek 官方无关。当前版本 **0.2.2**，支持在桌面 Edge、Chrome 中手动加载；尚未上架扩展商店。
+本项目为独立开发的第三方扩展，与 DeepSeek 官方无关。当前源码版本 **0.2.2**，已上架 Microsoft Edge 加载项商店，也可在桌面 Edge、Chrome 中本地加载。
 
 ## 功能
 
@@ -85,6 +85,14 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 
 ## 安装
 
+### 从 Edge 加载项商店安装（推荐）
+
+1. 打开 Edge 加载项商店：[microsoftedge.microsoft.com/addons](https://microsoftedge.microsoft.com/addons/)（也可在 `edge://extensions` 页脚点「获取 Microsoft Edge 扩展」进入）。
+2. 搜索 `chat deepseek genui`，在结果中打开「DeepSeek GenUI」并点击「获取」。
+3. 打开或刷新 `https://chat.deepseek.com/`。
+
+商店版本随审核更新，通常滞后于本仓库 `main`；需要最新改动时按下面的方式本地加载。
+
 ### 使用发布包
 
 1. 从 [GitHub Releases v0.1.1](https://github.com/realhenrylan/chat-deepseek-genui/releases/tag/v0.1.1) 下载附件 [deepseek-genui-v0.1.1.zip](https://github.com/realhenrylan/chat-deepseek-genui/releases/download/v0.1.1/deepseek-genui-v0.1.1.zip)，解压为目录。
@@ -105,18 +113,6 @@ npm run build
 
 在扩展管理页加载生成的 `dist/` 目录即可。
 
-### 自动打包与发布
-
-工作流 [Build extension and prepare release draft](.github/workflows/build-release.yml) 在推送到 `main` 时，自动检查、测试、构建，并在 Actions 页面提供 ZIP 和 SHA256 校验文件（保留 30 天）。准备发布时，在 Actions 点 **Run workflow** 并填写最终插件版本号，工作流会按你填写的版本打包，只创建附带这两个文件的 **Release 草稿**。
-
-**最终版本号由你填写，是否正式发布由你在草稿页点击 Publish release 决定**；普通推送和标签推送均不会自动正式发布。提示词的 `v4.1` 是独立版本，不是插件版本。具体步骤见[发布指南](docs/releasing.md)。
-
-Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、更改、修复、移除等类别展示，并附 GitHub 自动生成的变更记录；发布前可在草稿页继续编辑。
-
-当前 main 的 0.2.2（Unreleased）已通过完整检查（56 个测试文件、695 项单测通过（3 项按既有条件跳过，共 698 项），类型检查、lint、双入口构建与生产包校验）；Edge/Chrome 默认端到端测试最近一次为 34 通过、6 个真实 origin 用例按模式跳过。历史真实网页验收与本轮自动化结果分别记录在 [分层验证报告](docs/phase8-verification.md)。
-
-**卸载**：在扩展管理页移除扩展，本地开关设置与已保存的卡片设置随之删除；刷新或关闭已打开的 DeepSeek 标签页后，页面上的卡片、浮标和注入标记消失。
-
 ## 隐私与权限
 
 - 仅在 `https://chat.deepseek.com/*` 运行，只申请 `storage` 权限，用于本机保存增强开关与你主动保存的卡片设置；不保存聊天正文、草稿或任何消息索引。
@@ -134,7 +130,7 @@ Release 草稿会带入 CHANGELOG 中本版的中文更新说明，按新增、�
 - 依赖 DeepSeek 当前页面结构，站点改版可能影响识别、协议注入或渲染。
 - 历史消息隐藏按完整协议正文与修复详情校验码即时判断，不依赖消息 id 或本地索引；正文被站点改写、被用户编辑或只引用首尾标记时保留原文。真实站点上的编辑、重试与刷新链路尚未做真机取证。
 - 已有真实网页场景验收与 Edge/Chrome 自动化验证；模型生成稳定性、其他系统和 Firefox 不在当前验证范围内。
-- 当前提供本地加载包；商店素材、公开隐私链接及提交状态见 [商店准备记录](docs/store-submission.md)。
+- 已上架 Microsoft Edge 加载项商店，商店版本通常滞后于本仓库；需要最新改动时使用本地加载包。商店素材与政策复核见 [商店准备记录](docs/store-submission.md)。
 
 ## 开发与验证
 

@@ -1,5 +1,7 @@
 # Edge Add-ons 商店提交准备与状态（2026-11-07）
 
+**2026-11-11 更新：扩展已上架 Microsoft Edge 加载项商店，可搜索「DeepSeek GenUI」安装；下列提交准备与政策复核内容保留为历史记录。**
+
 **当前状态：0.2.1 本地分发包（含 en / zh_CN 商店国际化）已就绪，商店未提交。** Logo 已接入 manifest、DeepSeek 页面开关、交互卡片和 README；当前源码已通过完整检查与 Edge/Chrome 默认端到端验证，ZIP 包含全部 Logo、图标与 `_locales` 语言文件。商店方形 Logo 源素材已定稿，隐私政策公网 URL 待确认；提交动作依赖用户的 Partner Center 账号（个人或组织），由用户另行执行。提交后请在本文件追加「审核状态」小节（提交日期、审核结论、申诉记录）。
 
 依据：Microsoft Edge Add-ons《Developer policies》，官方页面最后更新 **2026-07-24**（learn.microsoft.com/en-us/legal/microsoft-edge/extensions/developer-policies，2026-11-03 经 browser-skill 抓取核对）。
