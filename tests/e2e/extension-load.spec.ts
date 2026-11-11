@@ -40,6 +40,7 @@ import { GENUI_PROMPT_TEXT, SHORT_REPAIR_TRIGGER_TEXT } from '../../src/content/
 const DIST = join(process.cwd(), 'dist');
 const REAL_SITE = process.env.REAL_SITE === '1';
 const MARKER = 'data-genui-ext-loaded';
+const BRIDGE_ENABLED = 'data-genui-enabled';
 const EXT_PREFIX = '[dsgenui]';
 
 const CHANNELS = [
@@ -567,12 +568,24 @@ async function launchWithExtension(
   return { context, page, profileDir };
 }
 
-/** 打开目标页并等待内容脚本写入注入标记（32 位扩展 id）。 */
+/**
+ * 打开目标页并等待内容脚本写入注入标记（32 位扩展 id）与状态桥就绪。
+ *
+ * 设置读取是异步的：标记同步写入，只证明内容脚本已经开始执行；开关与模式要等
+ * `loadGenuiEnabled()` / `preloadSavedStates()` 返回后才写入 `data-genui-enabled`。
+ * 拦截器在该属性缺失时按“关闭”处理，用例若在标记之后立刻发请求，就会读到
+ * 尚未就绪的状态而漏注入协议（CI 慢机上的偶发失败即来自这段窗口）。
+ */
 async function gotoAndAwaitMarker(page: Page, path = '/'): Promise<void> {
   await page.goto(`https://chat.deepseek.com${path}`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
     timeout: 30_000,
   });
+  await expect(page.locator(`html[${BRIDGE_ENABLED}]`)).toHaveAttribute(
+    BRIDGE_ENABLED,
+    /^(true|false)$/,
+    { timeout: 30_000 },
+  );
 }
 
 interface RgbaColor {
