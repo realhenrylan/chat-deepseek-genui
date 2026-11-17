@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode, useState } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import type { GenuiWidget } from '../../protocol/widget/types';
 import type { InlineStateBus } from './store';
 import { QuizView } from './views/QuizView';
@@ -39,8 +39,8 @@ class InlineErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
     if (this.state.hasError) {
       return (
         <div className="inline-note-box error">
-          <span>⚠</span>
-          <div>组件渲染异常，已切换为安全降级视图。</div>
+          <span className="inline-note-icon">⚠</span>
+          <div className="inline-note-text">组件渲染异常，已切换为安全降级视图。</div>
         </div>
       );
     }
@@ -50,9 +50,7 @@ class InlineErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 
 export interface InlineWidgetRootProps {
   widget: GenuiWidget;
-  rawJson?: string;
   bus?: InlineStateBus;
-  onToggleRaw?: (showRaw: boolean) => void;
   onFatal?: (err: Error) => void;
   /** 作答回流：点击清单/对比组件的回流按钮时以纯文本摘要调用（追加不覆盖、不发送）。 */
   onContinue?: ContinueHandler;
@@ -60,20 +58,10 @@ export interface InlineWidgetRootProps {
 
 export function InlineWidgetRoot({
   widget,
-  rawJson,
   bus,
-  onToggleRaw,
   onFatal,
   onContinue,
 }: InlineWidgetRootProps) {
-  const [showRaw, setShowRaw] = useState(false);
-
-  const handleToggleRaw = () => {
-    const next = !showRaw;
-    setShowRaw(next);
-    onToggleRaw?.(next);
-  };
-
   const renderContent = () => {
     switch (widget.w) {
       case 'quiz':
@@ -106,22 +94,8 @@ export function InlineWidgetRoot({
   };
 
   return (
-    <InlineErrorBoundary onFatal={onFatal}>
-      <div className="inline-widget-box">
-        {onToggleRaw && rawJson && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-            <button
-              type="button"
-              className="inline-raw-btn"
-              onClick={handleToggleRaw}
-              title="切换查看原始代码"
-            >
-              {showRaw ? '收起源码' : '源码'}
-            </button>
-          </div>
-        )}
-        {renderContent()}
-      </div>
-    </InlineErrorBoundary>
+    <div className="inline-widget-box">
+      <InlineErrorBoundary onFatal={onFatal}>{renderContent()}</InlineErrorBoundary>
+    </div>
   );
 }

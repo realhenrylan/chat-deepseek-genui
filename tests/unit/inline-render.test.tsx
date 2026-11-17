@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type {
@@ -186,18 +189,16 @@ describe('内联小组件渲染与微交互 (w1 / M3 & M4)', () => {
     expect(screen.getByText('⚠')).toBeTruthy();
   });
 
-  it('mountInlineWidget: 在 Shadow DOM 中挂载，并支持源码切换与卸载', () => {
+  it('mountInlineWidget: 在 Shadow DOM 中挂载，不渲染源码切换按钮且支持卸载', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
 
-    const onToggleRaw = vi.fn();
     const mounted = mountInlineWidget(host, {
       widget: {
         w: 'note',
         text: '测试 Shadow DOM 挂载',
       },
       rawJson: '{"w": "note", "text": "测试 Shadow DOM 挂载"}',
-      onToggleRaw,
     });
 
     expect(host.shadowRoot).not.toBeNull();
@@ -205,18 +206,17 @@ describe('内联小组件渲染与微交互 (w1 / M3 & M4)', () => {
     expect(shadow.querySelector('.genui-inline-root')).not.toBeNull();
     expect(shadow.textContent).toContain('测试 Shadow DOM 挂载');
 
-    // 切换源码
-    const rawBtn = shadow.querySelector<HTMLButtonElement>('.inline-raw-btn');
-    expect(rawBtn).not.toBeNull();
-    rawBtn?.click();
-    expect(onToggleRaw).toHaveBeenCalledWith(true);
+    // 不再渲染源码切换入口
+    expect(shadow.querySelector('.inline-raw-btn')).toBeNull();
+    expect(shadow.textContent).not.toContain('源码');
+    expect(shadow.textContent).not.toContain('收起源码');
 
     mounted.unmount();
     expect(shadow.querySelector('.genui-inline-root')).toBeNull();
     host.remove();
   });
 
-  it('enhanceDocument: 自动识别 w1 块并挂载为内联组件', () => {
+  it('enhanceDocument: 自动识别 w1 块并挂载为内联组件，原始代码块保持隐藏', () => {
     const doc = document.implementation.createHTMLDocument('test');
     doc.body.innerHTML = `
       <div class="ds-assistant-message-main-content">
@@ -240,7 +240,10 @@ describe('内联小组件渲染与微交互 (w1 / M3 & M4)', () => {
     const host = doc.querySelector<HTMLElement>('.genui-card-host')!;
     expect(host).not.toBeNull();
     expect(host.shadowRoot?.querySelector('.genui-inline-root')).not.toBeNull();
+    expect(host.shadowRoot?.querySelector('.inline-raw-btn')).toBeNull();
+    expect(host.shadowRoot?.textContent).not.toContain('源码');
     expect(host.shadowRoot?.textContent).toContain('测试内联问答');
+    expect(block.style.display).toBe('none');
   });
 
   it('跨组件状态共享 (M6): 同一消息内的 Slider 与 Result 自动通过总线联动更新', () => {
@@ -478,5 +481,40 @@ describe('作答一键回流与三种新内联组件', () => {
     expect(onContinue).toHaveBeenCalledTimes(1);
     expect(onContinue.mock.calls[0][0]).toContain('【任务跟进】');
     expect(onContinue.mock.calls[0][0]).toContain('待完成（1/2）：1. 部署到生产环境');
+  });
+
+  it('CompareView: 推荐胶囊放在列头内且无优缺点时不渲染空列表', () => {
+    const compare: CompareWidget = {
+      w: 'compare',
+      highlight: '方案 B',
+      items: [
+        { name: '方案 A', pros: ['轻量'] },
+        { name: '方案 B' },
+      ],
+    };
+
+    const { container } = render(<CompareView widget={compare} />);
+    const cols = container.querySelectorAll('.inline-compare-col');
+    expect(cols).toHaveLength(2);
+    expect(cols[0].querySelector('.inline-compare-list')).not.toBeNull();
+    expect(cols[1].querySelector('.inline-compare-list')).toBeNull();
+    const head = cols[1].querySelector('.inline-compare-col-head');
+    expect(head?.querySelector('.inline-compare-name')?.textContent).toBe('方案 B');
+    expect(head?.querySelector('.inline-compare-pill')?.textContent).toBe('推荐');
+  });
+
+  it('inline.css: 使用统一的尺寸变量收口，无源码按钮样式', () => {
+    const css = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../src/render/inline/inline.css'),
+      'utf8',
+    );
+
+    expect(css).not.toContain('.inline-raw-btn');
+    expect(css).toContain('--inline-radius-outer: 12px');
+    expect(css).toContain('--inline-radius-inner: 8px');
+    expect(css).toContain('--inline-pad-outer: 14px');
+    expect(css).toContain('--inline-pad-inner: 12px');
+    expect(css).toContain('--inline-gap: 10px');
+    expect(css).toContain('.genui-inline-root[data-site-theme="dark"]');
   });
 });

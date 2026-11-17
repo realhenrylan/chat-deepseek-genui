@@ -3,8 +3,12 @@ import type { CardWidget } from '../../../protocol/widget/types';
 export function CardView({ widget }: { widget: CardWidget }) {
   return (
     <div className="inline-card-body">
-      <div className="inline-widget-title">{widget.title}</div>
-      {widget.subtitle && <div className="inline-widget-subtitle">{widget.subtitle}</div>}
+      <div className="inline-widget-header">
+        <div className="inline-widget-heading">
+          <div className="inline-widget-title">{widget.title}</div>
+          {widget.subtitle && <div className="inline-widget-subtitle">{widget.subtitle}</div>}
+        </div>
+      </div>
 
       {widget.tags && widget.tags.length > 0 && (
         <div className="inline-card-tags">

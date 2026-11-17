@@ -662,11 +662,7 @@ export class EnhancementManager {
       try {
         mountedCard = mountInlineWidget(host, {
           widget,
-          rawJson: raw,
           onContinue: this.options.onContinue,
-          onToggleRaw: (showRaw) => {
-            block.style.display = showRaw ? originalDisplay : 'none';
-          },
           onFatal: (error) => {
             console.error(`${LOG_PREFIX} inline widget render failed`, error);
             if (!record) {

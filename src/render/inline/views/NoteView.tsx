@@ -11,8 +11,8 @@ export function NoteView({ widget }: { widget: NoteWidget }) {
 
   return (
     <div className={`inline-note-box ${tone}`}>
-      <span>{toneIcons[tone] ?? 'ℹ'}</span>
-      <div>{widget.text}</div>
+      <span className="inline-note-icon">{toneIcons[tone] ?? 'ℹ'}</span>
+      <div className="inline-note-text">{widget.text}</div>
     </div>
   );
 }

@@ -26,28 +26,33 @@ export function CompareView({
       <div className="inline-compare-grid">
         {widget.items.map((item, idx) => {
           const isHighlighted = widget.highlight === item.name;
+          const hasList = (item.pros?.length ?? 0) > 0 || (item.cons?.length ?? 0) > 0;
           return (
             <div
               key={idx}
               className={`inline-compare-col ${isHighlighted ? 'highlighted' : ''}`}
             >
-              {isHighlighted && <span className="inline-compare-pill">推荐</span>}
-              <div className="inline-compare-name">{item.name}</div>
+              <div className="inline-compare-col-head">
+                <div className="inline-compare-name">{item.name}</div>
+                {isHighlighted && <span className="inline-compare-pill">推荐</span>}
+              </div>
 
-              <ul className="inline-compare-list">
-                {item.pros?.map((pro, pIdx) => (
-                  <li key={`p-${pIdx}`} className="inline-compare-pro">
-                    <span>+</span>
-                    <span>{pro}</span>
-                  </li>
-                ))}
-                {item.cons?.map((con, cIdx) => (
-                  <li key={`c-${cIdx}`} className="inline-compare-con">
-                    <span>-</span>
-                    <span>{con}</span>
-                  </li>
-                ))}
-              </ul>
+              {hasList && (
+                <ul className="inline-compare-list">
+                  {item.pros?.map((pro, pIdx) => (
+                    <li key={`p-${pIdx}`} className="inline-compare-pro">
+                      <span>+</span>
+                      <span>{pro}</span>
+                    </li>
+                  ))}
+                  {item.cons?.map((con, cIdx) => (
+                    <li key={`c-${cIdx}`} className="inline-compare-con">
+                      <span>-</span>
+                      <span>{con}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               {item.fields && Object.keys(item.fields).length > 0 && (
                 <div className="inline-compare-fields">
@@ -61,6 +66,11 @@ export function CompareView({
               )}
 
               <div className="inline-compare-actions">
+                {selected?.index === idx && (
+                  <span className="inline-feedback-status" role="status">
+                    {selected.feedback}
+                  </span>
+                )}
                 <button
                   type="button"
                   className={`inline-compare-select-btn ${selected?.index === idx ? 'selected' : ''}`}
@@ -68,11 +78,6 @@ export function CompareView({
                 >
                   👉 采用此方案继续细化
                 </button>
-                {selected?.index === idx && (
-                  <span className="inline-feedback-status" role="status">
-                    {selected.feedback}
-                  </span>
-                )}
               </div>
             </div>
           );

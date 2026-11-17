@@ -100,7 +100,7 @@ DeepSeek GenUI 是用于 [chat.deepseek.com](https://chat.deepseek.com) 的浏�
 3. **Chrome**：打开 `chrome://extensions`，开启「开发者模式」，点击「加载已解压的扩展程序」，选择解压目录。
 4. 打开或刷新 `https://chat.deepseek.com/`。
 
-更新时重新加载扩展，并刷新已打开的 DeepSeek 标签页。发布页同时提供 SHA256 校验文件；发布包包含交互节点 Logo 与扩展图标，逐文件清单见 [验证报告](docs/phase8-verification.md)。
+更新时重新加载扩展，并刷新已打开的 DeepSeek 标签页。发布页同时提供 SHA256 校验文件；发布包包含交互节点 Logo 与扩展图标。
 
 ### 从源码构建
 
@@ -130,7 +130,7 @@ npm run build
 - 依赖 DeepSeek 当前页面结构，站点改版可能影响识别、协议注入或渲染。
 - 历史消息隐藏按完整协议正文与修复详情校验码即时判断，不依赖消息 id 或本地索引；正文被站点改写、被用户编辑或只引用首尾标记时保留原文。真实站点上的编辑、重试与刷新链路尚未做真机取证。
 - 已有真实网页场景验收与 Edge/Chrome 自动化验证；模型生成稳定性、其他系统和 Firefox 不在当前验证范围内。
-- 已上架 Microsoft Edge 加载项商店，商店版本通常滞后于本仓库；需要最新改动时使用本地加载包。商店素材与政策复核见 [商店准备记录](docs/store-submission.md)。
+- 已上架 Microsoft Edge 加载项商店，商店版本通常滞后于本仓库；需要最新改动时使用本地加载包。
 
 ## 开发与验证
 
@@ -141,7 +141,7 @@ npm run test:e2e    # Edge/Chromium 本地模拟页端到端验证
 
 真实 origin 的合成 DOM 测试可在 PowerShell 中设置 `$env:REAL_SITE='1'` 后运行 `npm run test:e2e`；它与真实模型生成验收分别记录。Chromium 腿使用 Playwright 自带浏览器（首跑前 `npx playwright install chromium`），原因是品牌版 Chrome 的企业 MSI 渠道忽略 `--load-extension`、无法侧载扩展。
 
-协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释），并提供 10 种 `w1` 轻量内联小组件（含 `timeline`、`spoiler`、`poll`）。实现与验证细节见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[开发指南](docs/development-guide.md)、[真实网页验收](docs/phase7-acceptance.md)、[分层验证报告](docs/phase8-verification.md)、[v5 真实模型对比](docs/phase9-model-comparison.md)及 [侧栏承载评估](docs/side-panel-evaluation.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
+协议支持 v1 / v2 / v3 / v4 / v5（v4 新增折线图的函数曲线系列与零点坐标轴；v5 新增预算、成本、偏好三类本地语义模型，以及模型来源的数值/表格/图表与本地解释），并提供 10 种 `w1` 轻量内联小组件（含 `timeline`、`spoiler`、`poll`）。相关说明见 [协议文档](docs/genui-protocol.md)、[正式提示词](docs/prompt.md)、[状态保存与恢复](docs/state-storage.md)、[页面适配取证](docs/compatibility-investigation.md) 及 [发布流程](docs/releasing.md)，版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 许可
 

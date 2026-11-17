@@ -10,6 +10,12 @@
 
 ### Changed
 
+- **统一内联 GenUI 组件框体规格与间距系统**：在 `src/render/inline/inline.css` 的 `.genui-inline-root` 定义 `--inline-radius-outer: 12px`、`--inline-radius-inner: 8px`、`--inline-pad-outer: 14px`、`--inline-pad-inner: 12px`、`--inline-gap: 10px` 等尺寸变量及亮/暗主题适配（`--inline-accent-ink`、`color-scheme`），替换各组件零散像素数值：
+  - 外框 `.inline-widget-box` 四边统一使用 `--inline-pad-outer` 内边距与 `--inline-radius-outer` 圆角；去掉顶部按钮后，有标题与无标题组件（如 `note`、无标题 `compare` / `timeline` / `result`）顶部均紧贴内边距，无多余空白行。
+  - 所有内层子框（`.inline-compare-col`、`.inline-quiz-option`、`.inline-poll-option`、`.inline-spoiler-content`、`.inline-quiz-explain`、`.inline-note-box`）统一采用 `--inline-radius-inner`、`--inline-pad-inner` 与 `1px solid var(--inline-border)` 边框（`.inline-quiz-explain` 与 `.inline-note-box` 改用 `box-shadow: inset 3px 0 0 ...` 呈现左侧强调条）。
+  - 各组件主容器（`.inline-*-body`）统一改为 `flex-direction: column` + `gap: var(--inline-gap)` 布局，替换原有的零散 `margin-top` / `margin-bottom`；`.inline-widget-header` 固定下边距 `--inline-gap`（在 flex 主容器内归零避免双倍间距），`CardView` 标题与副标题收口至 `.inline-widget-header` + `.inline-widget-heading`。
+  - `CompareView` 保持各列等高与底部 `margin-top: auto` 按钮底对齐，将「推荐」胶囊 `.inline-compare-pill` 收入列头 `.inline-compare-col-head` 与标题并列排布，避免遮挡边框或挤压标题；无优缺点时不渲染空列表，选中状态反馈置于按钮上方以保持多列按钮底对齐。
+
 - **增强说明改为发送时静默注入**：不再于输入框草稿末尾追加可见说明，改由页面 MAIN world 的 `interceptor.js` 同时包裹站点自身的 `window.fetch` 与 `XMLHttpRequest`（适配线上 `@lylajs/web` 默认 XHR 通道），在用户发送聊天消息时把同一条协议并入请求体；发送侧覆盖 `POST /api/v0/chat/completion`、`/api/v0/chat/edit`、`/api/v0/chat/edit_message`，读取侧覆盖 `GET /api/v0/chat/history_messages` 与 `/api/v0/share/content`，支持 `v4.1` / `v4.0` / `v3.2` / `v3.1` / `v3.0` 协议块与带校验码修复详情块的按内容剥离。输入框始终只保留用户原文，关闭开关也不再需要恢复草稿。
   - 单轮模式（明确生成工具 / 普通回答）在该请求发出后复位为「自动适配」；每个请求在发起瞬间固定开关、模式、会话与暂存快照，等待响应期间的模式切换不会改变已发出的内容；带模式版本号的迟到事件不会复位用户更新的选择。
   - 「生成修复请求」只填入一句短触发文本，完整诊断详情随发送自动附带；暂存按会话与 id 绑定，只在请求成功返回后由 `genui:request-delivered` 按 id 精确清除。提交清空草稿时，控制器只对「最近一次实际携带该暂存 id 的请求」在两秒窗口内豁免清理，其余情况（超时、普通输入、切换会话）立即清除，不再维护准备/确认/取消/失败四张状态表。
@@ -22,6 +28,14 @@
 - **修复发布流水线 Chrome e2e 全量失败**：GitHub Actions runner 的 Chrome 由企业版 MSI 渠道安装，该渠道的品牌版二进制忽略 `--load-extension`，扩展无法侧载，导致全部 Chrome 用例自 e2e 引入以来在 CI 必然超时失败（本地零售版 Chrome 无法复现；与版本号、Windows Server 无关，Edge 企业版不受影响）。Chromium 腿改用 Playwright 自带 Chromium（`channel: 'chromium'`，官方文档对扩展测试的推荐渠道，支持相同的侧载旗标），Edge 腿继续使用真实 Edge；移除无效旗标 `--enable-unsafe-extension-testing`，发布工作流新增 `npx playwright install chromium` 步骤，相关文档与用例名称同步更新。
 
 - **`checklist` 不再被模型预勾选**：默认增强提示词里 checklist 的协议示例长期写作 `{"text":"步骤1","checked":true?,"note":"提示"?}`，且从未定义 `checked` 的语义，模型据此把 `"checked":true` 当成默认写法，导致生成的清单常在首项直接勾选（出现「1/5 已完成」）。现将示例改为 `{"text":"步骤1","note":"提示"?}`，并补充约束：`checked` 表示「该步骤此刻已经完成」，仅当用户明确说明已完成、或本轮回答中确实完成并如实交代时才写 `true`，其余情况一律省略；同时补上提示词回归断言，防止示例再次带回 `"checked":true`。渲染层与 `normalize.ts` 行为不变（仍忠实透传 `checked`，保留「清单可带初始已完成项」的能力）。
+
+### Removed
+
+- **移除内联组件顶部「源码 / 收起源码」切换入口**：删除 `src/render/inline/InlineWidgetRoot.tsx` 中的 `showRaw` 状态、`handleToggleRaw`、`.inline-raw-btn` 按钮及顶部占位容器，清理 `src/render/inline/mount.tsx` 与 `src/content/enhance.ts` 内联分支的 `onToggleRaw` 透传，并删除 `src/render/inline/inline.css` 中的 `.inline-raw-btn` 样式；内联组件原始代码块保持 `display: none` 隐藏，块级卡片（`src/render/Card.tsx`）的原始 JSON 切换保持不变。同步更新 `tests/unit/inline-render.test.tsx`。
+
+### Validation
+
+- **内联组件样式统一验收**：`npm run check` 通过（56 个测试文件、697 项单测通过、3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过）；在无头 Chromium 中加载 `dist/` 扩展逐一检查 `compare`、`quiz`、`checklist`、`slider`、`result`、`note`、`timeline`、`spoiler`、`poll`、`card` 的亮色与暗色主题渲染，确认无「源码」按钮与顶部空白行，外框 `12px` 圆角 / `14px` 内边距与内层子框 `8px` 圆角 / `12px` 内边距 / `1px solid` 边框一致。
 
 ## 0.2.0（2026-11-06）
 
