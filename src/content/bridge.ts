@@ -21,7 +21,7 @@ export const BRIDGE_PENDING_REPAIR_ATTR = 'data-genui-pending-repair';
 
 /** 请求已发出（携带本次是否合并了协议/修复详情）。 */
 export const REQUEST_SENT_EVENT = 'genui:request-sent';
-/** 请求成功返回（response.ok），此时才允许消费对应的修复暂存。 */
+/** 聊天请求成功返回（response.ok / 2xx）：通知回流送达并按 id 消费对应的修复暂存。 */
 export const REQUEST_DELIVERED_EVENT = 'genui:request-delivered';
 
 const SESSION_ROUTE = /^\/a\/chat\/s\/([^/]+)\/?$/;

@@ -3,7 +3,7 @@ import { createEnhancementManager, type EnhanceOptions } from './enhance';
 import { createViewportGateAdapter, type ViewportGateAdapter } from './viewport-gate';
 import { findGenuiBlocks, type GenuiBlockCandidate } from './detect';
 import { DEEPSEEK_SITE_ADAPTER, sanitizeUserMessages, type SiteAdapter } from './site-adapter';
-import { createExtensionSettingsStore, type ExtensionSettingsStore } from './settings';
+import { createExtensionSettingsStore, type ExtensionSettingsStore, type FollowupDeliveryMode } from './settings';
 import { createToggleControl, type ToggleControl } from './toggle';
 import { createDraftAugmenter, type DraftAugmenter } from './augment';
 import {
@@ -12,7 +12,13 @@ import {
   REQUEST_SENT_EVENT,
   type RequestSentDetail,
 } from './bridge';
-import { fillContinueIntoInput } from './followup';
+import { createSendCoordinator, fillContinueIntoInput } from './followup';
+import type {
+  FollowupEnvironmentState,
+  FollowupEnvironmentStore,
+  RequestSendMeta,
+  RequestSendResult,
+} from '../render/inline/feedback';
 import { deliverRepairRequest } from './repair';
 import {
   createDiagnosticRecorder,
@@ -51,6 +57,8 @@ export interface PageLifecycleOptions extends EnhanceOptions {
    * 单测与 Playwright 模拟页不开启，保持旧行为以便确定性断言。
    */
   enableViewportGate?: boolean;
+  /** 单元测试覆盖：仅测非信任点击边界或跳过首次直接发送提示时传入。 */
+  directSendNoticed?: boolean;
   window?: Window;
 }
 
@@ -120,6 +128,40 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     recorder.record('detection', probe.inputCandidates > 1 ? 'input-ambiguous' : 'no-input');
   };
 
+  let followupMode: FollowupDeliveryMode = 'send';
+  let directSendNoticed = options.directSendNoticed ?? false;
+  let suppressDraftSync = false;
+
+  const envListeners = new Set<() => void>();
+  let envSnapshot: FollowupEnvironmentState = {
+    generationActive: false,
+    hasDraft: false,
+    followupMode,
+  };
+  const followupEnv: FollowupEnvironmentStore = {
+    getSnapshot: () => envSnapshot,
+    subscribe(listener) {
+      envListeners.add(listener);
+      return () => envListeners.delete(listener);
+    },
+  };
+
+  const syncFollowupEnvironment = (): void => {
+    if (suppressDraftSync) return;
+    const generationActive = isGenerationActive(doc, adapter);
+    const input = adapter.findChatInput(doc);
+    const hasDraft = (input?.value.length ?? 0) > 0;
+    if (
+      envSnapshot.generationActive === generationActive &&
+      envSnapshot.hasDraft === hasDraft &&
+      envSnapshot.followupMode === followupMode
+    ) {
+      return;
+    }
+    envSnapshot = { generationActive, hasDraft, followupMode };
+    for (const listener of envListeners) listener();
+  };
+
   // 默认投递路径也使用控制器选定的适配器；调用方显式注入回调时尊重其实现，
   // 但仍观察 no-input 结果，避免诊断与实际输入识别分叉。
   const continueInto = (summary: string): ReturnType<NonNullable<EnhanceOptions['onContinue']>> => {
@@ -140,16 +182,53 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     return result;
   };
 
+  const store = options.store === undefined ? createExtensionSettingsStore() : options.store;
+
+  const sendCoordinator = createSendCoordinator(doc, {
+    adapter,
+    window: win,
+    requireTrusted: options.requireTrustedClick ?? true,
+    getMode: () => followupMode,
+    isDirectSendNoticed: () => directSendNoticed,
+    onFirstDirectSendNotice: () => {
+      directSendNoticed = true;
+      void store?.saveDirectSendNoticed?.(true).catch((error: unknown) => {
+        console.warn(`${LOG_PREFIX} could not save direct-send notice state`, error);
+      });
+    },
+    onNoInput: handleInputFailure,
+    onSendButtonMissing: () => {
+      recorder.record('detection', 'send-button-missing');
+    },
+  });
+
+  const requestSendInto = async (
+    message: string,
+    meta: RequestSendMeta,
+  ): Promise<RequestSendResult> => {
+    if (options.onRequestSend) {
+      return options.onRequestSend(message, meta);
+    }
+    suppressDraftSync = true;
+    try {
+      return await sendCoordinator.send(message, meta);
+    } finally {
+      suppressDraftSync = false;
+      syncFollowupEnvironment();
+    }
+  };
+
   const managerOptions: EnhanceOptions = {
     ...options,
     adapter,
     diagnostics: recorder,
     onContinue: continueInto,
     onRepairRequest: repairInto,
+    onRequestSend: requestSendInto,
+    followupEnv,
     ...(gate ? { isBlockUnverifiable: gate.isBlockUnverifiable } : {}),
   };
   const manager = createEnhancementManager(doc, managerOptions);
-  const store = options.store === undefined ? createExtensionSettingsStore() : options.store;
   const debounceMs = options.debounceMs ?? 100;
   const settleMs = options.settleMs ?? 700;
 
@@ -158,10 +237,14 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
   let settingsLoaded = false;
   let pendingStorageValue: boolean | undefined;
   let pendingUserValue: boolean | undefined;
+  let pendingFollowupMode: FollowupDeliveryMode | undefined;
+  let pendingUserFollowupMode: FollowupDeliveryMode | undefined;
   let observer: MutationObserver | null = null;
   let control: ToggleControl | null = null;
   let augmenter: DraftAugmenter | null = null;
   let unsubscribe: (() => void) | null = null;
+  let unsubscribeFollowupMode: (() => void) | null = null;
+  let unsubscribeDirectSendNoticed: (() => void) | null = null;
   let scanTimer: number | null = null;
   let settleTimer: number | null = null;
   let stableSnapshot: CandidateSnapshot[] | null = null;
@@ -233,6 +316,20 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     applyEnabled(next);
     void store?.saveGenuiEnabled(next).catch((error: unknown) => {
       console.warn(`${LOG_PREFIX} could not save GenUI setting`, error);
+    });
+  };
+
+  const applyFollowupMode = (next: FollowupDeliveryMode): void => {
+    followupMode = next;
+    control?.setFollowupMode(next);
+    syncFollowupEnvironment();
+  };
+
+  const persistFollowupMode = (next: FollowupDeliveryMode): void => {
+    if (!settingsLoaded) pendingUserFollowupMode = next;
+    applyFollowupMode(next);
+    void store?.saveFollowupMode?.(next).catch((error: unknown) => {
+      console.warn(`${LOG_PREFIX} could not save GenUI followup mode`, error);
     });
   };
 
@@ -321,9 +418,18 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     applyEnabled(next);
   };
 
+  const handleFollowupModeChange = (next: FollowupDeliveryMode): void => {
+    if (!settingsLoaded) {
+      pendingFollowupMode = next;
+      return;
+    }
+    applyFollowupMode(next);
+  };
+
   const onMutations = (records: MutationRecord[]): void => {
     if (!records.some((record) => !isOwnMutation(record))) return;
 
+    syncFollowupEnvironment();
     if (isGenerationActive(doc, adapter)) {
       stableSnapshot = null;
       clearSettleTimer();
@@ -368,6 +474,7 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
    * 那份暂存被清空，按「提交清空」处理，等请求成功送达后再按 id 精确消费。
    */
   const onDraftInput = (): void => {
+    syncFollowupEnvironment();
     const pending = readPendingRepairState(doc.documentElement);
     if (pending === null) return;
     const input = adapter.findChatInput(doc);
@@ -435,6 +542,8 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
         plain: GENUI_PLAIN_PROMPT_NOTE,
       },
       promptVersion: GENUI_PROMPT_VERSION,
+      initialFollowupMode: followupMode,
+      onFollowupModeSelect: persistFollowupMode,
       onModeSelect: (mode) => augmenter?.setMode(mode),
       diagnostics: {
         summary: () => summarizeDiagnostics(buildDiagnostics()),
@@ -448,10 +557,21 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
       onModeChange: (mode) => control?.setAugmentMode(mode),
     });
     unsubscribe = store?.subscribe(handleStorageChange) ?? null;
+    unsubscribeFollowupMode = store?.subscribeFollowupMode?.(handleFollowupModeChange) ?? null;
+    unsubscribeDirectSendNoticed =
+      store?.subscribeDirectSendNoticed?.((noticed) => {
+        directSendNoticed = noticed;
+      }) ?? null;
 
     let saved: boolean | undefined;
+    let savedFollowupMode: FollowupDeliveryMode | undefined;
+    let savedDirectSendNoticed: boolean | undefined;
     try {
-      saved = await store?.loadGenuiEnabled();
+      [saved, savedFollowupMode, savedDirectSendNoticed] = await Promise.all([
+        store?.loadGenuiEnabled(),
+        store?.loadFollowupMode?.(),
+        store?.loadDirectSendNoticed?.(),
+      ]);
     } catch (error) {
       console.warn(`${LOG_PREFIX} could not load GenUI setting; defaulting to enabled`, error);
     }
@@ -463,9 +583,16 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     if (!started) return;
 
     settingsLoaded = true;
+    if (options.directSendNoticed === undefined && typeof savedDirectSendNoticed === 'boolean') {
+      directSendNoticed = savedDirectSendNoticed;
+    }
+    applyFollowupMode(pendingFollowupMode ?? pendingUserFollowupMode ?? savedFollowupMode ?? 'send');
+    pendingFollowupMode = undefined;
+    pendingUserFollowupMode = undefined;
     applyEnabled(pendingStorageValue ?? pendingUserValue ?? saved ?? true);
     pendingStorageValue = undefined;
     pendingUserValue = undefined;
+    syncFollowupEnvironment();
     // 设置读取完成后再启动状态桥，避免已保存为关闭的用户被短暂标记为就绪。
     augmenter?.start();
     control?.setAugmentStatus(augmenter?.getStatus() ?? null);
@@ -489,6 +616,8 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     settingsLoaded = false;
     pendingStorageValue = undefined;
     pendingUserValue = undefined;
+    pendingFollowupMode = undefined;
+    pendingUserFollowupMode = undefined;
     // 页面隐藏/卸载后不再保留一次性修复暂存与提交保护。
     clearPendingRepairPrompt(doc.documentElement);
     lastSubmitStashId = null;
@@ -506,6 +635,10 @@ export function createPageLifecycle(doc: Document, options: PageLifecycleOptions
     observer = null;
     unsubscribe?.();
     unsubscribe = null;
+    unsubscribeFollowupMode?.();
+    unsubscribeFollowupMode = null;
+    unsubscribeDirectSendNoticed?.();
+    unsubscribeDirectSendNoticed = null;
     augmenter?.dispose();
     augmenter = null;
     control?.dispose();

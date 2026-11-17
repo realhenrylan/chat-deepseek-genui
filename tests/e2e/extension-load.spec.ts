@@ -1850,6 +1850,7 @@ for (const { label, channel } of CHANNELS) {
       await expect(menuToggle).toHaveAttribute('aria-label', '收起 GenUI 工具菜单');
       await expect(menu.locator('button')).toHaveText([
         '本轮：自动适配',
+        '回流方式：直接发送',
         '查看增强说明',
         '本地诊断',
       ]);
@@ -2653,4 +2654,244 @@ for (const { label, channel } of CHANNELS) {
     }
   });
 
+  test(`P0-a..c · ${label} 表单与模型批改直接发送、首次提示、用户气泡与锁定态`, async () => {
+    test.skip(REAL_SITE, 'P0-a..c 自动断言使用本地模拟页；真实网页需人工验收');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+    const sentPrompts: string[] = [];
+
+    const FORM_RAW = JSON.stringify({
+      w: 'form',
+      id: 'wallpaper-pref',
+      title: '你想要哪一种窗外视角？',
+      fields: [
+        {
+          id: 'view',
+          type: 'radio',
+          label: '窗外视角',
+          options: ['高层公寓落地窗', '卧室窗外雨景'],
+          default: '高层公寓落地窗',
+        },
+        {
+          id: 'style',
+          type: 'radio',
+          label: '画面风格',
+          layout: 'inline',
+          options: ['写实摄影', '动漫插画'],
+          default: '写实摄影',
+        },
+        {
+          id: 'extra',
+          type: 'text',
+          label: '补充要求（选填）',
+          optional: true,
+        },
+      ],
+      submit: {
+        label: '查找这种风格的更多动态壁纸',
+        prompt: '主题：{view}；风格：{style}。{extra?补充：{extra}。}请展示预览。',
+      },
+    });
+
+    const MODEL_QUIZ_RAW = JSON.stringify({
+      w: 'quiz',
+      grade: 'model',
+      question: '第一轮理解检测',
+      questions: [
+        {
+          id: 'q1',
+          question: '子空间必须包含哪个向量？',
+          options: ['零向量', '单位向量'],
+        },
+        {
+          id: 'q2',
+          question: 'y=2x 是否对乘法封闭？',
+          options: ['封闭', '不封闭'],
+        },
+      ],
+      reason: true,
+      reasonLabel: '简要解释理由（选填）',
+    });
+
+    try {
+      await context.route('https://chat.deepseek.com/api/v0/chat/completion', async (route) => {
+        const payload = route.request().postDataJSON() as { prompt?: string };
+        sentPrompts.push(payload.prompt ?? '');
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '{"code":0}',
+        });
+      });
+
+      await context.addInitScript(
+        ({ formRaw, quizRaw }) => {
+          const setup = () => {
+            if (!document.body || document.getElementById('e2e-send-btn')) return;
+            const input = document.querySelector<HTMLTextAreaElement>('#e2e-input');
+            if (!input) return;
+
+            const sendBtn = document.createElement('div');
+            sendBtn.id = 'e2e-send-btn';
+            sendBtn.setAttribute('role', 'button');
+            sendBtn.setAttribute('aria-label', '发送');
+            sendBtn.className = 'ds-button ds-button--disabled';
+            sendBtn.setAttribute('aria-disabled', 'true');
+            sendBtn.innerHTML = '<svg><path d="M8.3125 10Z" /></svg>';
+            input.after(sendBtn);
+
+            const syncDisabled = () => {
+              const empty = input.value.trim().length === 0;
+              sendBtn.classList.toggle('ds-button--disabled', empty);
+              if (empty) sendBtn.setAttribute('aria-disabled', 'true');
+              else sendBtn.removeAttribute('aria-disabled');
+            };
+            input.addEventListener('input', syncDisabled);
+
+            sendBtn.addEventListener('click', () => {
+              const text = input.value;
+              if (!text) return;
+              const bubble = document.createElement('div');
+              bubble.className = 'ds-message e2e-sent-bubble';
+              const p = document.createElement('p');
+              p.textContent = text;
+              bubble.append(p);
+              document.body.append(bubble);
+              input.value = '';
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              void fetch('/api/v0/chat/completion', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ prompt: text }),
+              });
+            });
+
+            const msg = document.createElement('div');
+            msg.id = 'p0-e2e-message';
+            msg.className = 'ds-assistant-message-main-content';
+            msg.setAttribute('data-virtual-list-item-key', 'p0-e2e');
+            const makeBlock = (id: string, raw: string) => {
+              const b = document.createElement('div');
+              b.id = id;
+              b.className = 'md-code-block md-code-block-light';
+              b.innerHTML = '<div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>';
+              const pre = document.createElement('pre');
+              const span = document.createElement('span');
+              span.textContent = raw;
+              pre.append(span);
+              b.append(pre);
+              return b;
+            };
+            msg.append(makeBlock('p0-form-block', formRaw), makeBlock('p0-quiz-block', quizRaw));
+            document.body.append(msg);
+          };
+          if (document.body) setup();
+          else {
+            new MutationObserver((_, observer) => {
+              if (document.body) {
+                observer.disconnect();
+                setup();
+              }
+            }).observe(document, { childList: true, subtree: true });
+          }
+        },
+        { formRaw: FORM_RAW, quizRaw: MODEL_QUIZ_RAW },
+      );
+
+      await gotoAndAwaitMarker(page);
+
+      const formHost = page.locator('#p0-e2e-message .genui-card-host').nth(0);
+      const quizHost = page.locator('#p0-e2e-message .genui-card-host').nth(1);
+      await expect(formHost).toHaveCount(1);
+      await expect(quizHost).toHaveCount(1);
+
+      // 窄栏 360px 与明暗主题下表单不发生水平溢出
+      for (const theme of ['light', 'dark']) {
+        const overflow = await page.evaluate((th) => {
+          const msg = document.querySelector<HTMLElement>('#p0-e2e-message')!;
+          msg.style.width = '360px';
+          const shadow = msg.querySelectorAll<HTMLElement>('.genui-card-host')[0].shadowRoot!;
+          shadow.querySelector('.genui-inline-root')!.setAttribute('data-site-theme', th);
+          const box = shadow.querySelector<HTMLElement>('.inline-widget-box')!;
+          return box.scrollWidth > box.clientWidth + 1;
+        }, theme);
+        expect(overflow, `${theme} 主题 360px 窄栏下表单不应溢出`).toBe(false);
+      }
+
+      // 1) 选择表单项并填写补充说明
+      await formHost.getByRole('radio', { name: '卧室窗外雨景' }).click();
+      await formHost.getByRole('radio', { name: '动漫插画' }).click();
+      await formHost.locator('textarea.inline-form-textarea').fill('优先免费MP4');
+
+      const formSubmit = formHost.locator('button.inline-primary-btn');
+      await expect(formSubmit).toHaveText('查找这种风格的更多动态壁纸 →');
+
+      // G9: 首次点击先给出提示，不立即发送
+      await formSubmit.click();
+      await expect(formHost.locator('[role="status"]')).toContainText('点击此类按钮会直接发送消息');
+      expect(sentPrompts).toHaveLength(0);
+      await expect(page.locator('.e2e-sent-bubble')).toHaveCount(0);
+
+      // 2) 再次真实点击：触发站点发送按钮并由拦截器注入协议，用户气泡出现且只出现一次
+      await formSubmit.click();
+      await expect(page.locator('.e2e-sent-bubble')).toHaveCount(1);
+      await expect(page.locator('.e2e-sent-bubble').first()).toHaveText(
+        '主题：卧室窗外雨景；风格：动漫插画。补充：优先免费MP4。请展示预览。',
+      );
+      expect(sentPrompts).toHaveLength(1);
+      expect(sentPrompts[0]).toContain('主题：卧室窗外雨景；风格：动漫插画。补充：优先免费MP4。请展示预览。');
+      expect(sentPrompts[0]).toContain(GENUI_PROMPT_TEXT);
+
+      // R-F6: 表单进入已提交锁定态且保留已提交的值，而非回到默认项
+      await expect(formHost.locator('.inline-form-body')).toHaveAttribute('data-form-locked', 'true');
+      await expect(formHost.getByRole('radio', { name: '卧室窗外雨景' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      await expect(formHost.getByRole('button', { name: '修改后重新提交' })).toBeVisible();
+
+      // 刷新页面验证 G9「已提示过」状态已持久化到 chrome.storage.local（且清除了 1s 全局发送防抖窗口）
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.locator(`html[${MARKER}]`)).toHaveAttribute(MARKER, /^[a-p]{32}$/, {
+        timeout: 30_000,
+      });
+      await expect(page.locator(`html[${BRIDGE_ENABLED}]`)).toHaveAttribute(
+        BRIDGE_ENABLED,
+        /^(true|false)$/,
+        { timeout: 30_000 },
+      );
+      const reloadedQuizHost = page.locator('#p0-e2e-message .genui-card-host').nth(1);
+      await expect(reloadedQuizHost).toHaveCount(1);
+
+      // 3) P0-c 模型批改 quiz：无预选、未作答禁用、作答后单次点击即直接发送（首次提示不再重复）
+      const quizRadios = reloadedQuizHost.getByRole('radio');
+      await expect(quizRadios).toHaveCount(4);
+      for (let i = 0; i < 4; i += 1) {
+        await expect(quizRadios.nth(i)).toHaveAttribute('aria-checked', 'false');
+      }
+      const quizSubmit = reloadedQuizHost.locator('button.inline-primary-btn');
+      await expect(quizSubmit).toBeDisabled();
+
+      await reloadedQuizHost.getByRole('radio', { name: '零向量', exact: true }).click();
+      await expect(quizSubmit).toBeDisabled();
+      await reloadedQuizHost.getByRole('radio', { name: '封闭', exact: true }).click();
+      await expect(quizSubmit).toBeEnabled();
+
+      await reloadedQuizHost.locator('textarea.inline-form-textarea').fill('乘以标量仍在直线 y=2x 上');
+      await quizSubmit.focus();
+      await page.keyboard.press('Enter');
+
+      await expect(page.locator('.e2e-sent-bubble')).toHaveCount(1);
+      await expect(page.locator('.e2e-sent-bubble').first()).toContainText('A（零向量）');
+      await expect(page.locator('.e2e-sent-bubble').first()).toContainText('A（封闭）');
+      await expect(page.locator('.e2e-sent-bubble').first()).toContainText('乘以标量仍在直线 y=2x 上');
+      expect(sentPrompts).toHaveLength(2);
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
 }

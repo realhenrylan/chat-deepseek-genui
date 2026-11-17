@@ -24,6 +24,9 @@
   --inline-accent-hover: #3d54d9;
   --inline-accent-ink: #ffffff;
   --inline-accent-soft: rgba(77, 107, 254, 0.08);
+  --inline-primary-bg: #1e293b;
+  --inline-primary-hover: #0f172a;
+  --inline-primary-ink: #ffffff;
   --inline-success: #10b981;
   --inline-success-soft: rgba(16, 185, 129, 0.1);
   --inline-warning: #f59e0b;
@@ -74,6 +77,9 @@
   --inline-accent-hover: #3b82f6;
   --inline-accent-ink: #0f172a;
   --inline-accent-soft: rgba(96, 165, 250, 0.15);
+  --inline-primary-bg: #f1f5f9;
+  --inline-primary-hover: #ffffff;
+  --inline-primary-ink: #0f172a;
   --inline-success: #34d399;
   --inline-success-soft: rgba(52, 211, 153, 0.15);
   --inline-warning: #fbbf24;
@@ -105,7 +111,8 @@
 .inline-card-body,
 .inline-timeline-body,
 .inline-spoiler-body,
-.inline-poll-body {
+.inline-poll-body,
+.inline-form-body {
   display: flex;
   flex-direction: column;
   gap: var(--inline-gap);
@@ -129,7 +136,8 @@
 .inline-card-body > .inline-widget-header,
 .inline-timeline-body > .inline-widget-header,
 .inline-spoiler-body > .inline-widget-header,
-.inline-poll-body > .inline-widget-header {
+.inline-poll-body > .inline-widget-header,
+.inline-form-body > .inline-widget-header {
   margin-bottom: 0;
 }
 
@@ -839,4 +847,225 @@
 
 .inline-poll-reset:hover {
   color: var(--inline-accent);
+}
+
+/* ================= FORM / 回流表单组件 ================= */
+.inline-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--inline-gap);
+  min-width: 0;
+}
+
+.inline-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--inline-gap-sm);
+  padding-top: var(--inline-gap);
+  border-top: 1px solid var(--inline-border);
+  min-width: 0;
+}
+
+.inline-form-field:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.inline-form-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--inline-text);
+  overflow-wrap: anywhere;
+}
+
+.inline-form-options {
+  display: flex;
+  gap: var(--inline-gap-sm);
+  min-width: 0;
+}
+
+.inline-form-options.vertical {
+  flex-direction: column;
+}
+
+.inline-form-options.inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.inline-form-option,
+.inline-form-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: var(--inline-gap-sm);
+  padding: 9px var(--inline-pad-inner);
+  border-radius: var(--inline-radius-inner);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  color: var(--inline-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  user-select: none;
+}
+
+.inline-form-options.vertical .inline-form-option,
+.inline-form-options.vertical .inline-form-checkbox-item {
+  width: 100%;
+}
+
+.inline-form-options.inline .inline-form-option,
+.inline-form-options.inline .inline-form-checkbox-item {
+  flex: 1 1 120px;
+}
+
+.inline-form-option:hover:not(:disabled),
+.inline-form-checkbox-item:hover:not(.disabled) {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+}
+
+.inline-form-option.selected,
+.inline-form-checkbox-item.selected {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent-soft);
+}
+
+.inline-form-option:disabled,
+.inline-form-checkbox-item.disabled {
+  cursor: default;
+}
+
+.inline-form-option:focus-visible,
+.inline-form-textarea:focus-visible,
+.inline-primary-btn:focus-visible,
+.inline-secondary-btn:focus-visible {
+  outline: 2px solid var(--inline-accent);
+  outline-offset: 2px;
+}
+
+.inline-form-radio-dot {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--inline-radius-pill);
+  border: 1.5px solid var(--inline-border-strong);
+  background: transparent;
+  position: relative;
+}
+
+.inline-form-option.selected .inline-form-radio-dot {
+  border-color: var(--inline-accent);
+  background: var(--inline-accent);
+  box-shadow: inset 0 0 0 3px var(--inline-card-surface);
+}
+
+.inline-form-checkbox-input {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--inline-accent);
+  cursor: inherit;
+}
+
+.inline-form-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inline-form-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 9px var(--inline-pad-inner);
+  border-radius: var(--inline-radius-inner);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  color: var(--inline-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.inline-form-textarea:disabled {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.inline-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--inline-gap-sm);
+  padding-top: var(--inline-gap);
+  border-top: 1px solid var(--inline-border);
+  min-width: 0;
+}
+
+.inline-form-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--inline-text-muted);
+}
+
+.inline-primary-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--inline-radius-pill);
+  background: var(--inline-primary-bg);
+  color: var(--inline-primary-ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.inline-primary-btn:hover:not(:disabled) {
+  background: var(--inline-primary-hover);
+}
+
+.inline-primary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.inline-form-locked-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--inline-gap);
+}
+
+.inline-form-submitted-badge {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--inline-success);
+}
+
+.inline-secondary-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: var(--inline-pad-btn);
+  border-radius: var(--inline-radius-pill);
+  border: 1px solid var(--inline-border-strong);
+  background: transparent;
+  color: var(--inline-text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.inline-secondary-btn:hover {
+  background: var(--inline-accent-soft);
+  border-color: var(--inline-accent);
 }

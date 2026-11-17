@@ -19,7 +19,13 @@ export type DiagnosticCategory = 'detection' | 'waiting' | 'protocol' | 'mount';
 
 /** 每类允许的诊断代码；新增代码必须同时扩展对应类别的词表。 */
 export const DIAGNOSTIC_CODES = {
-  detection: ['no-assistant-container', 'no-input', 'input-ambiguous', 'missing-pre'],
+  detection: [
+    'no-assistant-container',
+    'no-input',
+    'input-ambiguous',
+    'missing-pre',
+    'send-button-missing',
+  ],
   waiting: ['streaming', 'settling', 'deferred-offscreen'],
   protocol: [
     'too-large',

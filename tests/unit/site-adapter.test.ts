@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  DEEPSEEK_SITE_ADAPTER,
+  DEEPSEEK_SITE_ADAPTER, SEND_BUTTON_PATH_PREFIX, isSendButtonDisabled,
   STOP_GENERATION_PATH_PREFIX,
   UNKNOWN_SESSION_ID,
   sanitizeUserMessages,
@@ -308,6 +308,51 @@ describe('站点适配层', () => {
       doc.body.append(renderMessage(doc, '普通用户消息'));
       expect(sanitizeUserMessages(doc)).toBe(0);
       expect(doc.querySelector('.ds-message')?.textContent).toBe('普通用户消息');
+    });
+  });
+
+  describe('发送按钮识别（findSendButton）', () => {
+    it('识别上箭头图标按钮（含站点 div[role="button"] 与初始禁用态）', () => {
+      const doc = withBody(
+        `<textarea name="search"></textarea><div id="send" role="button" class="ds-button ds-button--disabled" aria-disabled="true"><svg><path d="${SEND_BUTTON_PATH_PREFIX} 10Z" /></svg></div>`,
+      );
+      const btn = DEEPSEEK_SITE_ADAPTER.findSendButton(doc);
+      expect(btn?.id).toBe('send');
+      expect(isSendButtonDisabled(btn!)).toBe(true);
+      expect(DEEPSEEK_SITE_ADAPTER.probe(doc)).toMatchObject({
+        sendButtonCandidates: 1,
+        sendButtonFound: true,
+      });
+    });
+
+    it('识别语义发送标签与同表单 submit 按钮', () => {
+      const labelled = withBody('<button id="send-btn" aria-label="发送消息"></button>');
+      expect(DEEPSEEK_SITE_ADAPTER.findSendButton(labelled)?.id).toBe('send-btn');
+
+      const inForm = withBody(
+        '<form><textarea name="search"></textarea><button id="sub" type="submit">Go</button></form>',
+      );
+      expect(DEEPSEEK_SITE_ADAPTER.findSendButton(inForm)?.id).toBe('sub');
+    });
+
+    it('排除停止按钮、回底悬浮按钮、隐藏按钮及消息区/扩展内按钮', () => {
+      const doc = withBody(
+        `<button aria-label="停止生成"><svg><path d="${STOP_GENERATION_PATH_PREFIX} rest" /></svg></button>` +
+          '<button class="ds-button--floating" aria-label="发送"></button>' +
+          '<button hidden aria-label="发送"></button>' +
+          '<div class="ds-message"><button aria-label="发送"></button></div>' +
+          '<div data-genui-control><button aria-label="发送"></button></div>',
+      );
+      expect(DEEPSEEK_SITE_ADAPTER.findSendButton(doc)).toBeNull();
+      expect(DEEPSEEK_SITE_ADAPTER.probe(doc).sendButtonFound).toBe(false);
+    });
+
+    it('多个发送按钮候选同时出现时不猜测，返回 null', () => {
+      const doc = withBody(
+        '<button aria-label="发送"></button><button title="发送消息"></button>',
+      );
+      expect(DEEPSEEK_SITE_ADAPTER.findSendButton(doc)).toBeNull();
+      expect(DEEPSEEK_SITE_ADAPTER.probe(doc).sendButtonCandidates).toBe(2);
     });
   });
 });

@@ -4,6 +4,15 @@
 
 ### Added
 
+- **一键回流发送链路、护栏 G1–G9 与工具栏设置项（P0-a）**：
+  - 在 `src/content/site-adapter.ts` 新增 `findSendButton(doc)`、`isSendButtonDisabled(button)` 及 `probe()` 的发送按钮探针，在 `src/runtime/diagnostics.ts` 新增 `detection/send-button-missing`，在 `src/content/interceptor.ts` 使全部 2xx 聊天请求派发 `genui:request-delivered`。
+  - 在 `src/content/followup.ts` 实现 `createSendCoordinator` / `requestSend`，经页面原生发送按钮写入并触发发送（不在拦截器中伪造请求），并在 `src/content/controller.ts` 与 `src/render/inline/views/FormView.tsx` 接入实时 `followupEnv` 状态与护栏：仅响应 `isTrusted === true` 点击或键盘激活（G1）、1 秒发送防抖（G4）、生成中禁用并提示「等待当前回答结束」（G2）、输入框已有草稿时不覆盖并切回「带入输入框」（G3）、仅发送可见纯文本不附带隐藏卡片引用（G6）、找不到按钮/禁用/超时降级保留在输入框并就近以 `role="status"` 提示（G8）。
+  - 在 `src/content/settings.ts` 与 `src/content/toggle.ts` 新增 `genuiFollowupMode`（「回流方式：直接发送 / 仅填入输入框」，G7）与 `genuiDirectSendNoticed`（首次使用直接发送提示一次「点击此类按钮会直接发送消息」，G9）持久化及菜单切换项。
+- **新增 `w:"form"` 回流表单组件与防注入模板引擎（P0-b）**：
+  - 在 `src/protocol/widget/types.ts`、`src/protocol/widget/normalize.ts`、`src/protocol/widget/template.ts` 与 `src/render/inline/views/FormView.tsx` 新增 `form` 内联组件（支持纵向/横向 `radio`、测验专用 `choice`、多选 `checkbox` 与可选/必填 `text` 字段、分隔线分组与整宽反色胶囊主按钮）。
+  - 单遍 AST 模板解析与插值支持 `{fieldId}` 与嵌套条件段 `{fieldId?…}`，替换值按纯文本原样输出不做二次展开（R-T2）；模板缺失或引用不存在字段时输出 warning 并按 R-T3 回退本地通用模板；超出 600 字时仅截断补充文本字段，选项部分不截断（R-T4）。
+  - 测验类字段按 R-F2 清除预选默认值，必填项未完成时禁用主按钮（R-F3）；直接发送成功后进入锁定的「已提交」态并保留已提交值，提供「修改后重新提交」（R-F6）。
+- **`w:"quiz"` 新增模型批改模式（P0-c）**：支持 `grade:"model"` 与多题 `questions` 数组，自动忽略并剥离本地 `answer`/`explain`，无预选选项且默认附带可选理由文本框；未完成全部作答前禁用「提交答案并批改 →」，作答后复用 `FormView` 直接发送包含所选答案与理由的自然语言消息。
 - **作答一键回流（Feedback Loop）**：`checklist` 勾选后底部提供「📋 将未完成任务带入下一步规划 / 将已完成清单带入下一步规划」，`compare` 每列底部提供「👉 采用此方案继续细化」；点击后通过 `onContinue` 将结构化跟进文本追加到聊天输入框草稿，不覆盖原草稿、不自动发送，并就近以 `role="status"` 反馈是否成功带入。
 - **新增 3 种 `w1` 内联小组件（共 10 种）**：`timeline`（垂直时间线，缺 `time` 自动推导 `Step N`）、`spoiler`（折叠思考块，默认收起防剧透，支持仅传 `text` 自动补全）、`poll`（倾向投票器，点击后展示百分比填充条与对勾，缺 `ratio` 自动均分且总和恒为 100，支持重新投票）；默认增强提示词升级至 `v4.1`，同时完整保留 `v4.0` 协议文本的识别与剥离兼容。
 - **GenUI 工具栏折叠面板**：右侧浮标重构为顶部一体式双段胶囊（主开关 + 独立折叠箭头），收起态仅展示状态胶囊与向下箭头，避免误触开关；展开态在下方显示右对齐圆角菜单，依次排列「本轮」模式选择、「查看增强说明」与「本地诊断」，支持 `Escape` 收起与视口底部自动回夹。
@@ -35,6 +44,7 @@
 
 ### Validation
 
+- **P0-a 至 P0-c 验收**：`npm run check` 通过（57 个测试文件、725 项单测通过 / 3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过，覆盖 `followup-send.test.ts`、`findSendButton`、表单协议与模板注入/截断、`FormView` 与 `quiz` 模型批改单测）；`npm run test:e2e` 通过（Edge 与 Chromium 模拟页共 36 项通过、6 项 `REAL_SITE=1` 按设计跳过，覆盖 360px 亮暗主题布局、首次提示持久化、点击/回车触发发送、用户气泡单次出现、提交锁定态与模型批改流程）。
 - **内联组件样式统一验收**：`npm run check` 通过（56 个测试文件、697 项单测通过、3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过）；在无头 Chromium 中加载 `dist/` 扩展逐一检查 `compare`、`quiz`、`checklist`、`slider`、`result`、`note`、`timeline`、`spoiler`、`poll`、`card` 的亮色与暗色主题渲染，确认无「源码」按钮与顶部空白行，外框 `12px` 圆角 / `14px` 内边距与内层子框 `8px` 圆角 / `12px` 内边距 / `1px solid` 边框一致。
 
 ## 0.2.0（2026-11-06）

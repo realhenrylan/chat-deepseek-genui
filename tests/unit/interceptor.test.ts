@@ -202,7 +202,7 @@ describe('拦截器发送侧：静默注入', () => {
     expect(harness.events).toEqual([
       { mode: 'auto', modeRevision: 0, injected: true, repairStashId: null },
     ]);
-    expect(harness.delivered).toEqual([]);
+    expect(harness.delivered).toEqual([{ repairStashId: null }]);
   });
 
   it('明确生成工具模式使用工具版协议，相对路径同样生效', async () => {

@@ -4,7 +4,11 @@ import type { GenuiWidget } from '../../protocol/widget/types';
 import inlineCss from './inline.css?inline';
 import { attachThemeAttribute } from '../theme';
 import { InlineWidgetRoot } from './InlineWidgetRoot';
-import type { ContinueHandler } from './feedback';
+import type {
+  ContinueHandler,
+  FollowupEnvironmentStore,
+  RequestSendHandler,
+} from './feedback';
 import { getOrCreateInlineBus, type InlineStateBus } from './store';
 
 export interface MountInlineOptions {
@@ -14,6 +18,12 @@ export interface MountInlineOptions {
   onFatal?: (error: Error) => void;
   /** 作答回流：生产接线 content/followup.fillContinueIntoInput（追加不覆盖、不发送）。 */
   onContinue?: ContinueHandler;
+  /** 一键回流：生产接线 content/followup.createSendCoordinator。 */
+  onRequestSend?: RequestSendHandler;
+  /** 实时回流环境状态（生成中、草稿状态、回流模式）。 */
+  followupEnv?: FollowupEnvironmentStore;
+  /** G1 护栏：默认 true（仅允许 isTrusted === true 的点击）。 */
+  requireTrustedClick?: boolean;
 }
 
 export interface MountedInlineWidget {
@@ -47,6 +57,9 @@ export function mountInlineWidget(
         bus={bus}
         onFatal={options.onFatal}
         onContinue={options.onContinue}
+        onRequestSend={options.onRequestSend}
+        followupEnv={options.followupEnv}
+        requireTrustedClick={options.requireTrustedClick}
       />,
     );
   });

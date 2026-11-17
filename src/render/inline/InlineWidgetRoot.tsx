@@ -11,7 +11,12 @@ import { NoteView } from './views/NoteView';
 import { TimelineView } from './views/TimelineView';
 import { SpoilerView } from './views/SpoilerView';
 import { PollView } from './views/PollView';
-import type { ContinueHandler } from './feedback';
+import { FormView } from './views/FormView';
+import type {
+  ContinueHandler,
+  FollowupEnvironmentStore,
+  RequestSendHandler,
+} from './feedback';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -54,6 +59,12 @@ export interface InlineWidgetRootProps {
   onFatal?: (err: Error) => void;
   /** 作答回流：点击清单/对比组件的回流按钮时以纯文本摘要调用（追加不覆盖、不发送）。 */
   onContinue?: ContinueHandler;
+  /** 一键回流：点击表单/模型批改主按钮时发起发送或按护栏降级。 */
+  onRequestSend?: RequestSendHandler;
+  /** 实时回流环境状态（生成中、草稿状态、回流模式）。 */
+  followupEnv?: FollowupEnvironmentStore;
+  /** G1 护栏：生产必须校验 click 事件 isTrusted === true；默认 true。 */
+  requireTrustedClick?: boolean;
 }
 
 export function InlineWidgetRoot({
@@ -61,11 +72,22 @@ export function InlineWidgetRoot({
   bus,
   onFatal,
   onContinue,
+  onRequestSend,
+  followupEnv,
+  requireTrustedClick = true,
 }: InlineWidgetRootProps) {
   const renderContent = () => {
     switch (widget.w) {
       case 'quiz':
-        return <QuizView widget={widget} />;
+        return (
+          <QuizView
+            widget={widget}
+            onRequestSend={onRequestSend}
+            onContinue={onContinue}
+            followupEnv={followupEnv}
+            requireTrustedClick={requireTrustedClick}
+          />
+        );
       case 'card':
         return <CardView widget={widget} />;
       case 'compare':
@@ -84,6 +106,16 @@ export function InlineWidgetRoot({
         return <SpoilerView widget={widget} />;
       case 'poll':
         return <PollView widget={widget} />;
+      case 'form':
+        return (
+          <FormView
+            widget={widget}
+            onRequestSend={onRequestSend}
+            onContinue={onContinue}
+            followupEnv={followupEnv}
+            requireTrustedClick={requireTrustedClick}
+          />
+        );
       default:
         return (
           <div className="inline-note-box info">

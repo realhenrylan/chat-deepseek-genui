@@ -3,6 +3,7 @@ import { getBrandMarkUrl } from '../branding';
 import type { AugmentStatus } from './augment';
 import type { GenuiPromptMode } from './prompt';
 import { copyText } from './repair';
+import type { FollowupDeliveryMode } from '../render/inline/feedback';
 
 const CONTROL_ATTR = 'data-genui-control';
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -41,6 +42,11 @@ export const AUGMENT_MODE_LABELS: Record<GenuiPromptMode, string> = {
 };
 const AUGMENT_MODE_ORDER: readonly GenuiPromptMode[] = ['auto', 'tool', 'plain'];
 
+export const FOLLOWUP_MODE_LABELS: Record<FollowupDeliveryMode, string> = {
+  send: '直接发送',
+  fill: '仅填入输入框',
+};
+
 export interface ToggleControl {
   setEnabled(enabled: boolean): void;
   /** 面板中的实时草稿状态；null 表示设置仍在加载。 */
@@ -49,6 +55,8 @@ export interface ToggleControl {
   setAugmentMode(mode: GenuiPromptMode): void;
   /** plain 模式的面板说明文本；null 恢复默认短说明，非 null 为草稿残留提示。 */
   setAugmentPlainNote(note: string | null): void;
+  /** 回流方式变化（直接发送 / 仅填入输入框）。 */
+  setFollowupMode(mode: FollowupDeliveryMode): void;
   dispose(): void;
 }
 
@@ -68,6 +76,9 @@ export interface ToggleOptions {
   initialMode?: GenuiPromptMode;
   /** 用户通过浮标循环按钮显式选择本轮模式。 */
   onModeSelect?: (mode: GenuiPromptMode) => void;
+  initialFollowupMode?: FollowupDeliveryMode;
+  /** 用户通过工具菜单切换回流方式（直接发送 / 仅填入输入框）。 */
+  onFollowupModeSelect?: (mode: FollowupDeliveryMode) => void;
   /** 本地脱敏诊断来源；缺省时隐藏「本地诊断」按钮。 */
   diagnostics?: DiagnosticsPanelSource;
 }
@@ -300,7 +311,13 @@ export function createToggleControl(
   modeButton.type = 'button';
   modeButton.addEventListener('click', handleModeClick);
 
-  // 折叠菜单第 2 行：说明面板入口。
+  // 折叠菜单第 2 行：回流方式切换（直接发送 / 仅填入输入框）。
+  const followupModeButton = doc.createElement('button');
+  followupModeButton.type = 'button';
+  followupModeButton.hidden = !options.onFollowupModeSelect;
+  followupModeButton.addEventListener('click', handleFollowupModeClick);
+
+  // 折叠菜单第 3 行：说明面板入口。
   const infoButton = doc.createElement('button');
   infoButton.type = 'button';
   infoButton.textContent = '查看增强说明';
@@ -310,7 +327,7 @@ export function createToggleControl(
   infoButton.addEventListener('click', handleInfoClick);
 
   // issue #9：独立诊断入口，不放进 #genui-panel，避免改变说明面板的结构约定。
-  // 折叠菜单第 3 行：本地诊断入口。
+  // 折叠菜单第 4 行：本地诊断入口。
   const diagnosticsButton = doc.createElement('button');
   diagnosticsButton.type = 'button';
   diagnosticsButton.textContent = '本地诊断';
@@ -341,8 +358,12 @@ export function createToggleControl(
   toolbarMenu.hidden = true;
   toolbarMenu.setAttribute('role', 'group');
   toolbarMenu.setAttribute('aria-label', 'GenUI 工具菜单');
-  // 行项顺序即展示顺序：本轮模式 → 查看增强说明 → 本地诊断。
-  toolbarMenu.append(modeButton, infoButton, diagnosticsButton);
+  // 行项顺序即展示顺序：本轮模式 → 回流方式（可选） → 查看增强说明 → 本地诊断。
+  toolbarMenu.append(modeButton);
+  if (options.onFollowupModeSelect) {
+    toolbarMenu.append(followupModeButton);
+  }
+  toolbarMenu.append(infoButton, diagnosticsButton);
   toolbarMenu.addEventListener('keydown', handleMenuKeyDown);
 
   const panel = doc.createElement('section');
@@ -461,6 +482,7 @@ export function createToggleControl(
   let enabled = initialEnabled;
   let augmentStatus: AugmentStatus | null = options.initialStatus ?? null;
   let augmentMode: GenuiPromptMode = options.initialMode ?? 'auto';
+  let followupMode: FollowupDeliveryMode = options.initialFollowupMode ?? 'send';
   /** plain 模式的临时面板说明（残留提示）；null 表示默认短说明。 */
   let plainNote: string | null = null;
   const modeTexts: Record<GenuiPromptMode, string> = {
@@ -507,6 +529,24 @@ export function createToggleControl(
     options.onModeSelect?.(next);
   }
 
+  function renderFollowupMode(): void {
+    const label = FOLLOWUP_MODE_LABELS[followupMode];
+    followupModeButton.textContent = `回流方式：${label}`;
+    followupModeButton.title = '切换表单/批改按钮的回流方式（直接发送 / 仅填入输入框）';
+    followupModeButton.setAttribute(
+      'aria-label',
+      `回流方式：${label}，点击切换`,
+    );
+  }
+
+  function handleFollowupModeClick(event: MouseEvent): void {
+    event.stopPropagation();
+    const next: FollowupDeliveryMode = followupMode === 'send' ? 'fill' : 'send';
+    followupMode = next;
+    renderFollowupMode();
+    options.onFollowupModeSelect?.(next);
+  }
+
   /** 收起工具菜单；折叠子浮层但不抢焦点（焦点归属由调用方决定）。 */
   function setToolbarMenuOpen(open: boolean): void {
     const wasOpen = !toolbarMenu.hidden;
@@ -545,7 +585,11 @@ export function createToggleControl(
 
   /** 没有任何可显示行项时隐藏箭头按钮，主开关恢复单段胶囊。 */
   function updateMenuAvailability(): void {
-    const hasItem = !modeButton.hidden || !infoButton.hidden || !diagnosticsButton.hidden;
+    const hasItem =
+      !modeButton.hidden ||
+      !followupModeButton.hidden ||
+      !infoButton.hidden ||
+      !diagnosticsButton.hidden;
     menuToggleButton.hidden = !hasItem;
     bar.toggleAttribute('data-solo', !hasItem);
     if (!hasItem) setToolbarMenuOpen(false);
@@ -790,6 +834,7 @@ export function createToggleControl(
 
   render();
   renderMode();
+  renderFollowupMode();
   renderStatus();
   // 未提供 tool 文本时没有可切换的模式集合，隐藏循环按钮，保持旧行为。
   modeButton.hidden = modeTexts.tool === '';
@@ -837,6 +882,11 @@ export function createToggleControl(
       plainNote = note;
       if (augmentMode === 'plain') renderMode();
     },
+    setFollowupMode(mode) {
+      if (followupMode === mode) return;
+      followupMode = mode;
+      renderFollowupMode();
+    },
     dispose() {
       button.removeEventListener('click', handleClick);
       button.removeEventListener('pointerdown', handlePointerDown);
@@ -846,6 +896,7 @@ export function createToggleControl(
       button.removeEventListener('keydown', handleKeyDown);
       infoButton.removeEventListener('click', handleInfoClick);
       modeButton.removeEventListener('click', handleModeClick);
+      followupModeButton.removeEventListener('click', handleFollowupModeClick);
       menuToggleButton.removeEventListener('click', handleMenuToggleClick);
       toolbarMenu.removeEventListener('keydown', handleMenuKeyDown);
       closeButton.removeEventListener('click', handleCloseClick);

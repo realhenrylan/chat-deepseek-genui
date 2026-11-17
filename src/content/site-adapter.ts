@@ -28,6 +28,8 @@ export const GENUI_LABEL = 'genui';
 export const STOP_GENERATION_PATH_PREFIX = 'M2 4.88C2 3.68009';
 /** 停止按钮的语义标签与 tooltip 文本。 */
 export const STOP_GENERATION_LABEL = '停止生成';
+/** 2026-11-02 真实调查记录的 DeepSeek 发送按钮上箭头图标路径前缀。 */
+export const SEND_BUTTON_PATH_PREFIX = 'M8.3125';
 /** 聊天输入框的确定标记：name=search，回退 placeholder 含该文案。 */
 export const CHAT_INPUT_NAME = 'search';
 export const CHAT_INPUT_PLACEHOLDER_HINT = '发送消息';
@@ -74,6 +76,9 @@ export type SiteAdapterProbe = {
   /** 通过标记匹配、且未被隐藏/停用的输入框数量；用于区分缺失与歧义。 */
   inputCandidates: number;
   inputFound: boolean;
+  /** 通过标记匹配、且未被隐藏的发送按钮候选数量；用于区分缺失与歧义。 */
+  sendButtonCandidates: number;
+  sendButtonFound: boolean;
   generationActive: boolean;
   route: 'chat' | 'other';
 };
@@ -93,6 +98,7 @@ export interface SiteAdapter {
   findAssistantContainers(root: ParentNode): Element[];
   findCandidates(root: ParentNode): GenuiBlockCandidate[];
   findChatInput(doc: Document): HTMLTextAreaElement | null;
+  findSendButton(doc: Document): HTMLElement | null;
   isGenerationActive(doc: Document): boolean;
   readSessionId(doc: Document): string;
   readAccountId(doc: Document): string;
@@ -132,14 +138,13 @@ function resolveLabel(block: Element): 'primary' | 'fallback' | null {
   return null;
 }
 
-function isUsableChatInput(element: HTMLTextAreaElement): boolean {
-  if (element.disabled || element.readOnly) return false;
+function isVisibleElement(element: HTMLElement): boolean {
   if (element.hidden || (element.getAttribute('aria-hidden') ?? '').trim() === 'true') return false;
   if (element.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
   if (element.style.display === 'none' || element.style.visibility === 'hidden') return false;
-  // Chrome 105+ 能识别样式表隐藏的旧输入框；jsdom 无此 API 时保持结构判断。
+  // Chrome 105+ 能识别样式表隐藏的旧控件；jsdom 无此 API 时保持结构判断。
   const checkVisibility = (
-    element as HTMLTextAreaElement & { checkVisibility?: (options?: object) => boolean }
+    element as HTMLElement & { checkVisibility?: (options?: object) => boolean }
   ).checkVisibility;
   if (typeof checkVisibility === 'function') {
     try {
@@ -147,10 +152,35 @@ function isUsableChatInput(element: HTMLTextAreaElement): boolean {
         return false;
       }
     } catch {
-      // 兼容旧实现的参数差异：无法判断时按可用处理，仍由唯一性约束兜底。
+      // 兼容旧实现的参数差异：无法判断时按可见处理，仍由唯一性约束兜底。
     }
   }
   return true;
+}
+
+function isUsableChatInput(element: HTMLTextAreaElement): boolean {
+  if (element.disabled || element.readOnly) return false;
+  return isVisibleElement(element);
+}
+
+/** 判断发送按钮是否处于禁用态（原生 disabled、aria-disabled 或站点禁用类）。 */
+export function isSendButtonDisabled(button: HTMLElement): boolean {
+  if ((button as HTMLButtonElement).disabled === true) return true;
+  if ((button.getAttribute('aria-disabled') ?? '').trim() === 'true') return true;
+  return button.classList.contains('ds-button--disabled');
+}
+
+function isStopControl(element: Element): boolean {
+  const label = `${element.getAttribute('aria-label') ?? ''} ${element.getAttribute('title') ?? ''}`;
+  if (label.includes(STOP_GENERATION_LABEL)) return true;
+  return element.querySelector(`svg path[d^="${STOP_GENERATION_PATH_PREFIX}"]`) !== null;
+}
+
+function isSendControlLabel(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+  if (text.includes('停止') || text.includes('反馈')) return false;
+  return text.includes('发送') || /\bsend\b/i.test(text);
 }
 
 function collectChatInputCandidates(doc: Document): HTMLTextAreaElement[] {
@@ -166,6 +196,38 @@ function collectChatInputCandidates(doc: Document): HTMLTextAreaElement[] {
     }
   }
   return [...matched].filter(isUsableChatInput);
+}
+
+function collectSendButtonCandidates(
+  doc: Document,
+  chatInput: HTMLTextAreaElement | null = null,
+): HTMLElement[] {
+  const inputForm = chatInput?.form ?? null;
+  const matched = new Set<HTMLElement>();
+  for (const button of doc.querySelectorAll<HTMLElement>('button, [role="button"]')) {
+    if (
+      button.closest(
+        '[data-genui-control], [data-genui-host], [data-genui-status-host], .ds-message, .ds-assistant-message-main-content, .md-code-block',
+      )
+    ) {
+      continue;
+    }
+    if (button.classList.contains('ds-button--floating')) continue;
+    if (!isVisibleElement(button)) continue;
+    if (isStopControl(button)) continue;
+
+    const hasArrowPath =
+      button.querySelector(`svg path[d^="${SEND_BUTTON_PATH_PREFIX}"]`) !== null;
+    const semanticLabel = `${button.getAttribute('aria-label') ?? ''} ${button.getAttribute('title') ?? ''} ${button.getAttribute('data-testid') ?? ''}`;
+    const inSameFormSubmit =
+      inputForm !== null &&
+      button.getAttribute('type') === 'submit' &&
+      button.closest('form') === inputForm;
+    if (hasArrowPath || isSendControlLabel(semanticLabel) || inSameFormSubmit) {
+      matched.add(button);
+    }
+  }
+  return [...matched];
 }
 
 function collectCandidates(root: ParentNode): GenuiBlockCandidate[] {
@@ -209,12 +271,18 @@ export const DEEPSEEK_SITE_ADAPTER: SiteAdapter = {
     return candidates.length === 1 ? candidates[0] : null;
   },
 
+  findSendButton(doc) {
+    // 只认取证到的发送按钮标记；候选必须唯一，否则返回 null，绝不猜第一个。
+    const inputs = collectChatInputCandidates(doc);
+    const chatInput = inputs.length === 1 ? inputs[0] : null;
+    const candidates = collectSendButtonCandidates(doc, chatInput);
+    return candidates.length === 1 ? candidates[0] : null;
+  },
+
   isGenerationActive(doc) {
     const buttons = doc.querySelectorAll<HTMLElement>('button, [role="button"]');
     for (const button of buttons) {
-      const label = `${button.getAttribute('aria-label') ?? ''} ${button.getAttribute('title') ?? ''}`;
-      if (label.includes(STOP_GENERATION_LABEL)) return true;
-      if (button.querySelector(`svg path[d^="${STOP_GENERATION_PATH_PREFIX}"]`)) return true;
+      if (isStopControl(button)) return true;
     }
 
     // 实测停止按钮悬停后会显示此 tooltip；它只作为辅助信号。
@@ -281,7 +349,12 @@ export const DEEPSEEK_SITE_ADAPTER: SiteAdapter = {
     }
 
     const pathname = doc.location?.pathname?.trim() ?? '';
-    const inputCandidates = collectChatInputCandidates(doc).length;
+    const inputList = collectChatInputCandidates(doc);
+    const inputCandidates = inputList.length;
+    const sendButtonCandidates = collectSendButtonCandidates(
+      doc,
+      inputCandidates === 1 ? inputList[0] : null,
+    ).length;
     return {
       assistantContainers: containers.length,
       codeBlocks,
@@ -291,6 +364,8 @@ export const DEEPSEEK_SITE_ADAPTER: SiteAdapter = {
       candidatesWithPre,
       inputCandidates,
       inputFound: inputCandidates === 1,
+      sendButtonCandidates,
+      sendButtonFound: sendButtonCandidates === 1,
       generationActive: this.isGenerationActive(doc),
       route: CHAT_ROUTE.test(pathname) ? 'chat' : 'other',
     };

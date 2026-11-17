@@ -18,7 +18,8 @@ export type WidgetKind =
   | 'checklist'
   | 'timeline'
   | 'spoiler'
-  | 'poll';
+  | 'poll'
+  | 'form';
 
 export interface BaseWidget {
   w: WidgetKind;
@@ -62,6 +63,12 @@ export interface QuizOption {
   value: string;
 }
 
+export interface QuizQuestionItem {
+  id?: string;
+  question: string;
+  options: QuizOption[];
+}
+
 export interface QuizWidget extends BaseWidget {
   w: 'quiz';
   id?: string;
@@ -69,6 +76,17 @@ export interface QuizWidget extends BaseWidget {
   options: QuizOption[];
   answer?: string;
   explain?: string;
+  /** P0-c: 'local' 本地即时判分（默认）；'model' 提交答案与可选理由交由模型批改。 */
+  grade?: 'local' | 'model';
+  /** P0-c: 支持同一卡片内包含多道单选题（grade:'model' 场景）。 */
+  questions?: QuizQuestionItem[];
+  /** P0-c: 模型批改模式下是否显示可选理由文本框（默认 true）。 */
+  reason?: boolean;
+  reasonLabel?: string;
+  submit?: {
+    label?: string;
+    prompt?: string;
+  };
 }
 
 /** 概念/信息卡组件 */
@@ -143,6 +161,61 @@ export interface PollWidget extends BaseWidget {
   options: PollOption[];
 }
 
+/** 回流表单组件（P0-b） */
+export type FormFieldType = 'radio' | 'choice' | 'checkbox' | 'text';
+
+export interface FormOption {
+  label: string;
+  value: string;
+}
+
+export interface FormChoiceField {
+  id: string;
+  type: 'radio' | 'choice';
+  label: string;
+  options: FormOption[];
+  default?: string;
+  layout?: 'vertical' | 'inline';
+  optional?: boolean;
+}
+
+export interface FormCheckboxField {
+  id: string;
+  type: 'checkbox';
+  label: string;
+  options: FormOption[];
+  default?: string[];
+  layout?: 'vertical' | 'inline';
+  optional?: boolean;
+}
+
+export interface FormTextField {
+  id: string;
+  type: 'text';
+  label: string;
+  placeholder?: string;
+  default?: string;
+  optional?: boolean;
+  maxLength?: number;
+}
+
+export type FormField = FormChoiceField | FormCheckboxField | FormTextField;
+
+export interface FormSubmitConfig {
+  label: string;
+  prompt: string;
+}
+
+export interface FormWidget extends BaseWidget {
+  w: 'form';
+  id?: string;
+  title: string;
+  subtitle?: string;
+  intent?: 'clarify' | 'quiz';
+  fields: FormField[];
+  submit: FormSubmitConfig;
+}
+
 export type GenuiWidget =
   | SliderWidget
   | ResultWidget
@@ -153,7 +226,8 @@ export type GenuiWidget =
   | ChecklistWidget
   | TimelineWidget
   | SpoilerWidget
-  | PollWidget;
+  | PollWidget
+  | FormWidget;
 
 export interface NormalizedWidgetResult {
   ok: true;

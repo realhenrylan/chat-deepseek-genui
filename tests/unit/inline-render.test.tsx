@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import type {
   CardWidget,
   ChecklistWidget,
@@ -14,6 +14,7 @@ import type {
   TimelineWidget,
   SpoilerWidget,
   PollWidget,
+  FormWidget,
 } from '../../src/protocol/widget/types';
 import { QuizView } from '../../src/render/inline/views/QuizView';
 import { CardView } from '../../src/render/inline/views/CardView';
@@ -25,6 +26,8 @@ import { NoteView } from '../../src/render/inline/views/NoteView';
 import { TimelineView } from '../../src/render/inline/views/TimelineView';
 import { SpoilerView } from '../../src/render/inline/views/SpoilerView';
 import { PollView } from '../../src/render/inline/views/PollView';
+import { FormView } from '../../src/render/inline/views/FormView';
+import type { FollowupEnvironmentState, FollowupEnvironmentStore } from '../../src/render/inline/feedback';
 import { mountInlineWidget } from '../../src/render/inline/mount';
 import { enhanceDocument } from '../../src/content/enhance';
 
@@ -516,5 +519,244 @@ describe('作答一键回流与三种新内联组件', () => {
     expect(css).toContain('--inline-pad-inner: 12px');
     expect(css).toContain('--inline-gap: 10px');
     expect(css).toContain('.genui-inline-root[data-site-theme="dark"]');
+    expect(css).toContain('.inline-form-body');
+    expect(css).toContain('.inline-primary-btn');
+    expect(css).toContain('--inline-primary-bg');
+    expect(css).toContain('--inline-primary-ink');
+  });
+
+  it('FormView: 渲染澄清表单、默认选中、提交进入锁定态保留已提交值，并支持修改后重新提交 (R-F6)', async () => {
+    const form: FormWidget = {
+      w: 'form',
+      title: '你想要哪一种窗外视角？',
+      fields: [
+        {
+          id: 'view',
+          type: 'radio',
+          label: '窗外视角',
+          options: [
+            { label: '高层公寓落地窗', value: '高层公寓落地窗' },
+            { label: '卧室窗外雨景', value: '卧室窗外雨景' },
+          ],
+          default: '高层公寓落地窗',
+        },
+        {
+          id: 'style',
+          type: 'radio',
+          label: '画面风格',
+          layout: 'inline',
+          options: [
+            { label: '写实摄影', value: '写实摄影' },
+            { label: '动漫插画', value: '动漫插画' },
+          ],
+          default: '写实摄影',
+        },
+        {
+          id: 'extra',
+          type: 'text',
+          label: '补充要求（选填）',
+          optional: true,
+        },
+      ],
+      submit: {
+        label: '查找这种风格的更多动态壁纸',
+        prompt: '主题：{view}；风格：{style}。{extra?补充：{extra}。}请展示预览。',
+      },
+    };
+
+    const onRequestSend = vi.fn(async () => ({ status: 'sent' as const }));
+
+    const { container } = render(
+      <FormView widget={form} onRequestSend={onRequestSend} requireTrustedClick={false} />,
+    );
+
+    // 切换为「卧室窗外雨景」与「动漫插画」，填写补充文本
+    fireEvent.click(screen.getByRole('radio', { name: '卧室窗外雨景' }));
+    fireEvent.click(screen.getByRole('radio', { name: '动漫插画' }));
+    fireEvent.change(screen.getByLabelText('补充要求（选填）'), {
+      target: { value: '优先免费MP4' },
+    });
+
+    const submitBtn = screen.getByRole('button', { name: '查找这种风格的更多动态壁纸 →' });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(onRequestSend).toHaveBeenCalledTimes(1);
+    });
+    expect(onRequestSend).toHaveBeenCalledWith(
+      '主题：卧室窗外雨景；风格：动漫插画。补充：优先免费MP4。请展示预览。',
+      { isTrusted: false },
+    );
+
+    // R-F6: 锁定「已提交」态且保留用户提交的值（不重置回默认值）
+    await waitFor(() => {
+      expect(container.querySelector('.inline-form-body')?.getAttribute('data-form-locked')).toBe(
+        'true',
+      );
+    });
+    expect(screen.getByRole('radio', { name: '卧室窗外雨景' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('radio', { name: '动漫插画' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect((screen.getByLabelText('补充要求（选填）') as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.getByText('✓ 已提交')).toBeTruthy();
+
+    // 点击「修改后重新提交」解锁，且保留先前值
+    fireEvent.click(screen.getByRole('button', { name: '修改后重新提交' }));
+    expect(container.querySelector('.inline-form-body')?.getAttribute('data-form-locked')).toBe(
+      'false',
+    );
+    expect(screen.getByRole('radio', { name: '卧室窗外雨景' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+  });
+
+  it('FormView: 必填项未完成时禁用主按钮，默认拦截非信任点击 (G1/R-F3)', () => {
+    const form: FormWidget = {
+      w: 'form',
+      title: '筛选偏好',
+      fields: [
+        {
+          id: 'tags',
+          type: 'checkbox',
+          label: '关注维度',
+          options: [
+            { label: '价格', value: 'price' },
+            { label: '交通', value: 'transit' },
+          ],
+        },
+      ],
+      submit: { label: '查找场馆', prompt: '维度：{tags}' },
+    };
+
+    const onRequestSend = vi.fn(async () => ({ status: 'sent' as const }));
+    render(<FormView widget={form} onRequestSend={onRequestSend} />);
+
+    const btn = screen.getByRole('button', { name: '查找场馆 →' }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(screen.getByText(/请先完成必填项/)).toBeTruthy();
+
+    // 勾选一项后按钮启用
+    fireEvent.click(screen.getByRole('checkbox', { name: '交通' }));
+    expect(btn.disabled).toBe(false);
+
+    // 默认 requireTrustedClick=true 时，jsdom 合成点击（isTrusted=false）不会触发发送
+    fireEvent.click(btn);
+    expect(onRequestSend).not.toHaveBeenCalled();
+  });
+
+  it('FormView: 响应环境状态变化（生成中禁用 / 有草稿切回带入输入框）', () => {
+    let snapshot: FollowupEnvironmentState = {
+      generationActive: false,
+      hasDraft: false,
+      followupMode: 'send',
+    };
+    const listeners = new Set<() => void>();
+    const env: FollowupEnvironmentStore = {
+      getSnapshot: () => snapshot,
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const emit = (next: Partial<FollowupEnvironmentState>) => {
+      snapshot = { ...snapshot, ...next };
+      for (const listener of listeners) listener();
+    };
+
+    const form: FormWidget = {
+      w: 'form',
+      title: '偏好',
+      fields: [{ id: 'a', type: 'radio', label: 'A', options: [{ label: '1', value: '1' }], default: '1' }],
+      submit: { label: '继续', prompt: '选 {a}' },
+    };
+
+    const { container } = render(<FormView widget={form} followupEnv={env} />);
+    const view = within(container);
+    const btn = () => view.getByRole('button', { name: /继续|等待当前回答结束/ }) as HTMLButtonElement;
+    expect(btn().textContent).toBe('继续 →');
+    expect(btn().disabled).toBe(false);
+
+    act(() => {
+      emit({ generationActive: true });
+    });
+    expect(btn().textContent).toBe('等待当前回答结束');
+    expect(btn().disabled).toBe(true);
+
+    act(() => {
+      emit({ generationActive: false, hasDraft: true });
+    });
+    expect(btn().textContent).toBe('继续（带入输入框）');
+    expect(btn().disabled).toBe(false);
+    expect(view.getByText(/检测到输入框已有草稿/)).toBeTruthy();
+  });
+
+  it('QuizView (grade:model / P0-c): 无预选、未作答禁用主按钮、模板含答案与可选理由', async () => {
+    const quiz: QuizWidget = {
+      w: 'quiz',
+      grade: 'model',
+      question: '第一轮理解检测',
+      options: [],
+      questions: [
+        {
+          id: 'q1',
+          question: '子空间必须包含哪个向量？',
+          options: [
+            { label: '零向量', value: 'A' },
+            { label: '单位向量', value: 'B' },
+          ],
+        },
+        {
+          id: 'q2',
+          question: 'y=2x 是否对标量乘法封闭？',
+          options: [
+            { label: '封闭', value: 'A' },
+            { label: '不封闭', value: 'B' },
+          ],
+        },
+      ],
+      reason: true,
+      reasonLabel: '简要解释题目 2 的理由（选填）',
+    };
+
+    const onRequestSend = vi.fn(async () => ({ status: 'sent' as const }));
+    const { container } = render(
+      <QuizView widget={quiz} onRequestSend={onRequestSend} requireTrustedClick={false} />,
+    );
+    const view = within(container);
+
+    // 题目均无预选
+    const radios = view.getAllByRole('radio');
+    expect(radios).toHaveLength(4);
+    for (const radio of radios) {
+      expect(radio.getAttribute('aria-checked')).toBe('false');
+    }
+
+    // 未作答时主按钮禁用
+    const submitBtn = view.getByRole('button', { name: '提交答案并批改 →' }) as HTMLButtonElement;
+    expect(submitBtn.disabled).toBe(true);
+
+    // 只答第 1 题仍禁用
+    fireEvent.click(view.getByRole('radio', { name: '零向量' }));
+    expect(submitBtn.disabled).toBe(true);
+
+    // 答完第 2 题后启用，填写可选理由
+    fireEvent.click(view.getByRole('radio', { name: '封闭' }));
+    expect(submitBtn.disabled).toBe(false);
+
+    fireEvent.change(view.getByLabelText('简要解释题目 2 的理由（选填）'), {
+      target: { value: 'c*(x,2x) = (cx, 2cx) 仍在直线上' },
+    });
+
+    fireEvent.click(submitBtn);
+    await waitFor(() => {
+      expect(onRequestSend).toHaveBeenCalledTimes(1);
+    });
+    const sentPrompt = (onRequestSend.mock.calls[0] as unknown as [string])[0];
+    expect(sentPrompt).toContain('A（零向量）');
+    expect(sentPrompt).toContain('A（封闭）');
+    expect(sentPrompt).toContain('c*(x,2x) = (cx, 2cx) 仍在直线上');
   });
 });

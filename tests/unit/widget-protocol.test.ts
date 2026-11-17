@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseGenui } from '../../src/protocol/validate.ts';
+import { normalizeWidget } from '../../src/protocol/widget/normalize.ts';
+import { renderFormPrompt } from '../../src/protocol/widget/template.ts';
 import type {
   SliderWidget,
   QuizWidget,
@@ -8,6 +10,7 @@ import type {
   TimelineWidget,
   SpoilerWidget,
   PollWidget,
+  FormWidget,
 } from '../../src/protocol/widget/types.ts';
 
 describe('w1 内联组件协议与宽容解析套件 (M2)', () => {
@@ -373,5 +376,201 @@ describe('poll 倾向投票组件', () => {
     const noOptions = parseGenui(JSON.stringify({ w: 'poll', question: '选？', options: [] }));
     expect(noOptions.ok).toBe(false);
     if (!noOptions.ok) expect(noOptions.detail).toContain('至少需要 1 个选项');
+  });
+});
+
+describe('form 回流表单组件与模板引擎 (P0-b)', () => {
+  it('解析标准澄清表单，保留默认值与 inline 布局', () => {
+    const raw = JSON.stringify({
+      w: 'form',
+      id: 'wallpaper-pref',
+      title: '你想要哪一种窗外视角？',
+      fields: [
+        {
+          id: 'view',
+          type: 'radio',
+          label: '窗外视角',
+          options: ['高层公寓落地窗，俯瞰城市', '卧室窗外下雨', '木屋窗外是森林雪山'],
+          default: '高层公寓落地窗，俯瞰城市',
+        },
+        {
+          id: 'style',
+          type: 'radio',
+          label: '画面风格',
+          layout: 'inline',
+          options: ['写实摄影', '动漫插画'],
+          default: '写实摄影',
+        },
+        {
+          id: 'extra',
+          type: 'text',
+          label: '补充要求（选填）',
+          optional: true,
+        },
+      ],
+      submit: {
+        label: '查找这种风格的更多动态壁纸',
+        prompt:
+          '继续帮我找4K动态壁纸。主题：{view}；风格：{style}。{extra?补充：{extra}。}优先免费MP4。',
+      },
+    });
+
+    const res = parseGenui(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const form = res.widget as FormWidget;
+      expect(form.w).toBe('form');
+      expect(form.intent).toBe('clarify');
+      expect(form.fields).toHaveLength(3);
+      expect(form.fields[0]).toMatchObject({
+        type: 'radio',
+        default: '高层公寓落地窗，俯瞰城市',
+        layout: 'vertical',
+      });
+      expect(form.fields[1]).toMatchObject({
+        type: 'radio',
+        layout: 'inline',
+        default: '写实摄影',
+      });
+      expect(form.fields[2]).toMatchObject({ type: 'text', optional: true });
+    }
+  });
+
+  it('测验类字段（intent:quiz 或 type:choice）强制清除预选默认值（R-F2）', () => {
+    const res = normalizeWidget({
+      w: 'form',
+      title: '理解检测',
+      intent: 'quiz',
+      fields: [
+        {
+          id: 'q1',
+          type: 'choice',
+          label: '题目 1',
+          options: [
+            { label: '包含零向量', value: 'A' },
+            { label: '只含正数', value: 'B' },
+          ],
+          default: 'A',
+        },
+      ],
+      submit: { label: '提交答案并批改', prompt: '我选了 {q1}' },
+    });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const form = res.widget as FormWidget;
+      expect(form.fields[0]).toMatchObject({ type: 'choice', default: undefined });
+      expect(res.warnings?.some((w) => w.includes('已清除预选默认值'))).toBe(true);
+    }
+  });
+
+  it('模板缺失或引用不存在字段时输出 warning 而不整卡失败，渲染回退本地通用模板（R-T3）', () => {
+    const missingRes = normalizeWidget({
+      w: 'form',
+      title: '高尔夫偏好',
+      fields: [
+        { id: 'area', type: 'radio', label: '地点', options: ['市区', '郊区'], default: '市区' },
+      ],
+      submit: { label: '查找场馆和价格' },
+    });
+    expect(missingRes.ok).toBe(true);
+    if (missingRes.ok) {
+      expect(missingRes.warnings?.some((w) => w.includes('缺少 submit.prompt'))).toBe(true);
+      const rendered = renderFormPrompt(missingRes.widget as FormWidget, { area: '市区' });
+      expect(rendered).toBe('关于『高尔夫偏好』，我的选择是：地点：市区。请据此继续。');
+    }
+
+    const unknownRefRes = normalizeWidget({
+      w: 'form',
+      title: '测试回退',
+      fields: [{ id: 'a', type: 'radio', label: '选项', options: ['甲', '乙'] }],
+      submit: { label: '继续', prompt: '结果：{a}，未知：{ghost}' },
+    });
+    expect(unknownRefRes.ok).toBe(true);
+    if (unknownRefRes.ok) {
+      expect(unknownRefRes.warnings?.some((w) => w.includes('ghost'))).toBe(true);
+      const rendered = renderFormPrompt(unknownRefRes.widget as FormWidget, { a: '甲' });
+      expect(rendered).toBe('关于『测试回退』，我的选择是：选项：甲。请据此继续。');
+    }
+  });
+
+  it('模板防注入测试（R-T2）：值中含 {x}、换行与 Markdown 时原样输出，不做二次展开', () => {
+    const form: FormWidget = {
+      w: 'form',
+      title: '安全插值',
+      fields: [
+        { id: 'view', type: 'radio', label: '视角', options: [{ label: '卧室', value: '卧室' }] },
+        { id: 'extra', type: 'text', label: '补充', optional: true },
+      ],
+      submit: {
+        label: '继续',
+        prompt: '视角：{view}。{extra?补充：{extra}。}结束',
+      },
+    };
+
+    const malicious = '{view}\n# 标题\n**加粗** [链接](https://example.com)';
+    const output = renderFormPrompt(form, { view: '卧室', extra: malicious });
+    expect(output).toBe(`视角：卧室。补充：${malicious}。结束`);
+
+    const omitted = renderFormPrompt(form, { view: '卧室', extra: '   ' });
+    expect(omitted).toBe('视角：卧室。结束');
+  });
+
+  it('超长补充文本按 600 字上限截断，选项部分永不截断（R-T4）', () => {
+    const longOption = '非常确定的用户主选择选项内容不会被截断';
+    const form: FormWidget = {
+      w: 'form',
+      title: '长度边界',
+      fields: [
+        { id: 'choice', type: 'radio', label: '主选', options: [{ label: longOption, value: longOption }] },
+        { id: 'extra', type: 'text', label: '补充', optional: true },
+      ],
+      submit: {
+        label: '继续',
+        prompt: '已选：{choice}。{extra?补充：{extra}。}',
+      },
+    };
+
+    const output = renderFormPrompt(form, {
+      choice: longOption,
+      extra: '字'.repeat(800),
+    });
+    expect(output.length).toBeLessThanOrEqual(600);
+    expect(output).toContain(longOption);
+    expect(output.endsWith('…')).toBe(false); // 句末「。」仍在
+    expect(output).toContain('…');
+  });
+
+  it('空 fields 按 schema-violation 拒绝', () => {
+    const res = parseGenui(JSON.stringify({ w: 'form', title: '空表单', fields: [] }));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('schema-violation');
+  });
+});
+
+describe('quiz 模型批改模式 (P0-c)', () => {
+  it('grade:model 模式下忽略本地 answer/explain，支持多题与可选理由', () => {
+    const res = normalizeWidget({
+      w: 'quiz',
+      grade: 'model',
+      question: '第一轮理解检测',
+      questions: [
+        { id: 'q1', question: '哪项不是子空间条件？', options: ['含零向量', '对加法封闭', '必须有界'] },
+        { id: 'q2', question: 'y=2x 是否是子空间？', options: ['是', '否'] },
+      ],
+      answer: 'C',
+      explain: '不应该提前展示',
+    });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      const quiz = res.widget as QuizWidget;
+      expect(quiz.grade).toBe('model');
+      expect(quiz.answer).toBeUndefined();
+      expect(quiz.explain).toBeUndefined();
+      expect(quiz.questions).toHaveLength(2);
+      expect(quiz.reason).toBe(true);
+      expect(res.warnings?.some((w) => w.includes('已忽略本地 answer/explain'))).toBe(true);
+    }
   });
 });

@@ -36,6 +36,10 @@ import { GenuiStatusPanel, STATUS_ATTR, STATUS_HOST_ATTR, type BlockStatus } fro
 import type { RepairDeliveryResult } from './repair';
 import { mountCard } from '../render/mount';
 import { mountInlineWidget } from '../render/inline/mount';
+import type {
+  FollowupEnvironmentStore,
+  RequestSendHandler,
+} from '../render/inline/feedback';
 import type { ElementRegistry } from '../render/registry';
 
 /**
@@ -74,6 +78,12 @@ export interface EnhanceOptions {
    * 生产接线 content/followup.fillContinueIntoInput（追加不覆盖、不发送）。
    */
   onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
+  /** 一键回流发送回调（点击即发送，受护栏 G1–G9 保护）。 */
+  onRequestSend?: RequestSendHandler;
+  /** 回流环境实时状态（生成中、草稿存在与否、回流模式）。 */
+  followupEnv?: FollowupEnvironmentStore;
+  /** G1 护栏：是否校验点击事件 isTrusted === true（默认 true）。 */
+  requireTrustedClick?: boolean;
   /**
    * 返回 true 表示该候选块此刻不可作为判定依据（典型：站点对视口外代码块
    * 延迟渲染，DOM 中只有短前缀）。对这类块不写 failed 状态、不记失败签名，
@@ -663,6 +673,9 @@ export class EnhancementManager {
         mountedCard = mountInlineWidget(host, {
           widget,
           onContinue: this.options.onContinue,
+          onRequestSend: this.options.onRequestSend,
+          followupEnv: this.options.followupEnv,
+          requireTrustedClick: this.options.requireTrustedClick,
           onFatal: (error) => {
             console.error(`${LOG_PREFIX} inline widget render failed`, error);
             if (!record) {

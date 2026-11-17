@@ -542,21 +542,18 @@ function installGenuiXhrInterceptor(target: InterceptorTarget): boolean {
       }
     }
 
-    let deliveryListener: (() => void) | null = null;
-    if (detail.repairStashId !== null) {
-      const repairStashId = detail.repairStashId;
-      deliveryListener = () => {
-        if (this.status >= 200 && this.status < 300) {
-          dispatchDocumentEvent<RequestDeliveredDetail>(doc, REQUEST_DELIVERED_EVENT, {
-            repairStashId,
-          });
-        }
-      };
-      try {
-        this.addEventListener('loadend', deliveryListener, { once: true });
-      } catch {
-        deliveryListener = null;
+    const repairStashId = detail.repairStashId;
+    let deliveryListener: (() => void) | null = () => {
+      if (this.status >= 200 && this.status < 300) {
+        dispatchDocumentEvent<RequestDeliveredDetail>(doc, REQUEST_DELIVERED_EVENT, {
+          repairStashId,
+        });
       }
+    };
+    try {
+      this.addEventListener('loadend', deliveryListener, { once: true });
+    } catch {
+      deliveryListener = null;
     }
 
     try {
@@ -704,7 +701,7 @@ export function installGenuiFetchInterceptor(target: InterceptorTarget): boolean
     dispatch<RequestSentDetail>(REQUEST_SENT_EVENT, detail);
 
     const response = await responsePromise;
-    if (response.ok && repairStashId !== null) {
+    if (response.ok) {
       dispatch<RequestDeliveredDetail>(REQUEST_DELIVERED_EVENT, { repairStashId });
     }
     return response;
