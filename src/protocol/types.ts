@@ -54,6 +54,8 @@ export const LIMITS = {
   maxChartItems: 20,
   maxChartPointsPerSeries: 50,
   maxChartPointsTotal: 100,
+  maxChartVectors: 10,
+  maxChartAnnotations: 20,
   /** 表格上限：列数与行数。 */
   maxTableColumns: 10,
   maxTableRows: 30,
@@ -113,6 +115,9 @@ export interface NumberStateVariable {
   min: number;
   max: number;
   step: number;
+  /** P1-a (R-I2)：滑块两端语义刻度，如「-2（向下开口）」「+2（向上开口）」 */
+  minLabel?: string;
+  maxLabel?: string;
   unit?: string;
 }
 
@@ -162,6 +167,33 @@ export interface NoteElement {
   text: string;
   tone?: 'info' | 'warn' | 'error';
   visibleIf?: Condition;
+}
+
+/** P1-b：动态 LaTeX 公式元素（S4），支持 `{stateId}` / `{derivedId}` 占位符随交互状态实时改写。 */
+export interface FormulaElement {
+  kind: 'formula';
+  label?: string;
+  template: string;
+  caption?: string;
+  visibleIf?: Condition;
+}
+
+/** P2 (S1)：数学图解向量（受控 SVG 绘制，起点默认原点 [0, 0]）。 */
+export interface ChartVector {
+  from?: [number, number];
+  to: [number, number];
+  label?: string;
+  color?: string;
+}
+
+/** P2 (S1)：数学图解标注点/文本（受控 SVG 绘制）。 */
+export interface ChartAnnotation {
+  x: number;
+  y: number;
+  text: string;
+  color?: string;
+  point?: boolean;
+  align?: 'left' | 'right' | 'center';
 }
 
 export interface ChartItem {
@@ -230,6 +262,7 @@ export interface ChartBarPieElement {
   chartType: 'bar' | 'pie';
   title?: string;
   legend?: boolean;
+  caption?: string;
   items: ChartItem[];
 }
 
@@ -241,6 +274,14 @@ export interface ChartLineElement<S = ChartSeries> {
   yLabel?: string;
   legend?: boolean;
   series: S[];
+  /** P2 (S1)：受控向量箭头列表 */
+  vectors?: ChartVector[];
+  /** P2 (S1)：受控坐标标注列表 */
+  annotations?: ChartAnnotation[];
+  /** P2 (S1)：绘图区右上角空间角标（如 `R²`） */
+  cornerLabel?: string;
+  /** R-L3：图表底部图注（支持行内公式） */
+  caption?: string;
 }
 
 /** v3 机械白名单内的折线图：series 只能是离散点系列。 */
@@ -428,6 +469,7 @@ export interface ModelChartElement {
   chartType: 'bar' | 'pie';
   title?: string;
   legend?: boolean;
+  caption?: string;
   source: ModelChartSource;
 }
 
@@ -457,6 +499,7 @@ export type GenuiV5Element =
   | ComposableInteractiveElement
   | ModelValueElement
   | NoteElement
+  | FormulaElement
   | ChartElementV4
   | ModelChartElement
   | TableElement
@@ -509,6 +552,7 @@ export type ComposableInteractiveElement =
 export type GenuiV3Element =
   | ComposableInteractiveElement
   | NoteElement
+  | FormulaElement
   | ChartElement
   | TableElement
   | SectionElement<GenuiV3Element>
@@ -518,6 +562,7 @@ export type GenuiV3Element =
 export type GenuiV4Element =
   | ComposableInteractiveElement
   | NoteElement
+  | FormulaElement
   | ChartElementV4
   | TableElement
   | SectionElement<GenuiV4Element>

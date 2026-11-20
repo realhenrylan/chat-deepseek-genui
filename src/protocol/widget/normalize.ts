@@ -1,11 +1,17 @@
 import { validateFormPromptTemplate } from './template.ts';
 import type {
+  CardRowItem,
+  FlowBranch,
+  FlowCapability,
+  FlowStep,
+  FlowTone,
   FormField,
   FormOption,
   GenuiWidget,
   ParseWidgetResult,
   QuizOption,
   QuizQuestionItem,
+  SliderStateHint,
 } from './types.ts';
 
 function toNum(val: unknown, fallback: number): number {
@@ -81,6 +87,17 @@ function toOptionalPositiveInt(val: unknown): number | undefined {
   return rounded > 0 ? rounded : undefined;
 }
 
+function toOptionalTrimmedStr(val: unknown): string | undefined {
+  if (typeof val !== 'string') return undefined;
+  const trimmed = val.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeFlowTone(val: unknown): FlowTone | undefined {
+  if (val === 'default' || val === 'accent' || val === 'info' || val === 'warn') return val;
+  return undefined;
+}
+
 /**
  * w1 宽容层：
  * 1. 自动类型转换：数值字段如果是数字字符串自动转换为 number；
@@ -122,6 +139,22 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
         warnings.push(`value 已自动吸附到步长合法值: ${value}`);
       }
 
+      const rawHints = Array.isArray(raw.hints) ? raw.hints : [];
+      const hints: SliderStateHint[] = [];
+      for (const item of rawHints) {
+        if (typeof item !== 'object' || item === null) continue;
+        const rec = item as Record<string, unknown>;
+        const text = toOptionalTrimmedStr(rec.text ?? rec.label);
+        if (!text) continue;
+        const hintMin = rec.min !== undefined ? toNum(rec.min, Number.NaN) : Number.NaN;
+        const hintMax = rec.max !== undefined ? toNum(rec.max, Number.NaN) : Number.NaN;
+        hints.push({
+          ...(Number.isFinite(hintMin) ? { min: hintMin } : {}),
+          ...(Number.isFinite(hintMax) ? { max: hintMax } : {}),
+          text,
+        });
+      }
+
       const widget: GenuiWidget = {
         w: 'slider',
         id: typeof raw.id === 'string' ? raw.id : undefined,
@@ -131,16 +164,22 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
         step,
         value,
         unit: typeof raw.unit === 'string' ? raw.unit : undefined,
+        minLabel: toOptionalTrimmedStr(raw.minLabel),
+        maxLabel: toOptionalTrimmedStr(raw.maxLabel),
+        hint: toOptionalTrimmedStr(raw.hint),
+        ...(hints.length > 0 ? { hints } : {}),
+        ...(raw.localBadge === false ? { localBadge: false } : {}),
       };
       return { ok: true, widget, warnings: warnings.length > 0 ? warnings : undefined };
     }
 
     case 'result': {
+      const formula = toOptionalTrimmedStr(raw.formula ?? raw.math ?? raw.tex);
       let value: string | number;
       if (typeof raw.value === 'string' || typeof raw.value === 'number') {
         value = raw.value;
       } else {
-        value = toStr(raw.value, '-');
+        value = toStr(raw.value, formula ? '' : '-');
       }
       const widget: GenuiWidget = {
         w: 'result',
@@ -150,6 +189,8 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
         bind: typeof raw.bind === 'string' ? raw.bind : undefined,
         unit: typeof raw.unit === 'string' ? raw.unit : undefined,
         emphasis: raw.emphasis === 'primary' ? 'primary' : 'normal',
+        ...(formula ? { formula } : {}),
+        caption: toOptionalTrimmedStr(raw.caption),
       };
       return { ok: true, widget };
     }
@@ -267,16 +308,42 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
       const points = Array.isArray(raw.points)
         ? raw.points.map((p) => toStr(p)).filter(Boolean)
         : undefined;
+      const rawItems = Array.isArray(raw.items) ? raw.items : [];
+      const items: CardRowItem[] = [];
+      for (const item of rawItems) {
+        if (typeof item === 'string') {
+          const text = item.trim();
+          if (text) items.push({ title: text });
+          continue;
+        }
+        if (typeof item === 'object' && item !== null) {
+          const rec = item as Record<string, unknown>;
+          const itemTitle = toOptionalTrimmedStr(rec.title ?? rec.name ?? rec.label);
+          if (!itemTitle) continue;
+          const icon = toOptionalTrimmedStr(rec.icon ?? rec.symbol);
+          const detail = toOptionalTrimmedStr(rec.detail ?? rec.desc ?? rec.text);
+          const math = toOptionalTrimmedStr(rec.math ?? rec.formula ?? rec.tex);
+          items.push({
+            ...(icon ? { icon } : {}),
+            title: itemTitle,
+            ...(detail ? { detail } : {}),
+            ...(math ? { math } : {}),
+          });
+        }
+      }
       const tags = Array.isArray(raw.tags)
         ? raw.tags.map((t) => toStr(t)).filter(Boolean)
         : undefined;
+      const caption = toOptionalTrimmedStr(raw.caption);
 
       const widget: GenuiWidget = {
         w: 'card',
         title,
         subtitle,
         points,
+        ...(items.length > 0 ? { items } : {}),
         tags,
+        ...(caption ? { caption } : {}),
       };
       return { ok: true, widget };
     }
@@ -304,6 +371,7 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
         title,
         items,
         highlight: typeof raw.highlight === 'string' ? raw.highlight : undefined,
+        selectable: typeof raw.selectable === 'boolean' ? raw.selectable : undefined,
       };
       return { ok: true, widget };
     }
@@ -614,6 +682,138 @@ export function normalizeWidget(raw: Record<string, unknown>): ParseWidgetResult
         widget,
         warnings: warnings.length > 0 ? warnings : undefined,
       };
+    }
+
+    case 'copy': {
+      const text = toStr(raw.text ?? raw.content ?? raw.value, '').trim();
+      if (!text) {
+        return { ok: false, code: 'schema-violation', detail: 'copy 组件缺少 text 可复制内容' };
+      }
+      const title = toOptionalTrimmedStr(raw.title);
+      const label = toOptionalTrimmedStr(raw.label ?? raw.buttonLabel) ?? '复制内容';
+      const note = toOptionalTrimmedStr(raw.note ?? raw.hint);
+
+      const widget: GenuiWidget = {
+        w: 'copy',
+        ...(title ? { title } : {}),
+        text,
+        label,
+        ...(note ? { note } : {}),
+      };
+      return { ok: true, widget };
+    }
+
+    case 'flow': {
+      const title = toOptionalTrimmedStr(raw.title);
+      const subtitle = toOptionalTrimmedStr(raw.subtitle);
+      const rawSteps = Array.isArray(raw.steps)
+        ? raw.steps
+        : Array.isArray(raw.nodes)
+          ? raw.nodes
+          : Array.isArray(raw.items)
+            ? raw.items
+            : [];
+      const steps: FlowStep[] = [];
+      for (const [idx, item] of rawSteps.entries()) {
+        if (typeof item === 'string') {
+          const t = item.trim();
+          if (t) steps.push({ title: t });
+          continue;
+        }
+        if (typeof item === 'object' && item !== null) {
+          const rec = item as Record<string, unknown>;
+          const stepTitle = toOptionalTrimmedStr(rec.title ?? rec.name ?? rec.label);
+          if (!stepTitle) continue;
+          const id = toOptionalTrimmedStr(rec.id);
+          const icon = toOptionalTrimmedStr(rec.icon);
+          const stepNum =
+            rec.step !== undefined && rec.step !== null && String(rec.step).trim() !== ''
+              ? String(rec.step).trim()
+              : undefined;
+          const desc = toOptionalTrimmedStr(rec.desc ?? rec.description ?? rec.detail);
+          const highlight = rec.highlight === true ? true : undefined;
+          const tone = normalizeFlowTone(rec.tone);
+          const arrowLabel = toOptionalTrimmedStr(rec.arrowLabel ?? rec.edgeLabel ?? rec.arrow);
+          const arrowDirection =
+            rec.arrowDirection === 'both' || rec.bidirectional === true ? 'both' : undefined;
+          steps.push({
+            ...(id ? { id } : {}),
+            ...(icon ? { icon } : {}),
+            ...(stepNum ? { step: stepNum } : { step: String(idx + 1) }),
+            title: stepTitle,
+            ...(desc ? { desc } : {}),
+            ...(highlight ? { highlight } : {}),
+            ...(tone ? { tone } : {}),
+            ...(arrowLabel ? { arrowLabel } : {}),
+            ...(arrowDirection ? { arrowDirection } : {}),
+          });
+        }
+      }
+      if (steps.length === 0) {
+        return { ok: false, code: 'schema-violation', detail: 'flow 组件至少需要 1 个步骤节点' };
+      }
+
+      const rawBranches = Array.isArray(raw.branches) ? raw.branches : [];
+      const branches: FlowBranch[] = [];
+      for (const item of rawBranches) {
+        if (typeof item !== 'object' || item === null) continue;
+        const rec = item as Record<string, unknown>;
+        const branchTitle = toOptionalTrimmedStr(rec.title ?? rec.name ?? rec.label);
+        if (!branchTitle) continue;
+        const icon = toOptionalTrimmedStr(rec.icon);
+        const desc = toOptionalTrimmedStr(rec.desc ?? rec.description ?? rec.detail);
+        const badge = toOptionalTrimmedStr(rec.badge);
+        const direction =
+          rec.direction === 'both' || rec.bidirectional === true ? 'both' : 'down';
+        const tone = normalizeFlowTone(rec.tone);
+        branches.push({
+          ...(icon ? { icon } : {}),
+          title: branchTitle,
+          ...(desc ? { desc } : {}),
+          ...(badge ? { badge } : {}),
+          direction,
+          ...(tone ? { tone } : {}),
+        });
+      }
+
+      const rawCaps = Array.isArray(raw.capabilities)
+        ? raw.capabilities
+        : Array.isArray(raw.grid)
+          ? raw.grid
+          : [];
+      const capabilities: FlowCapability[] = [];
+      for (const item of rawCaps) {
+        if (typeof item === 'string') {
+          const capTitle = item.trim();
+          if (capTitle) capabilities.push({ title: capTitle });
+          continue;
+        }
+        if (typeof item === 'object' && item !== null) {
+          const rec = item as Record<string, unknown>;
+          const capTitle = toOptionalTrimmedStr(rec.title ?? rec.name ?? rec.label);
+          if (!capTitle) continue;
+          const icon = toOptionalTrimmedStr(rec.icon);
+          const desc = toOptionalTrimmedStr(rec.desc ?? rec.detail);
+          capabilities.push({
+            ...(icon ? { icon } : {}),
+            title: capTitle,
+            ...(desc ? { desc } : {}),
+          });
+        }
+      }
+
+      const caption = toOptionalTrimmedStr(raw.caption);
+
+      const widget: GenuiWidget = {
+        w: 'flow',
+        ...(title ? { title } : {}),
+        ...(subtitle ? { subtitle } : {}),
+        steps,
+        ...(branches.length > 0 ? { branches } : {}),
+        ...(capabilities.length > 0 ? { capabilities } : {}),
+        ...(caption ? { caption } : {}),
+      };
+      return { ok: true, widget };
     }
 
     default:

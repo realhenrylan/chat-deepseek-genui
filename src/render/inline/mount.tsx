@@ -2,6 +2,7 @@ import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import type { GenuiWidget } from '../../protocol/widget/types';
 import inlineCss from './inline.css?inline';
+import { ensureKatexFonts, KATEX_SHADOW_CSS } from '../math';
 import { attachThemeAttribute } from '../theme';
 import { InlineWidgetRoot } from './InlineWidgetRoot';
 import type {
@@ -38,8 +39,10 @@ export function mountInlineWidget(
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
   shadow.replaceChildren();
 
+  ensureKatexFonts(doc);
+
   const style = doc.createElement('style');
-  style.textContent = inlineCss;
+  style.textContent = `${inlineCss}\n${KATEX_SHADOW_CSS}`;
   shadow.appendChild(style);
 
   const container = doc.createElement('div');

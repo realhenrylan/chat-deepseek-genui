@@ -351,9 +351,36 @@ describe('作答一键回流与三种新内联组件', () => {
     expect(screen.getByText('未找到聊天输入框')).toBeTruthy();
   });
 
+  it('CompareView: 无推荐项的纯概念对比不显示「采用此方案」按钮，selectable:false 可强制关闭', () => {
+    const info: CompareWidget = {
+      w: 'compare',
+      title: 'GeForce、GTX、RTX 的关系定位',
+      items: [
+        { name: 'GeForce', pros: ['NVIDIA 消费级显卡品牌'] },
+        { name: 'GTX', pros: ['传统光栅化渲染'] },
+        { name: 'RTX', pros: ['实时光追与 DLSS'] },
+      ],
+    };
+    const first = render(<CompareView widget={info} onContinue={vi.fn()} />);
+    expect(first.container.querySelectorAll('.inline-compare-select-btn')).toHaveLength(0);
+    expect(first.container.querySelectorAll('.inline-compare-actions')).toHaveLength(0);
+    first.unmount();
+
+    const forcedOff: CompareWidget = { ...info, highlight: 'RTX', selectable: false };
+    const second = render(<CompareView widget={forcedOff} onContinue={vi.fn()} />);
+    expect(second.container.querySelectorAll('.inline-compare-select-btn')).toHaveLength(0);
+    second.unmount();
+
+    const recommended: CompareWidget = { ...info, highlight: 'RTX' };
+    const third = render(<CompareView widget={recommended} onContinue={vi.fn()} />);
+    expect(third.container.querySelectorAll('.inline-compare-select-btn')).toHaveLength(3);
+    third.unmount();
+  });
+
   it('CompareView: 点击采用方案写入选型模板，且反馈只出现在所选方案', () => {
     const compare: CompareWidget = {
       w: 'compare',
+      selectable: true,
       items: [
         { name: '方案 A' },
         { name: '方案 B' },
@@ -758,5 +785,138 @@ describe('作答一键回流与三种新内联组件', () => {
     expect(sentPrompt).toContain('A（零向量）');
     expect(sentPrompt).toContain('A（封闭）');
     expect(sentPrompt).toContain('c*(x,2x) = (cx, 2cx) 仍在直线上');
+  });
+
+  it('ChecklistView / CompareView (P0-e): 接入 onRequestSend 与环境护栏 G1/G2/G3/G7', async () => {
+    let snapshot: FollowupEnvironmentState = {
+      generationActive: false,
+      hasDraft: false,
+      followupMode: 'send',
+    };
+    const listeners = new Set<() => void>();
+    const envStore: FollowupEnvironmentStore = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const updateEnv = (patch: Partial<FollowupEnvironmentState>) => {
+      snapshot = { ...snapshot, ...patch };
+      for (const listener of listeners) listener();
+    };
+
+    const checklist: ChecklistWidget = {
+      w: 'checklist',
+      items: [
+        { text: '写单测', checked: true },
+        { text: '更新文档' },
+      ],
+    };
+    const onSendChecklist = vi.fn(async () => ({ status: 'sent' as const }));
+
+    // 1) ChecklistView 默认 requireTrustedClick=true 拦截非信任点击 (G1)
+    const guarded = render(
+      <ChecklistView
+        widget={checklist}
+        onRequestSend={onSendChecklist}
+        followupEnv={envStore}
+      />,
+    );
+    const guardedBtn = guarded.container.querySelector<HTMLButtonElement>('.inline-feedback-btn')!;
+    expect(guardedBtn.textContent).toBe('📋 按未完成任务规划下一步 →');
+    fireEvent.click(guardedBtn);
+    expect(onSendChecklist).not.toHaveBeenCalled();
+    guarded.unmount();
+
+    // 2) ChecklistView 关闭信任检测后支持直接发送、G2 禁用、G3 草稿切换文案
+    const checkRender = render(
+      <ChecklistView
+        widget={checklist}
+        onRequestSend={onSendChecklist}
+        followupEnv={envStore}
+        requireTrustedClick={false}
+      />,
+    );
+    const checkBtn = () =>
+      checkRender.container.querySelector<HTMLButtonElement>('.inline-feedback-btn')!;
+    fireEvent.click(checkBtn());
+    await waitFor(() => expect(onSendChecklist).toHaveBeenCalledTimes(1));
+    expect(onSendChecklist).toHaveBeenCalledWith(
+      expect.stringContaining('【任务跟进】\n已完成（1/2）：1. 写单测\n待完成（1/2）：1. 更新文档'),
+      { isTrusted: false },
+    );
+    expect(within(checkRender.container).getByText('✓ 已发送')).toBeTruthy();
+
+    act(() => updateEnv({ generationActive: true }));
+    expect(checkBtn().disabled).toBe(true);
+    expect(checkBtn().textContent).toBe('等待当前回答结束');
+
+    act(() => updateEnv({ generationActive: false, hasDraft: true }));
+    expect(checkBtn().disabled).toBe(false);
+    expect(checkBtn().textContent).toBe('📋 按未完成任务规划下一步（带入输入框）');
+    checkRender.unmount();
+
+    // 3) CompareView 接入直接发送与环境联动
+    act(() => updateEnv({ generationActive: false, hasDraft: false, followupMode: 'send' }));
+    const compare: CompareWidget = {
+      w: 'compare',
+      selectable: true,
+      items: [{ name: '方案 A' }, { name: '方案 B' }],
+    };
+    const onSendCompare = vi.fn(async () => ({ status: 'sent' as const }));
+    const cmpRender = render(
+      <CompareView
+        widget={compare}
+        onRequestSend={onSendCompare}
+        followupEnv={envStore}
+        requireTrustedClick={false}
+      />,
+    );
+    const cmpButtons = () =>
+      cmpRender.container.querySelectorAll<HTMLButtonElement>('.inline-compare-select-btn');
+    expect(cmpButtons()[0].textContent).toBe('👉 采用此方案继续细化 →');
+    fireEvent.click(cmpButtons()[1]);
+    await waitFor(() => expect(onSendCompare).toHaveBeenCalledTimes(1));
+    expect(onSendCompare).toHaveBeenCalledWith(
+      expect.stringContaining('我决定采用【方案 B】'),
+      { isTrusted: false },
+    );
+    expect(within(cmpRender.container).getByText('✓ 已发送')).toBeTruthy();
+
+    act(() => updateEnv({ generationActive: true }));
+    expect(cmpButtons()[0].disabled).toBe(true);
+    expect(cmpButtons()[1].disabled).toBe(true);
+    expect(cmpButtons()[0].textContent).toBe('等待当前回答结束');
+
+    act(() => updateEnv({ generationActive: false, followupMode: 'fill' }));
+    expect(cmpButtons()[0].disabled).toBe(false);
+    expect(cmpButtons()[0].textContent).toBe('👉 采用此方案继续细化（带入输入框）');
+  });
+
+  it('enhanceDocument (P0-e): 清单与对比组件回流透传到 onRequestSend', async () => {
+    const doc = document.implementation.createHTMLDocument('p0e');
+    doc.body.innerHTML = `
+      <div class="ds-assistant-message-main-content">
+        <div class="md-code-block" id="blk-compare">
+          <div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>
+          <pre><span>{"w": "compare", "selectable": true, "items": [{"name": "Vite"}, {"name": "Rollup"}]}</span></pre>
+        </div>
+      </div>
+    `;
+    const onRequestSend = vi.fn(async () => ({ status: 'sent' as const }));
+    const res = enhanceDocument(doc, { onRequestSend, requireTrustedClick: false });
+    expect(res.mounted).toBe(1);
+
+    const shadow = doc.querySelector<HTMLElement>('.genui-card-host')!.shadowRoot!;
+    const btn = shadow.querySelector<HTMLButtonElement>('.inline-compare-select-btn')!;
+    expect(btn.textContent).toBe('👉 采用此方案继续细化 →');
+    btn.click();
+
+    await waitFor(() => expect(onRequestSend).toHaveBeenCalledTimes(1));
+    expect(onRequestSend).toHaveBeenCalledWith(
+      expect.stringContaining('我决定采用【Vite】'),
+      { isTrusted: false },
+    );
   });
 });

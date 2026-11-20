@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type {
   DerivedCalculation,
   GenuiDocument,
@@ -28,6 +28,11 @@ import { CompositeElementsView } from './composite';
 import { createContinueSnapshot } from './continue-snapshot';
 import { UnknownElementView } from './elements';
 import { formatNumber } from './format';
+import type {
+  ContinueHandler,
+  FollowupEnvironmentStore,
+  RequestSendHandler,
+} from './inline/feedback';
 import { InteractiveElementView } from './interactive';
 import type { ElementRegistry } from './registry';
 import {
@@ -38,6 +43,11 @@ import {
   type ContinueIntent,
   type ContinueSummaryInput,
 } from './summarize';
+import {
+  formatFollowupActionLabel,
+  useFollowupDispatcher,
+  useFollowupEnvironment,
+} from './use-followup';
 import { getBrandMarkUrl } from '../branding';
 
 /**
@@ -75,11 +85,16 @@ export interface CardProps {
   /** 切换「查看原始 JSON」：showRaw=true 时挂载方恢复原始块显示。 */
   onToggleRaw?: (showRaw: boolean) => void;
   /**
-   * 「继续讨论」（阶段 6，用户主动点击）：输入当前条件与结果的纯文本摘要，
-   * 由挂载方决定去向（生产为聊天输入框填充）。未接线时点击给出
-   * 「未接入」反馈，且绝不自动发送。
+   * 「继续讨论」（阶段 6 / P0-e）：点击「仅填入」（或未提供 onRequestSend 时的回退）
+   * 仅把摘要追加到聊天输入框；未接线时点击给出「未接入」反馈。
    */
-  onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
+  onContinue?: ContinueHandler;
+  /** 点击预览主按钮「发送」时发起发送，并受护栏 G1–G9 与回流方式设置控制。 */
+  onRequestSend?: RequestSendHandler;
+  /** 实时回流环境状态（生成中、草稿状态、回流方式）。 */
+  followupEnv?: FollowupEnvironmentStore;
+  /** G1 护栏：是否校验点击事件 isTrusted === true；默认 true。 */
+  requireTrustedClick?: boolean;
   /**
    * 稳定卡片身份与页面内状态仓库（issue #2）。两者缺省时退化为组件内部
    * 状态，保持既有单测/独立挂载行为不变。
@@ -121,6 +136,9 @@ export function Card({
   registry,
   onToggleRaw,
   onContinue,
+  onRequestSend,
+  followupEnv,
+  requireTrustedClick = true,
   cardKey,
   stateStore,
   initialState,
@@ -157,6 +175,15 @@ export function Card({
   const [saveBusy, setSaveBusy] = useState(false);
   const previewTextRef = useRef<HTMLTextAreaElement | null>(null);
   const followupButtonRef = useRef<HTMLButtonElement | null>(null);
+  const env = useFollowupEnvironment(followupEnv);
+  const { submitting, dispatch } = useFollowupDispatcher({
+    onRequestSend,
+    onContinue,
+    requireTrustedClick,
+    unavailableMessage: CONTINUE_FEEDBACK.unavailable,
+    continueFeedback: CONTINUE_FEEDBACK,
+  });
+  const hasSendHandler = Boolean(onRequestSend);
   // 首次打开预览时把焦点送进摘要面板（见下方 useEffect）。
   const previewOpenedRef = useRef(false);
   const bodyId = useId();
@@ -210,8 +237,8 @@ export function Card({
     setFollowupFeedback(null);
   };
 
-  // issue #5：点击先在本地冻结快照并展示可编辑摘要；真正填入输入框
-  // 需要用户在预览里再点一次「填入输入框」，绝不自动发送。
+  // issue #5 / P0-e：点击先在本地冻结快照并展示可编辑摘要；由用户在预览里点击
+  // 「发送」发出或点「仅填入」写入输入框。
   const handleContinue = () => {
     if (doc.version === 1) return;
     if (hasFieldErrors) {
@@ -289,13 +316,25 @@ export function Card({
     if (edited) setFollowupFeedback('已保留你的修改，只替换结尾请求。');
   };
 
-  const handleApplyPreview = () => {
+  const handleApplyPreview = (event: MouseEvent<HTMLButtonElement>) => {
     if (!preview || preview.text.trim() === '') return;
+    if (submitting || (hasSendHandler && env.generationActive)) return;
+    dispatch(event, preview.text, (outcome) => {
+      if (outcome.kind === 'ignored-untrusted') return;
+      setFollowupFeedback(outcome.feedback);
+      // 已发送或成功写入输入框后关闭预览并归还焦点；首次提示/生成中/缺输入框时保留文本便于继续操作。
+      if (outcome.kind === 'sent' || outcome.kind === 'filled') {
+        followupButtonRef.current?.focus();
+        setPreview(null);
+      }
+    });
+  };
+
+  const handleFillPreview = () => {
+    if (!preview || preview.text.trim() === '' || submitting) return;
     const result = onContinue?.(preview.text) ?? 'unavailable';
     setFollowupFeedback(CONTINUE_FEEDBACK[result]);
-    // 成功带入后关闭预览；找不到输入框/未接线时保留文本，用户可继续修改或复制。
     if (result === 'filled' || result === 'appended') {
-      // 收起预览时把键盘焦点还给触发按钮，避免焦点丢到 body。
       followupButtonRef.current?.focus();
       setPreview(null);
     }
@@ -487,6 +526,14 @@ export function Card({
         ) : null}
         <span className="genui-card-badge">GenUI</span>
         {doc.title ? <h3 className="genui-card-title">{doc.title}</h3> : null}
+        {doc.version !== 1 && (doc.state.length > 0 || doc.derived.length > 0) ? (
+          <span
+            className="genui-local-badge"
+            title="参数调整与计算均在浏览器本地完成，不会重新向模型发起请求"
+          >
+            本地计算
+          </span>
+        ) : null}
         <button
           type="button"
           className="genui-card-expand"
@@ -570,17 +617,40 @@ export function Card({
             {preview.text.length} / {MAX_CONTINUE_SUMMARY_LENGTH}
           </p>
           <p className="genui-followup-hint">
-            摘要来自点击时的同一份快照；修改只影响这次请求，发送仍由你完成。
+            {!hasSendHandler
+              ? '摘要来自点击时的同一份快照；修改只影响本次内容，确认后将带入输入框。'
+              : env.generationActive
+                ? '摘要来自点击时的同一份快照；等待当前回答结束后可点击发送，也可点「仅填入」暂存输入框。'
+                : env.followupMode === 'fill' || env.hasDraft
+                  ? '摘要来自点击时的同一份快照；检测到草稿或已设为仅填入模式，确认后将带入输入框。'
+                  : '摘要来自点击时的同一份快照；修改只影响本次消息，点击「发送」直接发出，「仅填入」只写入输入框。'}
           </p>
           <div className="genui-followup-actions">
             <button
               type="button"
               className="genui-followup-apply"
-              disabled={preview.text.trim() === ''}
+              disabled={
+                preview.text.trim() === '' || submitting || (hasSendHandler && env.generationActive)
+              }
               onClick={handleApplyPreview}
             >
-              填入输入框
+              {formatFollowupActionLabel('发送', env, {
+                hasSendHandler,
+                submitting,
+                fallbackLabel: '填入输入框',
+                fillModeLabel: '带入输入框',
+              })}
             </button>
+            {hasSendHandler ? (
+              <button
+                type="button"
+                className="genui-followup-fill"
+                disabled={preview.text.trim() === '' || submitting}
+                onClick={handleFillPreview}
+              >
+                仅填入
+              </button>
+            ) : null}
             <button
               type="button"
               className="genui-followup-cancel"

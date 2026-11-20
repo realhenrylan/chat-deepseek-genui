@@ -279,6 +279,7 @@ const SUPPORTED_KINDS: Record<number, readonly string[]> = {
     'select',
     'value',
     'note',
+    'formula',
     'chart',
     'table',
     'section',
@@ -291,6 +292,7 @@ const SUPPORTED_KINDS: Record<number, readonly string[]> = {
     'select',
     'value',
     'note',
+    'formula',
     'chart',
     'table',
     'section',
@@ -303,6 +305,7 @@ const SUPPORTED_KINDS: Record<number, readonly string[]> = {
     'select',
     'value',
     'note',
+    'formula',
     'chart',
     'table',
     'explain',
@@ -315,7 +318,20 @@ const SUPPORTED_KINDS: Record<number, readonly string[]> = {
  * v3 元素 variant 的下标对应 kind。v4/v5 分支共用 `#/oneOf/<n>` 的 schemaPath，
  * 只看下标会把 v3 table（8）与 v5 explain（8）的 kind 错误混在一起。
  */
-const V3_VARIANT_KINDS: readonly string[] = SUPPORTED_KINDS[3]!;
+const V3_VARIANT_KINDS: readonly string[] = [
+  'text',
+  'number-input',
+  'slider',
+  'select',
+  'value',
+  'note',
+  'formula',
+  'chart',
+  'chart',
+  'table',
+  'section',
+  'columns',
+];
 
 function supportedKinds(version: number | null): readonly string[] {
   return version === null ? SUPPORTED_KINDS[3]! : (SUPPORTED_KINDS[version] ?? []);
@@ -902,4 +918,4 @@ export function buildRepairPrompt(diagnostic: GenuiDiagnostic, raw: string): str
  * 静默合并。常量定义在 `content/prompt.ts`（拦截器与 UI 共用），此处重新导出，
  * 便于协议层消费者按同一份文案工作。
  */
-export { SHORT_REPAIR_TRIGGER_TEXT } from '../content/prompt';
+export { SHORT_REPAIR_TRIGGER_TEXT } from '../content/prompt.ts';

@@ -18,6 +18,46 @@ const boundedNumberSchema = {
 };
 // 只接受 6 位十六进制颜色，避免远程 paint server / 任意 CSS 值进入 SVG。
 const colorSchema = { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' };
+const captionSchema = { type: 'string', minLength: 1, maxLength: 300 };
+const cornerLabelSchema = { type: 'string', minLength: 1, maxLength: 24 };
+const coordPairSchema = {
+  type: 'array',
+  minItems: 2,
+  maxItems: 2,
+  items: boundedNumberSchema,
+};
+const chartVectorsSchema = {
+  type: 'array',
+  maxItems: LIMITS.maxChartVectors,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['to'],
+    properties: {
+      from: coordPairSchema,
+      to: coordPairSchema,
+      label: labelSchema,
+      color: colorSchema,
+    },
+  },
+};
+const chartAnnotationsSchema = {
+  type: 'array',
+  maxItems: LIMITS.maxChartAnnotations,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['x', 'y', 'text'],
+    properties: {
+      x: boundedNumberSchema,
+      y: boundedNumberSchema,
+      text: labelSchema,
+      color: colorSchema,
+      point: { type: 'boolean' },
+      align: { enum: ['left', 'right', 'center'] },
+    },
+  },
+};
 
 const textElementSchema = {
   type: 'object',
@@ -65,6 +105,8 @@ const stateVariableSchema = {
         id: idSchema,
         label: labelSchema,
         kind: { const: 'number' },
+        minLabel: labelSchema,
+        maxLabel: labelSchema,
         initial: boundedNumberSchema,
         min: boundedNumberSchema,
         max: boundedNumberSchema,
@@ -331,6 +373,19 @@ const v3TextSchema = {
   },
 };
 
+const formulaSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'template'],
+  properties: {
+    kind: { const: 'formula' },
+    label: labelSchema,
+    template: { type: 'string', minLength: 1, maxLength: LIMITS.maxTextLength },
+    caption: captionSchema,
+    visibleIf: conditionRef,
+  },
+};
+
 const noteSchema = {
   type: 'object',
   additionalProperties: false,
@@ -352,6 +407,7 @@ const chartBarPieSchema = {
     chartType: { enum: ['bar', 'pie'] },
     title: labelSchema,
     legend: { type: 'boolean' },
+    caption: captionSchema,
     items: {
       type: 'array',
       minItems: 1,
@@ -436,6 +492,7 @@ const chartLineSchema = {
     xLabel: labelSchema,
     yLabel: labelSchema,
     legend: { type: 'boolean' },
+    caption: captionSchema,
     series: {
       type: 'array',
       minItems: 1,
@@ -451,15 +508,19 @@ const chartLineSchemaV4 = {
   additionalProperties: false,
   required: ['kind', 'chartType', 'series'],
   properties: {
+    vectors: chartVectorsSchema,
+    annotations: chartAnnotationsSchema,
+    cornerLabel: cornerLabelSchema,
     kind: { const: 'chart' },
     chartType: { const: 'line' },
     title: labelSchema,
     xLabel: labelSchema,
     yLabel: labelSchema,
     legend: { type: 'boolean' },
+    caption: captionSchema,
     series: {
       type: 'array',
-      minItems: 1,
+      minItems: 0,
       maxItems: LIMITS.maxChartSeries,
       items: {
         oneOf: [
@@ -741,6 +802,7 @@ const chartBarPieSchemaV5 = {
     chartType: { enum: ['bar', 'pie'] },
     title: labelSchema,
     legend: { type: 'boolean' },
+    caption: captionSchema,
     items: {
       type: 'array',
       minItems: 1,
@@ -767,6 +829,7 @@ const modelChartSchema = {
     chartType: { enum: ['bar', 'pie'] },
     title: labelSchema,
     legend: { type: 'boolean' },
+    caption: captionSchema,
     source: {
       type: 'object',
       additionalProperties: false,
@@ -806,15 +869,19 @@ const chartLineSchemaV5 = {
   additionalProperties: false,
   required: ['kind', 'chartType', 'series'],
   properties: {
+    vectors: chartVectorsSchema,
+    annotations: chartAnnotationsSchema,
+    cornerLabel: cornerLabelSchema,
     kind: { const: 'chart' },
     chartType: { const: 'line' },
     title: labelSchema,
     xLabel: labelSchema,
     yLabel: labelSchema,
     legend: { type: 'boolean' },
+    caption: captionSchema,
     series: {
       type: 'array',
-      minItems: 1,
+      minItems: 0,
       maxItems: LIMITS.maxChartSeries,
       items: {
         oneOf: [
@@ -1043,6 +1110,7 @@ const makeElementDefinition = (chartLine: object, selfRef: { $ref: string }) => 
       },
     },
     noteSchema,
+    formulaSchema,
     chartBarPieSchema,
     chartLine,
     tableSchema,
@@ -1061,6 +1129,19 @@ const v5TextSchema = {
   properties: {
     kind: { const: 'text' },
     value: { type: 'string', maxLength: LIMITS.maxTextLength },
+    visibleIf: conditionV5Ref,
+  },
+};
+
+const formulaSchemaV5 = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'template'],
+  properties: {
+    kind: { const: 'formula' },
+    label: labelSchema,
+    template: { type: 'string', minLength: 1, maxLength: LIMITS.maxTextLength },
+    caption: captionSchema,
     visibleIf: conditionV5Ref,
   },
 };
@@ -1101,6 +1182,7 @@ const elementDefinitionV5 = {
     },
     valueElementSchemaV5,
     noteSchemaV5,
+    formulaSchemaV5,
     chartElementSchemaV5,
     tableElementSchemaV5,
     explainSchema,

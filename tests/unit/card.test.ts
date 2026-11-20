@@ -5,6 +5,11 @@ import { ElementRegistry } from '../../src/render/registry';
 import { mountCard, type MountedCard } from '../../src/render/mount';
 import { createCardStateStore } from '../../src/runtime/card-state-store';
 import type {
+  FollowupEnvironmentState,
+  FollowupEnvironmentStore,
+  RequestSendHandler,
+} from '../../src/render/inline/feedback';
+import type {
   CardUiState,
   SavedStateClearResult,
   SavedStateSaveResult,
@@ -1013,5 +1018,108 @@ describe('阶段 13 · 保存当前界面（issue #2 收尾）', () => {
     const host = mount(INTERACTIVE_DOC);
     expect(host.shadowRoot?.querySelector('button.genui-card-save')).toBeNull();
     expect(host.shadowRoot?.querySelector('button.genui-card-clear-saved')).toBeNull();
+  });
+
+  it('P0-e 继续讨论预览支持直接「发送」、次要「仅填入」及 G1/G2/G3/G9 护栏', async () => {
+    let snapshot: FollowupEnvironmentState = {
+      generationActive: false,
+      hasDraft: false,
+      followupMode: 'send',
+    };
+    const listeners = new Set<() => void>();
+    const envStore: FollowupEnvironmentStore = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const updateEnv = (patch: Partial<FollowupEnvironmentState>) => {
+      snapshot = { ...snapshot, ...patch };
+      for (const listener of listeners) listener();
+    };
+
+    const onRequestSend = vi.fn<RequestSendHandler>(async () => ({ status: 'first-time-notice' }));
+    const onContinue = vi.fn<(summary: string) => 'filled'>(() => 'filled');
+
+    // 1) 默认 requireTrustedClick=true 时拒绝非信任点击「发送」(G1)
+    const guardedHost = document.createElement('div');
+    document.body.append(guardedHost);
+    const guardedMounted = mountCard(guardedHost, {
+      document: INTERACTIVE_DOC,
+      rawJson: RAW,
+      onContinue,
+      onRequestSend,
+      followupEnv: envStore,
+    });
+    try {
+      guardedHost.shadowRoot?.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+      await flushUi();
+      guardedHost.shadowRoot?.querySelector<HTMLButtonElement>('.genui-followup-apply')?.click();
+      await flushUi();
+      expect(onRequestSend).not.toHaveBeenCalled();
+    } finally {
+      guardedMounted.unmount();
+      guardedHost.remove();
+    }
+
+    // 2) 允许点击后：首次点击返回 first-time-notice 保留预览；再次点击发送并收起预览
+    const host = document.createElement('div');
+    document.body.append(host);
+    mounted = mountCard(host, {
+      document: INTERACTIVE_DOC,
+      rawJson: RAW,
+      onContinue,
+      onRequestSend,
+      followupEnv: envStore,
+      requireTrustedClick: false,
+    });
+    const shadow = host.shadowRoot!;
+    shadow.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+
+    const applyBtn = () => shadow.querySelector<HTMLButtonElement>('.genui-followup-apply')!;
+    const fillBtn = () => shadow.querySelector<HTMLButtonElement>('.genui-followup-fill')!;
+    expect(applyBtn().textContent).toBe('发送 →');
+    expect(fillBtn().textContent).toBe('仅填入');
+
+    applyBtn().click();
+    await flushUi();
+    expect(onRequestSend).toHaveBeenCalledTimes(1);
+    expect(shadow.querySelector('.genui-followup')).not.toBeNull();
+    expect(shadow.querySelector('.genui-card-followup-feedback')?.textContent).toContain(
+      '首次提示',
+    );
+
+    onRequestSend.mockResolvedValueOnce({ status: 'sent' });
+    applyBtn().click();
+    await flushUi();
+    expect(onRequestSend).toHaveBeenCalledTimes(2);
+    expect(shadow.querySelector('.genui-followup')).toBeNull();
+    expect(shadow.querySelector('.genui-card-followup-feedback')?.textContent).toBe('✓ 已发送');
+
+    // 3) 再次打开：生成中禁用发送按钮但保留「仅填入」可用，有草稿时切回「带入输入框」
+    shadow.querySelector<HTMLButtonElement>('.genui-card-followup')?.click();
+    await flushUi();
+    updateEnv({ generationActive: true });
+    await flushUi();
+    expect(applyBtn().disabled).toBe(true);
+    expect(applyBtn().textContent).toBe('等待当前回答结束');
+    expect(fillBtn().disabled).toBe(false);
+
+    updateEnv({ generationActive: false, hasDraft: true });
+    await flushUi();
+    expect(applyBtn().disabled).toBe(false);
+    expect(applyBtn().textContent).toBe('带入输入框');
+
+    // 4) 点击次要按钮「仅填入」走 onContinue，不调用 onRequestSend
+    fillBtn().click();
+    await flushUi();
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onRequestSend).toHaveBeenCalledTimes(2);
+    expect(shadow.querySelector('.genui-followup')).toBeNull();
+    expect(shadow.querySelector('.genui-card-followup-feedback')?.textContent).toContain(
+      '已填入输入框',
+    );
   });
 });

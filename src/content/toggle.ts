@@ -385,7 +385,7 @@ export function createToggleControl(
   const description = doc.createElement('p');
   description.id = 'genui-panel-desc';
   description.textContent =
-    '下面这段协议文本只读展示：发送消息时由扩展在后台附加到请求中，不写入、不占用你的输入框，也不会自动发送消息。';
+    '下面这段协议文本只读展示：发送消息时由扩展在后台附加到请求中，不写入、不占用你的输入框；仅在你点击页面发送按钮或组件中的「发送」类按钮时才会发出消息（可在菜单切换为仅填入输入框）。';
 
   const behavior = doc.createElement('p');
   behavior.textContent =

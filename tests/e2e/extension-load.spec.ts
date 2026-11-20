@@ -1538,12 +1538,12 @@ for (const { label, channel } of CHANNELS) {
       await expect(tablePreview).toHaveValue(/- 已选：C — 价格 5200 元；重量 1.3 kg/);
       await expect(tablePreview).toHaveValue(/- 对比：A — 价格 4800 元；重量 1.4 kg/);
       await expect(input).toHaveValue('');
-      await tableCard.locator('button.genui-followup-apply').click();
+      await tableCard.locator('button.genui-followup-fill').click();
       await expect(input).toHaveValue(/继续讨论「选购比较」/);
       await expect(input).toHaveValue(/已选：C/);
       await input.fill('');
 
-      // —— 继续讨论：先预览冻结的快照，用户确认后才写入输入框，不自动发送。
+      // —— 继续讨论：先预览冻结的快照，主按钮为「发送」，次要按钮「仅填入」可写入输入框而不发送。
       await card.locator('button.genui-card-followup').click();
       const preview = card.locator('section.genui-followup');
       const previewText = card.locator('textarea.genui-followup-text');
@@ -1553,7 +1553,9 @@ for (const { label, channel } of CHANNELS) {
       await expect(previewText).toHaveValue(/总预算：0 元/);
       await expect(previewText).toHaveValue(/请解释以上当前结果的含义/);
       await expect(card.locator('button.genui-card-followup')).toHaveAttribute('aria-expanded', 'true');
-      // 键盘打开时焦点直接进入摘要；下一次 Tab 落到「填入输入框」，而不是紧随触发的「重置」。
+      await expect(card.locator('button.genui-followup-apply')).toHaveText('发送 →');
+      await expect(card.locator('button.genui-followup-fill')).toHaveText('仅填入');
+      // 键盘打开时焦点直接进入摘要；下一次 Tab 落到主按钮「发送」，而不是紧随触发的「重置」。
       await expect(previewText).toBeFocused();
       await page.keyboard.press('Tab');
       await expect(card.locator('button.genui-followup-apply')).toBeFocused();
@@ -1564,18 +1566,19 @@ for (const { label, channel } of CHANNELS) {
       await card.locator('button.genui-card-followup').click();
       await expect(previewText).toHaveValue('请解释一下当前结果。');
 
-      // 用户手动填写的草稿逐字保留；确认后才追加，发送仍由用户完成。
+      // 用户手动填写的草稿逐字保留；点「仅填入」后追加，且主按钮同时切换为草稿保护文案「带入输入框」。
       await input.fill('用户手动草稿');
-      await card.locator('button.genui-followup-apply').click();
+      await expect(card.locator('button.genui-followup-apply')).toHaveText('带入输入框');
+      await card.locator('button.genui-followup-fill').click();
       await expect(input).toHaveValue('用户手动草稿\n\n请解释一下当前结果。');
       await expect(card.locator('.genui-card-followup-feedback')).toContainText('草稿已保留');
       await expect(preview).toBeHidden();
       const withDraft = await input.inputValue();
 
-      // 同样的摘要再次确认时不重复追加（去重）。
+      // 同样的摘要再次点击「仅填入」时不重复追加（去重）。
       await card.locator('button.genui-card-followup').click();
       await card.locator('textarea.genui-followup-text').fill('请解释一下当前结果。');
-      await card.locator('button.genui-followup-apply').click();
+      await card.locator('button.genui-followup-fill').click();
       await expect(input).toHaveValue(withDraft);
 
       // v1 静态卡片没有「继续讨论」入口。
@@ -1842,7 +1845,7 @@ for (const { label, channel } of CHANNELS) {
         await page.evaluate(() => document.documentElement.getAttribute('data-genui-mode')),
       ).toBe('auto');
 
-      // 说明面板逐字展示真正参与请求的协议文本，并说明不写入输入框、不会自动发送。
+      // 说明面板逐字展示真正参与请求的协议文本，并说明不写入输入框、仅在点击发送类按钮时发出消息。
       // 行项位于折叠菜单内，需先点箭头展开才可见可点。
       await menuToggle.click();
       await expect(menu).toBeVisible();
@@ -1859,7 +1862,7 @@ for (const { label, channel } of CHANNELS) {
       await expect(panel).toBeVisible();
       expect(await panel.locator('pre').textContent()).toBe(GENUI_PROMPT_TEXT);
       await expect(panel.locator('.status')).toHaveText(/静默增强已就绪/);
-      await expect(panel).toContainText('不会自动发送消息');
+      await expect(panel).toContainText('仅在你点击页面发送按钮或组件中的「发送」类按钮时才会发出消息');
       await expect(panel).toContainText('不占用你的输入框');
       await panel.locator('button').click();
       await expect(panel).toBeHidden();
@@ -2654,8 +2657,8 @@ for (const { label, channel } of CHANNELS) {
     }
   });
 
-  test(`P0-a..c · ${label} 表单与模型批改直接发送、首次提示、用户气泡与锁定态`, async () => {
-    test.skip(REAL_SITE, 'P0-a..c 自动断言使用本地模拟页；真实网页需人工验收');
+  test(`P0-a..e · ${label} 表单、批改、清单、对比与继续讨论直接发送/仅填入闭环`, async () => {
+    test.skip(REAL_SITE, 'P0-a..e 自动断言使用本地模拟页；真实网页需人工验收');
     const { context, page, profileDir } = await launchWithExtension(channel);
     const buckets = watchErrors(page);
     const sentPrompts: string[] = [];
@@ -2713,6 +2716,18 @@ for (const { label, channel } of CHANNELS) {
       reasonLabel: '简要解释理由（选填）',
     });
 
+    const CHECKLIST_RAW = JSON.stringify({
+      w: 'checklist',
+      title: '上线前准备',
+      items: [{ text: '写单测' }, { text: '发版验收' }],
+    });
+
+    const COMPARE_RAW = JSON.stringify({
+      w: 'compare',
+      selectable: true,
+      items: [{ name: '方案 A' }, { name: '方案 B' }],
+    });
+
     try {
       await context.route('https://chat.deepseek.com/api/v0/chat/completion', async (route) => {
         const payload = route.request().postDataJSON() as { prompt?: string };
@@ -2725,7 +2740,7 @@ for (const { label, channel } of CHANNELS) {
       });
 
       await context.addInitScript(
-        ({ formRaw, quizRaw }) => {
+        ({ formRaw, quizRaw, checklistRaw, compareRaw, interactiveRaw }) => {
           const setup = () => {
             if (!document.body || document.getElementById('e2e-send-btn')) return;
             const input = document.querySelector<HTMLTextAreaElement>('#e2e-input');
@@ -2782,7 +2797,13 @@ for (const { label, channel } of CHANNELS) {
               b.append(pre);
               return b;
             };
-            msg.append(makeBlock('p0-form-block', formRaw), makeBlock('p0-quiz-block', quizRaw));
+            msg.append(
+              makeBlock('p0-form-block', formRaw),
+              makeBlock('p0-quiz-block', quizRaw),
+              makeBlock('p0-checklist-block', checklistRaw),
+              makeBlock('p0-compare-block', compareRaw),
+              makeBlock('p0-card-block', interactiveRaw),
+            );
             document.body.append(msg);
           };
           if (document.body) setup();
@@ -2795,7 +2816,13 @@ for (const { label, channel } of CHANNELS) {
             }).observe(document, { childList: true, subtree: true });
           }
         },
-        { formRaw: FORM_RAW, quizRaw: MODEL_QUIZ_RAW },
+        {
+          formRaw: FORM_RAW,
+          quizRaw: MODEL_QUIZ_RAW,
+          checklistRaw: CHECKLIST_RAW,
+          compareRaw: COMPARE_RAW,
+          interactiveRaw: INTERACTIVE_RAW,
+        },
       );
 
       await gotoAndAwaitMarker(page);
@@ -2887,6 +2914,282 @@ for (const { label, channel } of CHANNELS) {
       await expect(page.locator('.e2e-sent-bubble').first()).toContainText('乘以标量仍在直线 y=2x 上');
       expect(sentPrompts).toHaveLength(2);
 
+      // 4) P0-e ChecklistView 直接发送（等待 1s 全局防抖窗口）
+      await page.waitForTimeout(1100);
+      const reloadedChecklistHost = page.locator('#p0-e2e-message .genui-card-host').nth(2);
+      await reloadedChecklistHost.locator('input[type="checkbox"]').first().click();
+      const checklistBtn = reloadedChecklistHost.locator('button.inline-feedback-btn');
+      await expect(checklistBtn).toHaveText('📋 按未完成任务规划下一步 →');
+      await checklistBtn.click();
+      await expect(page.locator('.e2e-sent-bubble')).toHaveCount(2);
+      await expect(reloadedChecklistHost.locator('[role="status"]')).toHaveText('✓ 已发送');
+      expect(sentPrompts).toHaveLength(3);
+      expect(sentPrompts[2]).toContain('【任务跟进】');
+
+      // 5) P0-e CompareView 直接发送
+      await page.waitForTimeout(1100);
+      const reloadedCompareHost = page.locator('#p0-e2e-message .genui-card-host').nth(3);
+      const compareBtn = reloadedCompareHost.locator('button.inline-compare-select-btn').nth(1);
+      await expect(compareBtn).toHaveText('👉 采用此方案继续细化 →');
+      await compareBtn.click();
+      await expect(page.locator('.e2e-sent-bubble')).toHaveCount(3);
+      await expect(reloadedCompareHost.locator('[role="status"]')).toHaveText('✓ 已发送');
+      expect(sentPrompts).toHaveLength(4);
+      expect(sentPrompts[3]).toContain('我决定采用【方案 B】');
+
+      // 6) P0-e 卡片「继续讨论」预览：「仅填入」不发送，「发送 →」直接发出
+      const reloadedCardHost = page.locator('#p0-e2e-message .genui-card-host').nth(4);
+      await reloadedCardHost.locator('button.genui-card-followup').click();
+      await expect(reloadedCardHost.locator('button.genui-followup-apply')).toHaveText('发送 →');
+      await expect(reloadedCardHost.locator('button.genui-followup-fill')).toHaveText('仅填入');
+
+      await reloadedCardHost.locator('button.genui-followup-fill').click();
+      await expect(page.locator('#e2e-input')).toHaveValue(/继续讨论「本地预算计算」/);
+      expect(sentPrompts).toHaveLength(4);
+
+      await page.locator('#e2e-input').fill('');
+      await page.waitForTimeout(1100);
+      await reloadedCardHost.locator('button.genui-card-followup').click();
+      await reloadedCardHost.locator('button.genui-followup-apply').click();
+      await expect(page.locator('.e2e-sent-bubble')).toHaveCount(4);
+      await expect(reloadedCardHost.locator('.genui-card-followup-feedback')).toHaveText('✓ 已发送');
+      expect(sentPrompts).toHaveLength(5);
+      expect(sentPrompts[4]).toContain('继续讨论「本地预算计算」');
+
+      const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
+      expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
+    } finally {
+      await context.close();
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  test(`P1+P2 · ${label} copy/card行式/slider语义刻度/本地KaTeX公式/flow流程图/图表向量标注（亮暗与窄栏）`, async () => {
+    test.skip(REAL_SITE, 'P1+P2 自动断言使用本地模拟页；真实网页需人工验收');
+    const { context, page, profileDir } = await launchWithExtension(channel);
+    const buckets = watchErrors(page);
+
+    const COPY_RAW = JSON.stringify({
+      w: 'copy',
+      title: '打电话时直接这样问',
+      text: '你好，请问练习场需要提前预约吗？租杆怎么收费？',
+      label: '复制询问话术',
+    });
+
+    const CARD_ROWS_RAW = JSON.stringify({
+      w: 'card',
+      title: '判断 Subspace 的三个条件',
+      items: [
+        { icon: '✓', title: '包含零向量', math: '0 \\in W' },
+        { icon: '+', title: '对加法封闭', math: 'u, v \\in W \\Rightarrow u + v \\in W' },
+        { icon: '*', title: '对数乘封闭', math: 'c \\in \\mathbb{R}, u \\in W \\Rightarrow cu \\in W' },
+      ],
+      caption: '三个条件同时成立才构成子空间 $W \\subseteq \\mathbb{R}^2$。',
+    });
+
+    const SLIDER_RAW = JSON.stringify({
+      w: 'slider',
+      id: 'a',
+      label: '二次项系数 a',
+      min: -2,
+      max: 2,
+      step: 1,
+      value: 1,
+      minLabel: '-2（向下开口）',
+      maxLabel: '+2（向上开口）',
+      hints: [
+        { max: -0.1, text: 'a 为负，抛物线向下开口。' },
+        { min: 0, max: 0, text: 'a = 0，退化为直线。' },
+        { min: 0.1, text: 'a 为正，抛物线向上开口。' },
+      ],
+    });
+
+    const RESULT_FORMULA_RAW = JSON.stringify({
+      w: 'result',
+      label: '当前二次函数',
+      formula: 'y = {a}x^2',
+      caption: '公式随滑块本地实时改写',
+    });
+
+    const FLOW_RAW = JSON.stringify({
+      w: 'flow',
+      title: '整体工作流程与架构',
+      steps: [
+        { icon: '1', title: '输入问题', desc: '发起普通对话' },
+        { icon: '2', title: '生成界面', desc: '声明式 JSON', highlight: true, arrowLabel: '已授权的远程连接', arrowDirection: 'both' },
+      ],
+      branches: [
+        { title: '本地交互', badge: '不请求模型', desc: '滑块实时计算', direction: 'down', tone: 'info' },
+        { title: '模型交互', badge: '回流下一轮', desc: '点击主按钮发送', direction: 'both', tone: 'accent' },
+      ],
+      capabilities: [
+        { icon: '📊', title: '图表' },
+        { icon: '🧮', title: '公式' },
+        { icon: '📋', title: '表单' },
+        { icon: '🔒', title: '沙箱' },
+      ],
+      caption: '交互分为本地与模型两层。',
+    });
+
+    const DIAGRAM_CARD_RAW = JSON.stringify({
+      type: 'genui',
+      version: 5,
+      title: '向量子空间与动态二次函数',
+      state: [
+        {
+          id: 'a',
+          label: '系数 a',
+          kind: 'number',
+          initial: 1,
+          min: -2,
+          max: 2,
+          step: 1,
+          minLabel: '-2（向下开口）',
+          maxLabel: '+2（向上开口）',
+        },
+      ],
+      derived: [],
+      models: [],
+      elements: [
+        { kind: 'formula', label: '当前函数', template: 'y = {a}x^2' },
+        { kind: 'slider', bind: 'a' },
+        {
+          kind: 'chart',
+          chartType: 'line',
+          title: '子空间图解',
+          cornerLabel: 'R²',
+          caption: '直线 $y = 2x$ 上的所有向量组成子空间，不只包含蓝色向量 $\\vec{v}$。',
+          series: [
+            { label: 'y = 2x', points: [{ x: -2, y: -4 }, { x: 2, y: 4 }] },
+          ],
+          vectors: [{ from: [0, 0], to: [1, 2], label: 'v', color: '#4d6bfe' }],
+          annotations: [{ x: 0, y: 0, text: 'O', point: true }],
+        },
+      ],
+    });
+
+    try {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: 'https://chat.deepseek.com',
+      });
+      await gotoAndAwaitMarker(page);
+
+      const externalRequests: string[] = [];
+      page.on('request', (req) => {
+        const url = req.url();
+        if (!url.startsWith('chrome-extension://') && !url.startsWith('https://chat.deepseek.com/')) {
+          externalRequests.push(url);
+        }
+      });
+
+      await page.evaluate(
+        (raws) => {
+          const msg = document.createElement('div');
+          msg.id = 'p1p2-e2e-message';
+          msg.className = 'ds-assistant-message-main-content';
+          msg.setAttribute('data-virtual-list-item-key', 'p1p2-e2e');
+          raws.forEach((raw, idx) => {
+            const b = document.createElement('div');
+            b.id = `p1p2-block-${idx}`;
+            b.className = 'md-code-block md-code-block-light';
+            b.innerHTML = '<div class="md-code-block-banner-wrap"><span class="d813de27">genui</span></div>';
+            const pre = document.createElement('pre');
+            const span = document.createElement('span');
+            span.textContent = raw;
+            pre.append(span);
+            b.append(pre);
+            msg.append(b);
+          });
+          document.body.append(msg);
+        },
+        [COPY_RAW, CARD_ROWS_RAW, SLIDER_RAW, RESULT_FORMULA_RAW, FLOW_RAW, DIAGRAM_CARD_RAW],
+      );
+
+      const hosts = page.locator('#p1p2-e2e-message .genui-card-host');
+      await expect(hosts).toHaveCount(6);
+
+      // 本地 KaTeX 字体样式已注入宿主 document.head，且全部指向 chrome-extension://
+      const fontStyleText = await page.evaluate(
+        () => document.querySelector('style[data-genui-katex-fonts]')?.textContent ?? '',
+      );
+      expect(fontStyleText).toContain('chrome-extension://');
+      expect(fontStyleText).toContain('KaTeX_Main-Regular.woff2');
+      expect(fontStyleText).not.toMatch(/https?:\/\//);
+
+      // 1) copy 一键复制
+      const copyHost = hosts.nth(0);
+      await copyHost.locator('button.inline-copy-btn').click();
+      await expect(copyHost.locator('[role="status"]')).toContainText('已复制');
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+        '你好，请问练习场需要提前预约吗？租杆怎么收费？',
+      );
+
+      // 2) card 行式布局 + KaTeX 公式
+      const cardRowsHost = hosts.nth(1);
+      await expect(cardRowsHost.locator('.inline-card-row')).toHaveCount(3);
+      await expect(cardRowsHost.locator('.inline-card-row-math .katex')).toHaveCount(3);
+      await expect(cardRowsHost.locator('.inline-widget-caption .katex')).toHaveCount(1);
+
+      // 3) slider 语义刻度 + 本地计算徽标 + result 实时改写 KaTeX 公式 + 重置
+      const sliderHost = hosts.nth(2);
+      const resultHost = hosts.nth(3);
+      await expect(sliderHost.locator('.inline-local-badge')).toHaveText('本地计算');
+      await expect(sliderHost.locator('.inline-slider-range-labels')).toContainText('-2（向下开口）');
+      await expect(resultHost.locator('[data-genui-math]')).toHaveAttribute('data-genui-math', 'y = 1x^2');
+      await sliderHost.locator('input[type="range"]').fill('-2');
+      await expect(resultHost.locator('[data-genui-math]')).toHaveAttribute('data-genui-math', 'y = -2x^2');
+      await expect(sliderHost.locator('.inline-slider-hint')).toContainText('抛物线向下开口');
+      await sliderHost.locator('button.inline-slider-reset').click();
+      await expect(resultHost.locator('[data-genui-math]')).toHaveAttribute('data-genui-math', 'y = 1x^2');
+
+      // 4) flow 流程图与嵌套架构图
+      const flowHost = hosts.nth(4);
+      await expect(flowHost.locator('.inline-flow-step')).toHaveCount(2);
+      await expect(flowHost.locator('.inline-flow-arrow-label')).toHaveText('已授权的远程连接');
+      await expect(flowHost.locator('.inline-flow-branch')).toHaveCount(2);
+      await expect(flowHost.locator('.inline-flow-cap')).toHaveCount(4);
+
+      // 5) v5 卡片：本地计算徽标、语义刻度、动态公式、折线图向量/标注/角标/图注
+      const diagramHost = hosts.nth(5);
+      await expect(diagramHost.locator('.genui-local-badge')).toHaveText('本地计算');
+      await expect(diagramHost.locator('.genui-slider-ticks')).toContainText('+2（向上开口）');
+      await expect(diagramHost.locator('.genui-formula .katex')).toHaveCount(1);
+      await diagramHost.locator('input[type="range"]').fill('2');
+      await expect(diagramHost.locator('.genui-formula [data-genui-math]')).toHaveAttribute(
+        'data-genui-math',
+        'y = 2x^2',
+      );
+      await expect(diagramHost.locator('.genui-chart-vector')).toHaveCount(1);
+      await expect(diagramHost.locator('.genui-chart-vector polygon')).toHaveCount(1);
+      await expect(diagramHost.locator('.genui-chart-annotation')).toHaveCount(1);
+      await expect(diagramHost.locator('.genui-chart-corner-label')).toHaveText('R²');
+      await expect(diagramHost.locator('.genui-chart-caption .katex')).toHaveCount(2);
+
+      // 6) 360px 窄栏与亮暗主题下无水平溢出
+      for (const theme of ['light', 'dark']) {
+        const overflows = await page.evaluate((th) => {
+          const msg = document.querySelector<HTMLElement>('#p1p2-e2e-message')!;
+          msg.style.width = '360px';
+          const list = Array.from(msg.querySelectorAll<HTMLElement>('.genui-card-host'));
+          return list.map((host) => {
+            const shadow = host.shadowRoot!;
+            const root = shadow.querySelector<HTMLElement>('.genui-inline-root, .genui-card-root')!;
+            root.setAttribute('data-site-theme', th);
+            const box = shadow.querySelector<HTMLElement>('.inline-widget-box, .genui-card')!;
+            return box.scrollWidth > box.clientWidth + 1;
+          });
+        }, theme);
+        expect(overflows, `${theme} 主题 360px 窄栏下所有 P1/P2 组件均不应溢出`).toEqual([
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+        ]);
+      }
+
+      expect(externalRequests, '本地 KaTeX 与交互操作不得产生任何外部请求').toEqual([]);
       const all = [...buckets.extension, ...buckets.site, ...buckets.unattributed];
       expect(all, '模拟页中出现错误（唯一脚本即被测扩展，全部归因于扩展）').toEqual([]);
     } finally {

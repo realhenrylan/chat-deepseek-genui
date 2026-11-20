@@ -1,7 +1,30 @@
 import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
-import type { UserConfig } from 'vite';
+import type { Plugin, UserConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * Chromium 扩展加载器（base::IsStringUTF8）拒绝 JS 内容脚本中出现字面 Unicode 非字符
+ * （U+FDD0..U+FDEF 及各平面 *FFFE/*FFFF，例如 KaTeX 词法正则中的 \uFFFF 经压缩后变成原始字节）。
+ * 将其转义为 JS \uXXXX / \u{XXXXX} 形式，运行时语义完全等价且 100% 通过 Chrome/Edge 校验。
+ */
+function escapeChromeNoncharacters(): Plugin {
+  const NONCHAR_RE = /[\uFDD0-\uFDEF\uFFFE\uFFFF]|[\uD83F\uD87F\uD8BF\uD8FF\uD93F\uD97F\uD9BF\uD9FF\uDA3F\uDA7F\uDABF\uDAFF\uDB3F\uDB7F\uDBBF\uDBFF][\uDFFE\uDFFF]/g;
+  return {
+    name: 'escape-chrome-noncharacters',
+    generateBundle(_options, bundle) {
+      for (const item of Object.values(bundle)) {
+        if (item.type !== 'chunk') continue;
+        item.code = item.code.replace(NONCHAR_RE, (ch) => {
+          const cp = ch.codePointAt(0)!;
+          return cp <= 0xffff
+            ? `\\u${cp.toString(16).padStart(4, '0')}`
+            : `\\u{${cp.toString(16)}}`;
+        });
+      }
+    },
+  };
+}
 
 // 构建目标：两个独立 IIFE 产物。
 // - content.js：隔离世界内容脚本（卡片渲染、浮标、DOM 兜底）；
@@ -17,7 +40,7 @@ const shared: UserConfig = {
   define: {
     __DSGENUI_VERSION__: JSON.stringify(pkgVersion.version),
   },
-  plugins: [react()],
+  plugins: [react(), escapeChromeNoncharacters()],
 };
 
 export default defineConfig(({ mode }): UserConfig => {

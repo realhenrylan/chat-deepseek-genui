@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { GENUI_PROMPT_TEXT } from '../../src/content/prompt';
 import type { GenuiV5Document } from '../../src/protocol/types';
 import { parseGenui } from '../../src/protocol/validate';
+import { normalizeWidget } from '../../src/protocol/widget/normalize';
+import {
+  parseFormPromptTemplate,
+  validateFormPromptTemplate,
+  type TemplateToken,
+} from '../../src/protocol/widget/template';
 import { createInitialState, evaluateComposite } from '../../src/runtime/evaluate';
 
 function parseV5(raw: string): GenuiV5Document {
@@ -330,6 +336,49 @@ describe('Prompt 与 Schema / Validator 自然写法一致性套件', () => {
     const doc = parseV5(raw);
     const evaluation = evaluateComposite(doc, createInitialState(doc));
     expect(evaluation.operations).toBeGreaterThanOrEqual(0);
+  });
+
+  it('提示词自带的示例 1（form 回流表单）能被 normalize 无警告解析且模板自洽', () => {
+    const matches = [...GENUI_PROMPT_TEXT.matchAll(/```genui\n([\s\S]*?)\n```/g)];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+    const rawJson = JSON.parse(matches[0][1]) as Record<string, unknown>;
+    const normalized = normalizeWidget(rawJson);
+    expect(normalized.ok, normalized.ok ? '' : normalized.detail).toBe(true);
+    if (!normalized.ok || normalized.widget.w !== 'form') {
+      throw new Error('Expected form widget for prompt example 1');
+    }
+    expect(normalized.warnings).toBeUndefined();
+
+    const parsedGenui = parseGenui(matches[0][1]);
+    expect(parsedGenui.ok).toBe(true);
+
+    const form = normalized.widget;
+    const declaredIds = new Set(form.fields.map((field) => field.id));
+    const parsedTemplate = parseFormPromptTemplate(form.submit.prompt);
+    const validation = validateFormPromptTemplate(form.submit.prompt, declaredIds);
+    expect(validation).toEqual({ valid: true, missingFields: [] });
+    expect(parsedTemplate.referencedIds.every((id) => declaredIds.has(id))).toBe(true);
+
+    // 非选填（必填）字段必须全部出现在 submit.prompt 占位符中。
+    const requiredFieldIds = form.fields.filter((field) => !field.optional).map((field) => field.id);
+    for (const reqId of requiredFieldIds) {
+      expect(parsedTemplate.referencedIds).toContain(reqId);
+    }
+
+    // 模板纯文本节点中不允许出现未成对的 `{`（例如 `{` + JSON 对象写法）。
+    const collectTextLiterals = (tokens: TemplateToken[]): string[] =>
+      tokens.flatMap((token) =>
+        token.kind === 'text'
+          ? [token.value]
+          : token.kind === 'cond'
+            ? collectTextLiterals(token.body)
+            : [],
+      );
+    for (const literal of collectTextLiterals(parsedTemplate.tokens)) {
+      expect(literal.includes('{')).toBe(false);
+    }
+    expect(/\{\s*"/.test(form.submit.prompt)).toBe(false);
+    expect(form.submit.prompt.length).toBeLessThanOrEqual(200);
   });
 
   it('提示词自带的示例 2（纯对比表与柱图，无模型）能直接被本地解析与执行', () => {

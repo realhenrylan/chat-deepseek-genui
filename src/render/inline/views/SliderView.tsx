@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
 import type { SliderWidget } from '../../../protocol/widget/types';
+import { MathText } from '../../math';
 import type { InlineStateBus } from '../store';
+
+function resolveSliderHint(widget: SliderWidget, val: number): string {
+  if (widget.hints && widget.hints.length > 0) {
+    const matched = widget.hints.find(
+      (item) =>
+        (item.min === undefined || val >= item.min) &&
+        (item.max === undefined || val <= item.max),
+    );
+    if (matched) return matched.text;
+  }
+  return widget.hint ?? '拖动滑块仅在本地计算，不会重新向模型发起请求。';
+}
 
 export function SliderView({
   widget,
@@ -9,7 +22,8 @@ export function SliderView({
   widget: SliderWidget;
   bus?: InlineStateBus;
 }) {
-  const [val, setVal] = useState<number>(() => widget.value ?? widget.min);
+  const initialVal = widget.value ?? widget.min;
+  const [val, setVal] = useState<number>(() => initialVal);
 
   useEffect(() => {
     if (widget.id && bus) {
@@ -24,10 +38,30 @@ export function SliderView({
     }
   };
 
+  const handleReset = () => {
+    handleChange(initialVal);
+  };
+
+  const showLocalBadge = widget.localBadge !== false;
+  const hintText = resolveSliderHint(widget, val);
+  const isDirty = val !== initialVal;
+
   return (
     <div className="inline-slider-body">
       <div className="inline-slider-top">
-        <span className="inline-slider-label">{widget.label || '调节参数'}</span>
+        <div className="inline-slider-title-group">
+          <span className="inline-slider-label">
+            <MathText text={widget.label || '调节参数'} />
+          </span>
+          {showLocalBadge && (
+            <span
+              className="inline-local-badge"
+              title="拖动滑块仅在浏览器本地计算，不会重新向模型发起请求"
+            >
+              本地计算
+            </span>
+          )}
+        </div>
         <div>
           <span className="inline-slider-val">{val}</span>
           {widget.unit && <span className="inline-slider-unit">{widget.unit}</span>}
@@ -45,8 +79,22 @@ export function SliderView({
       />
 
       <div className="inline-slider-range-labels">
-        <span>{widget.min}</span>
-        <span>{widget.max}</span>
+        <span>{widget.minLabel ?? widget.min}</span>
+        <span>{widget.maxLabel ?? widget.max}</span>
+      </div>
+
+      <div className="inline-slider-footer">
+        <span className="inline-slider-hint">
+          <MathText text={hintText} />
+        </span>
+        <button
+          type="button"
+          className="inline-slider-reset"
+          disabled={!isDirty}
+          onClick={handleReset}
+        >
+          重置参数
+        </button>
       </div>
     </div>
   );

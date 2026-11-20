@@ -27,7 +27,7 @@
 
 ## 状态与控件（v2–v5）
 
-数值状态使用 `kind: "number"`，需提供 `initial`、`min`、`max`、`step`，可选 `unit`。必须满足 `min < max`、初始值在范围内、`step > 0`，且初始值与最大值都和步长对齐。数值最大绝对值为 `1,000,000,000,000`。
+数值状态使用 `kind: "number"`，需提供 `initial`、`min`、`max`、`step`，可选 `unit`、`minLabel`、`maxLabel`（语义刻度）。必须满足 `min < max`、初始值在范围内、`step > 0`，且初始值与最大值都和步长对齐。数值最大绝对值为 `1,000,000,000,000`。
 
 选择状态使用 `kind: "select"`，需提供 `initial` 和 `options: [{ "label", "value" }]`。选项值须唯一，初始值必须对应某个选项。
 
@@ -72,10 +72,11 @@ v3–v5 的 `elements` 除上述叶元素外还允许：
 
 | `kind` | 关键字段 | 行为 |
 | --- | --- | --- |
-| `note` | `text`、可选 `tone: "info" \| "warn" \| "error"`、可选 `visibleIf` | 条件说明块；`error` 使用 alert 语义 |
+| `note` | `text`、可选 `tone: "info" \| "warn" \| "error"`、可选 `visibleIf` | 条件说明块；`error` 使用 alert 语义，支持行内 KaTeX 公式 |
+| `formula` | `template`、可选 `label`、`caption`、`visibleIf` | 本地 KaTeX 居中公式，支持 `{stateId}` / `{derivedId}` 随交互实时改写 |
 | `section` | 可选 `title`、`children` | 逻辑分组；通过标题与留白组织，内部无四周封闭框线，可嵌套其他 v3–v5 元素 |
 | `columns` | `columns`，2–3 个元素数组 | 多列布局；依托局部容器查询按实际可用宽度自适应（宽时并列、窄栏自动切换为单列） |
-| `chart` | `chartType`、`title`、`legend`、`items` 或 `series`；v5 柱/饼可用 `source: { "model" }`（可带可选 `"kind": "model"`） | 柱状、饼状或折线图 |
+| `chart` | `chartType`、`title`、`legend`、可选 `caption`、`items` 或 `series`；v4/v5 折线图可选 `vectors`、`annotations`、`cornerLabel`；v5 柱/饼可用 `source: { "model" }`（可带可选 `"kind": "model"`） | 柱状、饼状、折线图或受控 SVG 数学图解 |
 | `table` | `columns`、`rows`、`sortable`、可选 `selectable`、`initialSort`、`emptyText`、可选 `visibleIf`；v5 可用 `source: { "model", "view"? }`（可带可选 `"kind": "model"`） | 本地排序、筛选、条件行与横向滚动；`selectable` 时行首单选并记录原始行序号，选中项、筛选与排序进入「继续讨论」摘要；v5 模型表格按模型快照渲染 |
 | `explain` | v5：`model`、可选 `title`、`visibleIf` | 本地生成模型依据、诊断与公式 |
 

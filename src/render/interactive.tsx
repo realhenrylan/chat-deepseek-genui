@@ -183,6 +183,12 @@ export function InteractiveElementView({
               aria-invalid={error ? 'true' : undefined}
               onChange={(event) => onValueChange(variable.id, Number(event.currentTarget.value))}
             />
+            {variable.minLabel || variable.maxLabel ? (
+              <div className="genui-slider-ticks">
+                <span>{variable.minLabel ?? formatNumber(variable.min)}</span>
+                <span>{variable.maxLabel ?? formatNumber(variable.max)}</span>
+              </div>
+            ) : null}
             {/* Chromium 对 aria-valuetext 的暴露并不稳定，单位另以描述提供，
                 避免读屏只读到数值而漏掉单位。 */}
             {variable.unit ? (

@@ -1280,6 +1280,7 @@ export function evaluateComposite(
       switch (element.kind) {
         case 'text':
         case 'note':
+        case 'formula':
           if (element.visibleIf) conditionOf(element.visibleIf);
           break;
         case 'explain':

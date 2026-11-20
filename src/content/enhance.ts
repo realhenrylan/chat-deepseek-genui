@@ -98,7 +98,7 @@ export interface EnhanceOptions {
   stateStore?: CardStateStore;
   /**
    * 「生成修复请求」投递：生产接线 content/repair.deliverRepairRequest
-   * （写入可见草稿或复制到剪贴板，绝不自动发送）。
+   * （写入可见草稿或复制到剪贴板，不直接发送）。
    */
   onRepairRequest?: (prompt: string) => RepairDeliveryResult | Promise<RepairDeliveryResult>;
   /** 站点适配层覆盖；缺省使用 DeepSeek 适配器（测试注入变体）。 */
@@ -709,6 +709,9 @@ export class EnhancementManager {
           rawJson: raw,
           registry: this.options.registry,
           onContinue: this.options.onContinue,
+          onRequestSend: this.options.onRequestSend,
+          followupEnv: this.options.followupEnv,
+          requireTrustedClick: this.options.requireTrustedClick,
           cardKey: identity.key,
           stateStore: this.stateStore,
           initialState: resolved.state,

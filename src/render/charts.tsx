@@ -13,6 +13,7 @@ import {
   type CompositeEvaluation,
 } from '../runtime/evaluate';
 import { formatNumber } from './format';
+import { MathText } from './math';
 
 /**
  * 图表视图（v3/v4/v5）：柱状、折线、饼图。
@@ -358,10 +359,22 @@ function LineChart({ element, evaluation }: {
     return (smoothSegments[index] ?? [])
       .flatMap((segment: CubicSegment) => [segment.control1.y, segment.control2.y]);
   });
-  const xs = points.map((point) => point.x);
+  const vectors = element.vectors ?? [];
+  const annotations = element.annotations ?? [];
+  const hasOverlay = vectors.length > 0 || annotations.length > 0;
+  const overlayXs = [
+    ...vectors.flatMap((v) => [(v.from ?? [0, 0])[0], v.to[0]]),
+    ...annotations.map((a) => a.x),
+  ];
+  const overlayYs = [
+    ...vectors.flatMap((v) => [(v.from ?? [0, 0])[1], v.to[1]]),
+    ...annotations.map((a) => a.y),
+  ];
+  const xs = [...points.map((point) => point.x), ...overlayXs];
   const ys = [
     ...points.map((point) => point.y),
     ...controlYs,
+    ...overlayYs,
   ];
   let xMin = xs.length > 0 ? Math.min(...xs) : 0;
   let xMax = xs.length > 0 ? Math.max(...xs) : 1;
@@ -378,6 +391,11 @@ function LineChart({ element, evaluation }: {
   const yPad = (yMax - yMin) * 0.08;
   yMin -= yPad;
   yMax += yPad;
+  if (hasOverlay) {
+    const xPad = (xMax - xMin) * 0.08;
+    xMin -= xPad;
+    xMax += xPad;
+  }
 
   const scaleX = (x: number) => plot.left + ((x - xMin) / (xMax - xMin)) * innerWidth;
   const scaleY = (y: number) => plot.top + innerHeight - ((y - yMin) / (yMax - yMin)) * innerHeight;
@@ -389,11 +407,13 @@ function LineChart({ element, evaluation }: {
   // 零点位于视口内时坐标轴画在数据坐标 x=0 / y=0；否则退回绘图区边缘。
   const xAxisY = yMin <= 0 && yMax >= 0 ? scaleY(0) : plot.top + innerHeight;
   const yAxisX = xMin <= 0 && xMax >= 0 ? scaleX(0) : plot.left;
-  const drawable = evaluated.series.some((item) =>
-    item.kind === 'discrete'
-      ? item.points.length > 0
-      : item.runs.some((run) => run.length > 0),
-  );
+  const drawable =
+    hasOverlay ||
+    evaluated.series.some((item) =>
+      item.kind === 'discrete'
+        ? item.points.length > 0
+        : item.runs.some((run) => run.length > 0),
+    );
 
   const renderDiscrete = (item: RenderedDiscreteSeries, index: number) => (item.points.length > 0 ? (
     <g key={item.label}>
@@ -479,6 +499,117 @@ function LineChart({ element, evaluation }: {
             }
             return renderDiscrete(item, index);
           })}
+          {vectors.map((vec, index) => {
+            const from = vec.from ?? [0, 0];
+            const sx0 = scaleX(from[0]);
+            const sy0 = scaleY(from[1]);
+            const sx1 = scaleX(vec.to[0]);
+            const sy1 = scaleY(vec.to[1]);
+            const dx = sx1 - sx0;
+            const dy = sy1 - sy0;
+            const len = Math.hypot(dx, dy);
+            const col = seriesColor(vec.color, evaluated.series.length + index);
+            const ux = len > 0.5 ? dx / len : 0;
+            const uy = len > 0.5 ? dy / len : 0;
+            const headLen = Math.min(9, len * 0.45);
+            const headHalf = 3.8;
+            const lineEndX = sx1 - ux * headLen * 0.75;
+            const lineEndY = sy1 - uy * headLen * 0.75;
+            const bx = sx1 - ux * headLen;
+            const by = sy1 - uy * headLen;
+            const px = -uy * headHalf;
+            const py = ux * headHalf;
+            const labelX = Math.min(
+              width - plot.right - 8,
+              Math.max(plot.left + 8, (sx0 + sx1) / 2 + -uy * 11),
+            );
+            const labelY = Math.min(
+              plot.top + innerHeight - 6,
+              Math.max(plot.top + 12, (sy0 + sy1) / 2 + ux * 11),
+            );
+            return (
+              <g key={`vec-${index}`} className="genui-chart-vector">
+                {len > 0.5 ? (
+                  <>
+                    <line
+                      x1={sx0}
+                      y1={sy0}
+                      x2={lineEndX}
+                      y2={lineEndY}
+                      stroke={col}
+                      strokeWidth={2.2}
+                      strokeLinecap="round"
+                    />
+                    <polygon
+                      points={`${sx1},${sy1} ${bx + px},${by + py} ${bx - px},${by - py}`}
+                      fill={col}
+                    />
+                  </>
+                ) : (
+                  <circle cx={sx1} cy={sy1} r={3.5} fill={col} />
+                )}
+                {vec.label ? (
+                  <text
+                    className="genui-chart-vector-label"
+                    x={labelX}
+                    y={labelY}
+                    fill={col}
+                    textAnchor="middle"
+                  >
+                    {vec.label}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+          {annotations.map((ann, index) => {
+            const ax = scaleX(ann.x);
+            const ay = scaleY(ann.y);
+            const col = ann.color && HEX_COLOR.test(ann.color) ? ann.color : 'var(--genui-color-text)';
+            const anchor =
+              ann.align === 'left' ? 'start' : ann.align === 'right' ? 'end' : 'middle';
+            const offsetX = ann.align === 'left' ? 6 : ann.align === 'right' ? -6 : 0;
+            const tx = Math.min(
+              width - plot.right - 4,
+              Math.max(plot.left + 4, ax + offsetX),
+            );
+            const ty = Math.min(
+              plot.top + innerHeight - 4,
+              Math.max(plot.top + 11, ay - 7),
+            );
+            return (
+              <g key={`ann-${index}`} className="genui-chart-annotation">
+                {ann.point ? (
+                  <circle
+                    className="genui-chart-annotation-point"
+                    cx={ax}
+                    cy={ay}
+                    r={3.5}
+                    fill={col}
+                  />
+                ) : null}
+                <text
+                  className="genui-chart-annotation-text"
+                  x={tx}
+                  y={ty}
+                  fill={col}
+                  textAnchor={anchor}
+                >
+                  {ann.text}
+                </text>
+              </g>
+            );
+          })}
+          {element.cornerLabel ? (
+            <text
+              className="genui-chart-corner-label"
+              x={width - plot.right - 4}
+              y={plot.top + 12}
+              textAnchor="end"
+            >
+              {element.cornerLabel}
+            </text>
+          ) : null}
         </svg>
         </div>
       )}
@@ -497,20 +628,36 @@ function LineChart({ element, evaluation }: {
         </ul>
       ) : null}
       <p className="genui-chart-note">图形较宽时可横向滚动查看坐标。数据表列出采样点；连线在采样点之间插值。</p>
-      <DataTable
-        head={['x', ...evaluated.series.map((item) => item.label)]}
-        rows={Array.from(new Set(points.map((point) => point.x)))
-          .sort((left, right) => left - right)
-          .map((x) => [
-            formatNumber(x),
-            ...evaluated.series.map((item) => {
-              const sample = item.kind === 'discrete'
-                ? item.points.find((candidate) => candidate.x === x)
-                : item.runs.flat().find((candidate) => candidate.x === x);
-              return sample ? formatNumber(sample.y) : '—';
+      {points.length > 0 ? (
+        <DataTable
+          head={['x', ...evaluated.series.map((item) => item.label)]}
+          rows={Array.from(new Set(points.map((point) => point.x)))
+            .sort((left, right) => left - right)
+            .map((x) => [
+              formatNumber(x),
+              ...evaluated.series.map((item) => {
+                const sample = item.kind === 'discrete'
+                  ? item.points.find((candidate) => candidate.x === x)
+                  : item.runs.flat().find((candidate) => candidate.x === x);
+                return sample ? formatNumber(sample.y) : '—';
+              }),
+            ])}
+        />
+      ) : hasOverlay ? (
+        <DataTable
+          head={['图元', '坐标']}
+          rows={[
+            ...vectors.map((v, idx) => {
+              const from = v.from ?? [0, 0];
+              return [
+                v.label ? `向量 ${v.label}` : `向量 ${idx + 1}`,
+                `(${formatNumber(from[0])}, ${formatNumber(from[1])}) → (${formatNumber(v.to[0])}, ${formatNumber(v.to[1])})`,
+              ];
             }),
-          ])}
-      />
+            ...annotations.map((a) => [a.text, `(${formatNumber(a.x)}, ${formatNumber(a.y)})`]),
+          ]}
+        />
+      ) : null}
     </div>
   );
 }
@@ -635,6 +782,11 @@ export function ChartElementView({ element, evaluation }: {
       ) : (
         <LineChart element={element as LineChartElement} evaluation={evaluation} />
       )}
+      {element.caption ? (
+        <p className="genui-chart-caption">
+          <MathText text={element.caption} />
+        </p>
+      ) : null}
     </figure>
   );
 }

@@ -17,6 +17,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TextDecoder } from 'node:util';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -38,6 +39,10 @@ const FORBIDDEN = [
     re: /cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/,
   },
 ];
+
+/** Chromium base::IsStringUTF8 拒绝字面 Unicode 非字符（U+FDD0..U+FDEF 与各平面 *FFFE/*FFFF）。 */
+const CHROME_NONCHAR_RE =
+  /[\uFDD0-\uFDEF\uFFFE\uFFFF]|[\uD83F\uD87F\uD8BF\uD8FF\uD93F\uD97F\uD9BF\uD9FF\uDA3F\uDA7F\uDABF\uDAFF\uDB3F\uDB7F\uDBBF\uDBFF][\uDFFE\uDFFF]/;
 
 const errors = [];
 
@@ -203,7 +208,20 @@ try {
   fail(`dist 目录缺失或不可读：${error.message}`);
 }
 for (const file of files) {
-  const text = readFileSync(file, 'utf8');
+  const buf = readFileSync(file);
+  if (file.endsWith('.js')) {
+    try {
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+      const nonchar = CHROME_NONCHAR_RE.exec(decoded);
+      if (nonchar) {
+        const cp = nonchar[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
+        fail(`${relative(root, file)} 含 Chromium 拒绝的字面 Unicode 非字符 U+${cp}（会导致内容脚本无法加载）`);
+      }
+    } catch (error) {
+      fail(`${relative(root, file)} 不是合法 UTF-8 编码：${error.message}`);
+    }
+  }
+  const text = buf.toString('utf8');
   for (const { name, re } of FORBIDDEN) {
     // 全局匹配逐条检查：text.match(re) 只返回首个命中，会漏检其后的违规。
     const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);

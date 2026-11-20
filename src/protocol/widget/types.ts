@@ -19,12 +19,21 @@ export type WidgetKind =
   | 'timeline'
   | 'spoiler'
   | 'poll'
-  | 'form';
+  | 'form'
+  | 'copy'
+  | 'flow';
 
 export interface BaseWidget {
   w: WidgetKind;
   id?: string;
   [key: string]: unknown;
+}
+
+/** 滑块随数值变化的状态解释（R-I3） */
+export interface SliderStateHint {
+  min?: number;
+  max?: number;
+  text: string;
 }
 
 /** 滑块组件：轻量可调参数 */
@@ -37,9 +46,17 @@ export interface SliderWidget extends BaseWidget {
   step?: number;
   value?: number;
   unit?: string;
+  /** P1-a (R-I2)：两端语义刻度，如「-2（向下开口）」「+2（向上开口）」 */
+  minLabel?: string;
+  maxLabel?: string;
+  /** P1-a (R-I3)：静态或随状态区段变化的解释文案 */
+  hint?: string;
+  hints?: SliderStateHint[];
+  /** P1-a (R-I1)：显式展示「本地计算」徽标，默认 true */
+  localBadge?: boolean;
 }
 
-/** 结果展示组件：可显示静态数值或纯文本结果 */
+/** 结果展示组件：可显示静态数值、纯文本结果或随滑块联动的 LaTeX 公式 */
 export interface ResultWidget extends BaseWidget {
   w: 'result';
   id?: string;
@@ -48,6 +65,10 @@ export interface ResultWidget extends BaseWidget {
   bind?: string;
   unit?: string;
   emphasis?: 'normal' | 'primary';
+  /** P1-b：可随总线状态实时改写的 LaTeX 公式模板（如 `y = {a}x^2`） */
+  formula?: string;
+  /** 可选图注/说明 */
+  caption?: string;
 }
 
 /** 提示说明组件 */
@@ -89,13 +110,26 @@ export interface QuizWidget extends BaseWidget {
   };
 }
 
+/** 概念/条件卡的行式条目（P1-a，S2 / R-V2） */
+export interface CardRowItem {
+  icon?: string;
+  title: string;
+  detail?: string;
+  /** 可选块级或行内 LaTeX 公式（如 `0 \in W`） */
+  math?: string;
+}
+
 /** 概念/信息卡组件 */
 export interface CardWidget extends BaseWidget {
   w: 'card';
   title: string;
   subtitle?: string;
   points?: string[];
+  /** P1-a：分隔线行式布局（左图标 + 粗体标题 + 次要说明/公式） */
+  items?: CardRowItem[];
   tags?: string[];
+  /** 可选底部图注（R-L3） */
+  caption?: string;
 }
 
 /** 方案对比卡组件 */
@@ -111,6 +145,11 @@ export interface CompareWidget extends BaseWidget {
   title?: string;
   items: CompareItem[];
   highlight?: string;
+  /**
+   * 各列是否为可采纳的候选方案（显示「采用此方案继续细化」回流按钮）。
+   * 省略时按是否给出 `highlight` 推断：有推荐项视为选型对比，否则视为纯概念/信息对比，不显示采纳按钮。
+   */
+  selectable?: boolean;
 }
 
 /** 清单步骤组件 */
@@ -216,6 +255,61 @@ export interface FormWidget extends BaseWidget {
   submit: FormSubmitConfig;
 }
 
+/** 可复制话术/模板组件（P1-a，S10 / R-A1） */
+export interface CopyWidget extends BaseWidget {
+  w: 'copy';
+  title?: string;
+  text: string;
+  /** 复制按钮文案，默认「复制内容」，可如「复制询问话术」 */
+  label?: string;
+  /** 可选底部辅助说明 */
+  note?: string;
+}
+
+/** 流程图/架构图节点（P2，S3 / S9） */
+export type FlowTone = 'default' | 'accent' | 'info' | 'warn';
+
+export interface FlowStep {
+  id?: string;
+  icon?: string;
+  step?: string;
+  title: string;
+  desc?: string;
+  highlight?: boolean;
+  tone?: FlowTone;
+  /** 指向下一个节点箭头上的标签文字（S9） */
+  arrowLabel?: string;
+  arrowDirection?: 'down' | 'both';
+}
+
+/** 流程图底部分栏（S3：如「本地交互」vs「模型交互」） */
+export interface FlowBranch {
+  icon?: string;
+  title: string;
+  desc?: string;
+  badge?: string;
+  direction?: 'down' | 'both';
+  tone?: FlowTone;
+}
+
+/** 架构图底部能力格（S9：2×2 图标+名称网格） */
+export interface FlowCapability {
+  icon?: string;
+  title: string;
+  desc?: string;
+}
+
+/** 流程图与嵌套架构图组件（P2，S3 / S9） */
+export interface FlowWidget extends BaseWidget {
+  w: 'flow';
+  title?: string;
+  subtitle?: string;
+  steps: FlowStep[];
+  branches?: FlowBranch[];
+  capabilities?: FlowCapability[];
+  caption?: string;
+}
+
 export type GenuiWidget =
   | SliderWidget
   | ResultWidget
@@ -227,7 +321,9 @@ export type GenuiWidget =
   | TimelineWidget
   | SpoilerWidget
   | PollWidget
-  | FormWidget;
+  | FormWidget
+  | CopyWidget
+  | FlowWidget;
 
 export interface NormalizedWidgetResult {
   ok: true;

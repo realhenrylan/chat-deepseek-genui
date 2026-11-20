@@ -7,6 +7,18 @@ import {
   GENUI_PROMPT_TEXT,
   GENUI_PROMPT_TOOL_START,
   GENUI_PROMPT_VERSION,
+  GENUI_PROMPT_V43_START,
+  GENUI_PROMPT_V43_TEXT,
+  GENUI_PROMPT_TOOL_V43_START,
+  GENUI_TOOL_PROMPT_V43_TEXT,
+  GENUI_PROMPT_V42_START,
+  GENUI_PROMPT_V42_TEXT,
+  GENUI_PROMPT_TOOL_V42_START,
+  GENUI_TOOL_PROMPT_V42_TEXT,
+  GENUI_PROMPT_V41_START,
+  GENUI_PROMPT_V41_TEXT,
+  GENUI_PROMPT_TOOL_V41_START,
+  GENUI_TOOL_PROMPT_V41_TEXT,
   GENUI_PROMPT_V40_START,
   GENUI_PROMPT_V40_TEXT,
   GENUI_PROMPT_TOOL_V40_START,
@@ -44,7 +56,22 @@ describe('默认增强提示词', () => {
     const hash = (value: string) => createHash('sha256').update(value).digest('hex');
     expect(hash(GENUI_PROMPT_V31_TEXT)).toBe('668c3181f9a238768f2d2ed807b117c97e809727979cb7f8916b9aa27b132bb3');
     expect(hash(GENUI_TOOL_PROMPT_V31_TEXT)).toBe('c818f37eadcbf63a18190d0286f315bedfcca11cf51a4d4b4716ba81ad630d63');
-    for (const text of [GENUI_PROMPT_V31_TEXT, GENUI_TOOL_PROMPT_V31_TEXT]) {
+    expect(hash(GENUI_PROMPT_V41_TEXT)).toBe('46846af88b3aa4def83f6ab67ac9209cab6c8388bb8694fa961e96f3b0c444d6');
+    expect(hash(GENUI_TOOL_PROMPT_V41_TEXT)).toBe('9c6f8375781dba70209f63556e6851111b125ad4e9d00f55b211abd17afd3dc4');
+    expect(hash(GENUI_PROMPT_V42_TEXT)).toBe('f712f7a7def8b7c0c9a1f440cfde93037b646ba295cd7a338990eb9c07ada2b4');
+    expect(hash(GENUI_TOOL_PROMPT_V42_TEXT)).toBe('5371993d9bc04436479ba27c38b54f915f64fa712663925729127b4b7f0f687b');
+    expect(hash(GENUI_PROMPT_V43_TEXT)).toBe('fa138fb49d13ca6eb3da9932ebc104ec1275b57c9ac60e814e2bf503f51a26cd');
+    expect(hash(GENUI_TOOL_PROMPT_V43_TEXT)).toBe('909621db19300f2e7db8f66454eb0f6f7c381eb8e405c2f7a6460cea561b6671');
+    for (const text of [
+      GENUI_PROMPT_V31_TEXT,
+      GENUI_TOOL_PROMPT_V31_TEXT,
+      GENUI_PROMPT_V41_TEXT,
+      GENUI_TOOL_PROMPT_V41_TEXT,
+      GENUI_PROMPT_V42_TEXT,
+      GENUI_TOOL_PROMPT_V42_TEXT,
+      GENUI_PROMPT_V43_TEXT,
+      GENUI_TOOL_PROMPT_V43_TEXT,
+    ]) {
       expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${text}`).kind).toBe('intact');
       expect(appendGenuiPrompt(`${USER_DRAFT}\n\n${text}`).inserted).toBe(false);
       expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${text}修改`).kind).toBe('edited');
@@ -52,7 +79,7 @@ describe('默认增强提示词', () => {
   });
 
   it('版本化标记与完整文本首尾一致', () => {
-    expect(GENUI_PROMPT_VERSION).toBe('4.1');
+    expect(GENUI_PROMPT_VERSION).toBe('4.4');
     expect(GENUI_PROMPT_START).toContain(`v${GENUI_PROMPT_VERSION}`);
     expect(GENUI_PROMPT_TEXT.startsWith(GENUI_PROMPT_START)).toBe(true);
     expect(GENUI_PROMPT_TEXT.endsWith(GENUI_PROMPT_END)).toBe(true);
@@ -340,27 +367,78 @@ describe('v4.0 智能界面内联穿插协议提示词特性', () => {
   });
 });
 
-describe('v4.1 内联组件与历史版本兼容', () => {
-  it('新增 timeline/spoiler/poll 语法与穿插分工', () => {
+describe('v4.1 / v4.2 内联组件、回流表单与历史版本兼容', () => {
+  it('新增 timeline/spoiler/poll 与 v4.2 form 语法、双交互及回流约束', () => {
     expect(GENUI_PROMPT_TEXT).toContain('"w":"timeline"');
     expect(GENUI_PROMPT_TEXT).toContain('"w":"spoiler"');
     expect(GENUI_PROMPT_TEXT).toContain('"w":"poll"');
     expect(GENUI_PROMPT_TEXT).toContain('在演进脉络与故障时序处配 timeline');
-    expect(GENUI_PROMPT_START).toContain('v4.1');
-    expect(GENUI_PROMPT_TOOL_START).toContain('v4.1');
+
+    expect(GENUI_PROMPT_START).toContain('v4.4');
+    expect(GENUI_PROMPT_TOOL_START).toContain('v4.4');
+    expect(GENUI_PROMPT_TEXT).toContain('**本地交互**');
+    expect(GENUI_PROMPT_TEXT).toContain('**回流交互**');
+    expect(GENUI_PROMPT_TEXT).toContain('每次回答最多 1 个 form');
+    expect(GENUI_PROMPT_TEXT).toContain('- 回流表单 form:');
+    expect(GENUI_PROMPT_TEXT).toContain('测验和批改类**不写 default**');
+    expect(GENUI_PROMPT_TEXT).toContain('不要再生成同一个 form');
+    expect(GENUI_PROMPT_TEXT).toContain('"w": "form"');
+    expect(GENUI_PROMPT_TEXT.includes('"highlight": "方案B"')).toBe(false);
+
+    expect(GENUI_TOOL_PROMPT_TEXT).toContain('每次回答最多 1 个 form');
+    expect(GENUI_TOOL_PROMPT_TEXT).toContain('- 回流表单 form:');
+    expect(GENUI_TOOL_PROMPT_TEXT).toContain('不要再生成同一个 form');
   });
 
-  it('v4.0 完整文本逐字保留且仍可识别为未编辑草稿', () => {
+  it('v4.3 compare 新增 selectable 语法与取值规则，v4.2 文本不含', () => {
+    for (const text of [GENUI_PROMPT_TEXT, GENUI_TOOL_PROMPT_TEXT]) {
+      expect(text).toContain('"selectable":true|false?');
+      expect(text).toContain('compare 规则：');
+      expect(text).toContain('GeForce/GTX/RTX');
+    }
+    for (const text of [GENUI_PROMPT_V42_TEXT, GENUI_TOOL_PROMPT_V42_TEXT]) {
+      expect(text.includes('"selectable":true|false?')).toBe(false);
+      expect(text.includes('compare 规则：')).toBe(false);
+    }
+    expect(GENUI_PROMPT_V42_TEXT.startsWith(GENUI_PROMPT_V42_START)).toBe(true);
+    expect(GENUI_TOOL_PROMPT_V42_TEXT.startsWith(GENUI_PROMPT_TOOL_V42_START)).toBe(true);
+    expect(GENUI_PROMPT_V43_TEXT.startsWith(GENUI_PROMPT_V43_START)).toBe(true);
+    expect(GENUI_TOOL_PROMPT_V43_TEXT.startsWith(GENUI_PROMPT_TOOL_V43_START)).toBe(true);
+
+    // v4.4 新增 copy/flow/formula/vectors/minLabel 语法，v4.3 不含
+    for (const text of [GENUI_PROMPT_TEXT, GENUI_TOOL_PROMPT_TEXT]) {
+      expect(text).toContain('"w":"copy"');
+      expect(text).toContain('"w":"flow"');
+      expect(text).toContain('"kind":"formula"');
+      expect(text).toContain('"vectors"');
+      expect(text).toContain('"minLabel"');
+    }
+    expect(GENUI_PROMPT_V43_TEXT.includes('"w":"copy"')).toBe(false);
+    expect(GENUI_PROMPT_V43_TEXT.includes('"w":"flow"')).toBe(false);
+  });
+
+  it('v4.0 与 v4.1 完整文本逐字保留且仍可识别为未编辑草稿', () => {
     expect(GENUI_PROMPT_V40_TEXT.includes('"w":"timeline"')).toBe(false);
     expect(GENUI_PROMPT_V40_TEXT.startsWith(GENUI_PROMPT_V40_START)).toBe(true);
     expect(GENUI_TOOL_PROMPT_V40_TEXT.startsWith(GENUI_PROMPT_TOOL_V40_START)).toBe(true);
-    expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${GENUI_PROMPT_V40_TEXT}`).kind).toBe('intact');
-    expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${GENUI_TOOL_PROMPT_V40_TEXT}`).kind).toBe('intact');
-  });
 
-  it('v4.0 与 v4.1 版本标记都能被识别为已追加', () => {
-    expect(hasGenuiPrompt(GENUI_PROMPT_V40_TEXT)).toBe(true);
-    expect(hasGenuiPrompt(GENUI_TOOL_PROMPT_V40_TEXT)).toBe(true);
+    expect(GENUI_PROMPT_V41_TEXT.includes('- 回流表单 form:')).toBe(false);
+    expect(GENUI_PROMPT_V41_TEXT.startsWith(GENUI_PROMPT_V41_START)).toBe(true);
+    expect(GENUI_TOOL_PROMPT_V41_TEXT.startsWith(GENUI_PROMPT_TOOL_V41_START)).toBe(true);
+
+    for (const legacyText of [
+      GENUI_PROMPT_V40_TEXT,
+      GENUI_TOOL_PROMPT_V40_TEXT,
+      GENUI_PROMPT_V41_TEXT,
+      GENUI_TOOL_PROMPT_V41_TEXT,
+      GENUI_PROMPT_V42_TEXT,
+      GENUI_TOOL_PROMPT_V42_TEXT,
+      GENUI_PROMPT_V43_TEXT,
+      GENUI_TOOL_PROMPT_V43_TEXT,
+    ]) {
+      expect(describeGenuiDraftPrompt(`${USER_DRAFT}\n\n${legacyText}`).kind).toBe('intact');
+      expect(hasGenuiPrompt(legacyText)).toBe(true);
+    }
     expect(hasGenuiPrompt(GENUI_PROMPT_TEXT)).toBe(true);
     expect(hasGenuiPrompt(GENUI_TOOL_PROMPT_TEXT)).toBe(true);
   });
@@ -372,6 +450,10 @@ describe('stripGenuiPrompt：响应剥离与 DOM 兜底共用同一实现', () =
   const PROTOCOL_TEXTS = [
     GENUI_PROMPT_TEXT,
     GENUI_TOOL_PROMPT_TEXT,
+    GENUI_PROMPT_V42_TEXT,
+    GENUI_TOOL_PROMPT_V42_TEXT,
+    GENUI_PROMPT_V41_TEXT,
+    GENUI_TOOL_PROMPT_V41_TEXT,
     GENUI_PROMPT_V40_TEXT,
     GENUI_TOOL_PROMPT_V40_TEXT,
     GENUI_PROMPT_V32_TEXT,

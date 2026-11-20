@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "__MSG_extensionDescription__",
   "default_locale": "en",
   "permissions": [
@@ -16,7 +16,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "branding/logo-small.svg"
+        "branding/logo-small.svg",
+        "fonts/katex/*.woff2"
       ],
       "matches": [
         "https://chat.deepseek.com/*"

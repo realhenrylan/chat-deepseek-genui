@@ -112,7 +112,9 @@
 .inline-timeline-body,
 .inline-spoiler-body,
 .inline-poll-body,
-.inline-form-body {
+.inline-form-body,
+.inline-copy-body,
+.inline-flow-body {
   display: flex;
   flex-direction: column;
   gap: var(--inline-gap);
@@ -137,7 +139,9 @@
 .inline-timeline-body > .inline-widget-header,
 .inline-spoiler-body > .inline-widget-header,
 .inline-poll-body > .inline-widget-header,
-.inline-form-body > .inline-widget-header {
+.inline-form-body > .inline-widget-header,
+.inline-copy-body > .inline-widget-header,
+.inline-flow-body > .inline-widget-header {
   margin-bottom: 0;
 }
 
@@ -605,6 +609,14 @@
   border-color: var(--inline-accent);
 }
 
+.inline-feedback-btn:disabled,
+.inline-compare-select-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--inline-bg);
+  border-color: var(--inline-border-strong);
+}
+
 .inline-feedback-btn:focus-visible,
 .inline-compare-select-btn:focus-visible,
 .inline-spoiler-toggle:focus-visible,
@@ -1068,4 +1080,443 @@
 .inline-secondary-btn:hover {
   background: var(--inline-accent-soft);
   border-color: var(--inline-accent);
+}
+
+/* ================= 通用徽标与图注（P1 / R-I1 / R-L3） ================= */
+.inline-local-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--inline-radius-pill);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  color: var(--inline-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.inline-widget-caption {
+  margin: 0;
+  padding-top: var(--inline-gap-sm);
+  border-top: 1px solid var(--inline-border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--inline-text-muted);
+}
+
+/* ================= SLIDER 增强（P1-a / S4 / R-I1..R-I4） ================= */
+.inline-slider-title-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--inline-gap-sm);
+  min-width: 0;
+}
+
+.inline-slider-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--inline-gap-sm);
+  padding-top: var(--inline-gap-xs);
+}
+
+.inline-slider-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--inline-text-muted);
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.inline-slider-reset {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: var(--inline-radius-pill);
+  border: 1px solid var(--inline-border-strong);
+  background: transparent;
+  color: var(--inline-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.inline-slider-reset:hover:not(:disabled) {
+  background: var(--inline-accent-soft);
+  border-color: var(--inline-accent);
+}
+
+.inline-slider-reset:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ================= RESULT 公式区（P1-b / S4） ================= */
+.inline-result-formula {
+  padding: 8px var(--inline-pad-inner);
+  border-radius: var(--inline-radius-inner);
+  background: var(--inline-bg);
+  text-align: center;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* ================= CARD 行式布局（P1-a / S2 / R-V1 / R-V2） ================= */
+.inline-card-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.inline-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--inline-gap);
+  padding: 10px 0;
+  border-top: 1px solid var(--inline-border);
+  min-width: 0;
+}
+
+.inline-card-row:first-child {
+  padding-top: 4px;
+  border-top: none;
+}
+
+.inline-card-row:last-child {
+  padding-bottom: 2px;
+}
+
+.inline-card-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--inline-radius-sm);
+  background: var(--inline-bg);
+  color: var(--inline-accent);
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.inline-card-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.inline-card-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--inline-text);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.inline-card-row-detail {
+  font-size: 12.5px;
+  color: var(--inline-text-muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.inline-card-row-math {
+  margin-top: 2px;
+  font-size: 13.5px;
+  color: var(--inline-text);
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* ================= COPY 可复制话术组件（P1-a / S10 / R-A1） ================= */
+.inline-copy-quote {
+  margin: 0;
+  padding: var(--inline-pad-inner);
+  border-radius: var(--inline-radius-inner);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  box-shadow: inset 3px 0 0 var(--inline-accent);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--inline-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.inline-copy-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--inline-gap-sm);
+}
+
+.inline-copy-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--inline-gap-sm);
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.inline-copy-note {
+  font-size: 12px;
+  color: var(--inline-text-muted);
+}
+
+.inline-copy-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--inline-radius-pill);
+  border: 1px solid var(--inline-border-strong);
+  background: transparent;
+  color: var(--inline-text);
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.inline-copy-btn:hover {
+  background: var(--inline-accent-soft);
+  border-color: var(--inline-accent);
+}
+
+.inline-copy-btn:focus-visible,
+.inline-slider-reset:focus-visible {
+  outline: 2px solid var(--inline-accent);
+  outline-offset: 2px;
+}
+
+/* ================= FLOW 流程图与架构图组件（P2 / S3 / S9 / R-V3） ================= */
+.inline-flow-steps {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.inline-flow-step-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.inline-flow-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--inline-gap);
+  padding: 10px var(--inline-pad-inner);
+  border-radius: var(--inline-radius-inner);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  min-width: 0;
+}
+
+.inline-flow-step.tone-accent,
+.inline-flow-branch.tone-accent {
+  background: var(--inline-accent-soft);
+  border-color: var(--inline-border-strong);
+}
+
+.inline-flow-step.tone-info,
+.inline-flow-branch.tone-info {
+  background: var(--inline-success-soft);
+  border-color: var(--inline-border-strong);
+}
+
+.inline-flow-step.tone-warn,
+.inline-flow-branch.tone-warn {
+  background: var(--inline-warning-soft);
+  border-color: var(--inline-border-strong);
+}
+
+.inline-flow-step-lead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--inline-radius-sm);
+  background: var(--inline-card-surface);
+  border: 1px solid var(--inline-border);
+  color: var(--inline-accent);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.inline-flow-step-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inline-flow-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--inline-gap-sm);
+  flex-wrap: wrap;
+}
+
+.inline-flow-step-seq {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--inline-text-muted);
+}
+
+.inline-flow-step-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--inline-text);
+  overflow-wrap: anywhere;
+}
+
+.inline-flow-step-desc {
+  font-size: 12.5px;
+  color: var(--inline-text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.inline-flow-connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--inline-gap-sm);
+  padding: 4px 0;
+  color: var(--inline-text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.inline-flow-arrow {
+  font-weight: 600;
+}
+
+.inline-flow-arrow-label {
+  font-size: 11.5px;
+  line-height: 1.35;
+  padding: 2px 8px;
+  border-radius: var(--inline-radius-pill);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-card-surface);
+  color: var(--inline-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.inline-flow-branches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--inline-gap);
+  min-width: 0;
+}
+
+.inline-flow-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--inline-pad-inner);
+  border-radius: var(--inline-radius-inner);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  min-width: 0;
+}
+
+.inline-flow-branch-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.inline-flow-branch-arrow {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--inline-accent);
+}
+
+.inline-flow-branch-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--inline-text);
+  overflow-wrap: anywhere;
+}
+
+.inline-flow-branch-badge {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: var(--inline-radius-pill);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-card-surface);
+  color: var(--inline-text-muted);
+  white-space: nowrap;
+}
+
+.inline-flow-branch-desc {
+  font-size: 12px;
+  color: var(--inline-text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.inline-flow-capabilities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--inline-gap-sm);
+  padding-top: var(--inline-gap);
+  border-top: 1px solid var(--inline-border);
+  min-width: 0;
+}
+
+.inline-flow-cap {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--inline-gap-sm);
+  padding: 8px 10px;
+  border-radius: var(--inline-radius-inner);
+  border: 1px solid var(--inline-border);
+  background: var(--inline-bg);
+  min-width: 0;
+}
+
+.inline-flow-cap-icon {
+  font-size: 14px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.inline-flow-cap-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline-flow-cap-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--inline-text);
+  overflow-wrap: anywhere;
+}
+
+.inline-flow-cap-desc {
+  font-size: 11.5px;
+  color: var(--inline-text-muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }

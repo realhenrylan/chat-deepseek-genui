@@ -21,7 +21,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // Node 环境的独立脚本与配置文件：显式声明 Node 全局量，不引第三方 globals 包。
-    files: ['scripts/**/*.{mjs,ts}', '*.config.{js,ts,mjs}'],
+    files: ['scripts/**/*.{mjs,ts}', 'eval/**/*.{mjs,ts}', '*.config.{js,ts,mjs}'],
     languageOptions: {
       globals: { console: 'readonly', process: 'readonly' },
     },

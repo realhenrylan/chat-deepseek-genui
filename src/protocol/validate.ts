@@ -771,7 +771,8 @@ function inspectElements(
           }
           break;
         }
-        case 'note': {
+        case 'note':
+        case 'formula': {
           if (element.visibleIf) {
             const failure = inspectCondition(context, element.visibleIf, 1, `${pointer}/visibleIf`);
             if (failure) return failure;
@@ -780,6 +781,17 @@ function inspectElements(
         }
         case 'chart': {
           if (element.chartType === 'line') {
+            if (
+              element.series.length === 0 &&
+              (element.vectors?.length ?? 0) === 0 &&
+              (element.annotations?.length ?? 0) === 0
+            ) {
+              return semanticFailure(
+                'semantic-violation',
+                '折线图至少需要 1 个系列、向量或标注',
+                `${pointer}/series`,
+              );
+            }
             let points = 0;
             for (const [seriesIndex, series] of element.series.entries()) {
               if ('function' in series) {
@@ -1065,7 +1077,8 @@ function inspectV5Elements(
 
       switch (element.kind) {
         case 'text':
-        case 'note': {
+        case 'note':
+        case 'formula': {
           if (element.visibleIf) {
             const failure = inspectCondition(context, element.visibleIf, 1, undefined, allModels);
             if (failure) return failure;
@@ -1083,6 +1096,16 @@ function inspectV5Elements(
             break;
           }
           if (element.chartType === 'line') {
+            if (
+              element.series.length === 0 &&
+              (element.vectors?.length ?? 0) === 0 &&
+              (element.annotations?.length ?? 0) === 0
+            ) {
+              return semanticFailure(
+                'semantic-violation',
+                '折线图至少需要 1 个系列、向量或标注',
+              );
+            }
             let points = 0;
             let functionSamples = 0;
             for (const series of element.series) {

@@ -7,7 +7,7 @@ import { copyText, type RepairDeliveryResult } from './repair';
  *
  * - pending / validating / deferred 只表达暂态，不写 failed；
  * - invalid / incomplete 展示最相关的错误路径、期望格式与原始内容；
- * - 「生成修复请求」只把限定范围的草稿写入聊天输入框或剪贴板，绝不自动发送。
+ * - 「生成修复请求」只把限定范围的草稿写入聊天输入框或剪贴板，不直接发送。
  */
 
 export const STATUS_ATTR = 'data-genui-status';

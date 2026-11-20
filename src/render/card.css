@@ -1223,6 +1223,7 @@
 }
 
 .genui-followup-apply,
+.genui-followup-fill,
 .genui-followup-cancel {
   font: inherit;
   font-size: 12px;
@@ -1237,11 +1238,13 @@
   color: inherit;
 }
 
-.genui-followup-apply:disabled {
+.genui-followup-apply:disabled,
+.genui-followup-fill:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
+.genui-followup-fill,
 .genui-followup-cancel {
   border: 1px solid var(--genui-color-border-strong);
   background: transparent;
@@ -1262,4 +1265,79 @@
   margin: 6px 0 0;
   font-size: 12px;
   opacity: 0.7;
+}
+
+/* ---------- P1 / P2：本地计算徽标、语义刻度、动态公式与数学图解 ---------- */
+
+.genui-local-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--genui-color-border-subtle);
+  background: var(--genui-color-surface-subtle);
+  color: var(--genui-color-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.genui-slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--genui-color-text-muted);
+  line-height: 1.35;
+}
+
+.genui-formula {
+  padding: 10px 12px;
+  border: 1px solid var(--genui-color-border-subtle);
+  border-radius: var(--genui-radius-md);
+  background: var(--genui-color-surface-faint);
+  text-align: center;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.genui-formula-label {
+  font-size: 12px;
+  color: var(--genui-color-text-muted);
+  margin-bottom: 4px;
+}
+
+.genui-formula-caption {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--genui-color-text-muted);
+  line-height: 1.45;
+}
+
+.genui-chart-grid {
+  stroke-dasharray: 3 3;
+}
+
+.genui-chart-vector-label,
+.genui-chart-annotation-text {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.genui-chart-corner-label {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--genui-color-text-muted);
+}
+
+.genui-chart-caption {
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--genui-color-border-subtle);
+  font-size: 12px;
+  color: var(--genui-color-text-muted);
+  line-height: 1.5;
 }

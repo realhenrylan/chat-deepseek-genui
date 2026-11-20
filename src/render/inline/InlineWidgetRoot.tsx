@@ -12,6 +12,8 @@ import { TimelineView } from './views/TimelineView';
 import { SpoilerView } from './views/SpoilerView';
 import { PollView } from './views/PollView';
 import { FormView } from './views/FormView';
+import { CopyView } from './views/CopyView';
+import { FlowView } from './views/FlowView';
 import type {
   ContinueHandler,
   FollowupEnvironmentStore,
@@ -57,9 +59,9 @@ export interface InlineWidgetRootProps {
   widget: GenuiWidget;
   bus?: InlineStateBus;
   onFatal?: (err: Error) => void;
-  /** 作答回流：点击清单/对比组件的回流按钮时以纯文本摘要调用（追加不覆盖、不发送）。 */
+  /** 仅填入输入框：保留给只支持写入草稿的入口或降级回退。 */
   onContinue?: ContinueHandler;
-  /** 一键回流：点击表单/模型批改主按钮时发起发送或按护栏降级。 */
+  /** 一键回流：点击表单/模型批改/清单/对比主按钮时发起发送或按护栏降级。 */
   onRequestSend?: RequestSendHandler;
   /** 实时回流环境状态（生成中、草稿状态、回流模式）。 */
   followupEnv?: FollowupEnvironmentStore;
@@ -91,9 +93,25 @@ export function InlineWidgetRoot({
       case 'card':
         return <CardView widget={widget} />;
       case 'compare':
-        return <CompareView widget={widget} onContinue={onContinue} />;
+        return (
+          <CompareView
+            widget={widget}
+            onRequestSend={onRequestSend}
+            onContinue={onContinue}
+            followupEnv={followupEnv}
+            requireTrustedClick={requireTrustedClick}
+          />
+        );
       case 'checklist':
-        return <ChecklistView widget={widget} onContinue={onContinue} />;
+        return (
+          <ChecklistView
+            widget={widget}
+            onRequestSend={onRequestSend}
+            onContinue={onContinue}
+            followupEnv={followupEnv}
+            requireTrustedClick={requireTrustedClick}
+          />
+        );
       case 'slider':
         return <SliderView widget={widget} bus={bus} />;
       case 'result':
@@ -116,6 +134,10 @@ export function InlineWidgetRoot({
             requireTrustedClick={requireTrustedClick}
           />
         );
+      case 'copy':
+        return <CopyView widget={widget} />;
+      case 'flow':
+        return <FlowView widget={widget} />;
       default:
         return (
           <div className="inline-note-box info">

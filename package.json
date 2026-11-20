@@ -1,6 +1,6 @@
 {
   "name": "chat-deepseek-genui",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "为 DeepSeek 网页回答提供交互卡片、本地计算、图表与表格的浏览器扩展。",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -9,9 +9,11 @@
     "test:e2e": "playwright test",
     "gen-validator": "node scripts/gen-validator.ts",
     "prebuild": "node scripts/gen-validator.ts",
-    "build": "vite build && vite build --mode interceptor",
+    "build": "vite build && vite build --mode interceptor && node scripts/copy-katex-fonts.mjs",
     "postbuild": "node scripts/check-dist.mjs",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "eval:run": "node eval/cli.mjs run",
+    "eval:score": "node eval/cli.mjs score"
   },
   "repository": {
     "type": "git",
@@ -26,6 +28,7 @@
   },
   "homepage": "https://github.com/realhenrylan/chat-deepseek-genui#readme",
   "dependencies": {
+    "katex": "^0.19.1",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -35,6 +38,7 @@
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@types/chrome": "0.3.7",
+    "@types/katex": "^0.16.8",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

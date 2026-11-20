@@ -6,6 +6,7 @@ import type {
   RequestSendHandler,
 } from '../feedback';
 import { FormView } from './FormView';
+import { MathText } from '../../math';
 
 function quizToModelForm(widget: QuizWidget): FormWidget {
   const questions =
@@ -106,7 +107,7 @@ export function QuizView({
 
   return (
     <div className="inline-quiz-body">
-      <div className="inline-quiz-question">{widget.question}</div>
+      <div className="inline-quiz-question"><MathText text={widget.question} /></div>
       <div className="inline-quiz-options">
         {widget.options.map((opt) => {
           const isCurrentSelected = selected === opt.value;
@@ -142,7 +143,7 @@ export function QuizView({
               className={optClass}
               onClick={() => handleSelect(opt.value)}
             >
-              <span>{opt.label}</span>
+              <span><MathText text={opt.label} /></span>
               {badgeText && <span className={`inline-quiz-badge ${badgeClass}`}>{badgeText}</span>}
             </button>
           );
@@ -152,7 +153,7 @@ export function QuizView({
       {isAnswered && widget.explain && (
         <div className="inline-quiz-explain">
           <strong>解析：</strong>
-          {widget.explain}
+          <MathText text={widget.explain} />
         </div>
       )}
 

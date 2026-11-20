@@ -6,6 +6,12 @@ import type { CardStateStore } from '../runtime/card-state-store';
 import cardCss from './card.css?inline';
 import { CardErrorBoundary } from './boundaries';
 import { Card } from './Card';
+import type {
+  ContinueHandler,
+  FollowupEnvironmentStore,
+  RequestSendHandler,
+} from './inline/feedback';
+import { ensureKatexFonts, KATEX_SHADOW_CSS } from './math';
 import { ElementRegistry } from './registry';
 import { attachThemeAttribute } from './theme';
 
@@ -32,10 +38,15 @@ export interface MountCardOptions {
   /** 卡片级渲染异常回调（恢复原始块的入口）。 */
   onFatal?: (error: Error) => void;
   /**
-   * 「继续讨论」回调（阶段 6，用户主动点击时调用）：生产接线为
-   * content/followup.fillContinueIntoInput，返回填充结果用于卡片反馈。
+   * 「继续讨论」仅填入回调（阶段 6 / P0-e）：点击「仅填入」或未接入发送链路时调用。
    */
-  onContinue?: (summary: string) => 'filled' | 'appended' | 'no-input' | 'unavailable';
+  onContinue?: ContinueHandler;
+  /** 一键回流发送回调（点击预览「发送」时触发，受护栏 G1–G9 与回流模式设置保护）。 */
+  onRequestSend?: RequestSendHandler;
+  /** 实时回流环境状态（生成中、草稿存在与否、回流模式）。 */
+  followupEnv?: FollowupEnvironmentStore;
+  /** G1 护栏：是否校验 click 事件 isTrusted === true；默认 true。 */
+  requireTrustedClick?: boolean;
   /** 稳定卡片身份与页面内状态仓库（issue #2）；缺省时 Card 退化为内部状态。 */
   cardKey?: string;
   stateStore?: CardStateStore;
@@ -61,8 +72,10 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
   shadow.replaceChildren();
 
+  ensureKatexFonts(doc);
+
   const style = doc.createElement('style');
-  style.textContent = cardCss;
+  style.textContent = `${cardCss}\n${KATEX_SHADOW_CSS}`;
   shadow.appendChild(style);
 
   const container = doc.createElement('div');
@@ -82,6 +95,9 @@ export function mountCard(host: HTMLElement, options: MountCardOptions): Mounted
           registry={registry}
           onToggleRaw={options.onToggleRaw}
           onContinue={options.onContinue}
+          onRequestSend={options.onRequestSend}
+          followupEnv={options.followupEnv}
+          requireTrustedClick={options.requireTrustedClick}
           cardKey={options.cardKey}
           stateStore={options.stateStore}
           initialState={options.initialState}

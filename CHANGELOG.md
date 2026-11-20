@@ -1,9 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.3.0（2026-11-20）
 
 ### Added
 
+- **P1 + P2：可复制话术 `copy`、流程图/架构图 `flow`、滑块语义刻度、「本地计算」徽标、`card` 行式布局、本地 KaTeX 公式渲染与数学图解向量/标注（提示词升级至 `v4.4`）**：
+  - **本地 KaTeX 公式渲染（P1-b）**：新增 `src/render/math.tsx`（`MathFormula`、`MathText`、`parseMathSegments`、`interpolateFormula`、`stripKatexFontFaces`、`ensureKatexFonts`）与 `scripts/copy-katex-fonts.mjs`，本地打包 `katex` 与 20 个 `.woff2` 数学字体至 `dist/fonts/katex/`（`manifest.json` 仅限 `https://chat.deepseek.com/*` 访问），零远程请求、零 CDN；强制 `trust: false` 禁用 `\href`/`\url` 等扩展，货币写法（`$100`、`$50-$100`）自动避让，纯文本零额外 DOM 包装。
+  - **可复制话术与本地交互增强（P1-a）**：新增 `w:"copy"`（`CopyView`，引用框 + 描边复制按钮 + 剪贴板回退与 `role="status"` 反馈）；`SliderView` 与看板滑块支持 `minLabel`/`maxLabel` 语义刻度，`SliderView` 补齐「本地计算」徽标、动态状态解释（`hints`/`hint`）与「重置参数」按钮；交互式 `Card` 页头新增「本地计算」徽标；`CardView` 支持分隔线行式布局 `items[{icon,title,detail,math}]` 与图注 `caption`；`ResultView` 新增总线联动公式 `formula`；v3/v4/v5 看板新增动态 `formula` 元素（`kind:"formula"`）随滑块实时改写居中 KaTeX 公式。
+  - **流程图/架构图与数学图解（P2）**：新增 `w:"flow"`（`FlowView`，支持纵向步骤节点、低饱和度重点底色、带标签与双向箭头、底部分栏 `branches`、2×2 能力格 `capabilities` 与图注 `caption`）；v4/v5 折线图新增受控 SVG `vectors`（向量箭头与标签）、`annotations`（标注点与文本）、`cornerLabel`（如 `R²`）与 `caption`（支持行内公式），支持纯向量图解（`series` 可为空数组但至少保留 1 个系列、向量或标注）。
+  - **提示词与文档同步**：默认增强提示词升级至 `v4.4`（完整保留 `v4.3` auto/tool 原文并锁定 SHA-256 哈希以确保历史剥离兼容），同步更新 `docs/prompt.md`、`docs/state-storage.md`、`docs/privacy.md`、`README.md`、`src/protocol/schema.ts`、`src/protocol/diagnose.ts`（补齐 `formula` 元素诊断映射）并新增 `tests/unit/p1-p2-features.test.tsx` 与 Edge/Chromium 端到端测试。
+
+- **`compare` 区分选方案与概念对比，默认增强提示词升级至 `v4.3`**：
+  - `compare` 新增可选字段 `selectable`。「👉 采用此方案继续细化」按钮的显示规则为 `selectable ?? Boolean(highlight)`：只有可采纳的候选方案才显示；纯概念/信息对比（如「GeForce / GTX / RTX 是什么关系」）不显示按钮，也不渲染空的操作区。
+  - 提示词在 `compare` 语法行加入 `"selectable":true|false?`，并补充「compare 规则」：可以采纳、接着落地的候选方案写 `true`，概念/品牌/层级等区别说明写 `false` 且不写 `highlight`。
+  - 完整保留 `v4.2`（auto 与 tool 双变体，导出 `GENUI_PROMPT_V42_TEXT` / `GENUI_TOOL_PROMPT_V42_TEXT`，并锁定哈希），确保历史消息剥离与旧草稿识别向后兼容。
+
+- **默认增强提示词升级至 `v4.2` 与回流评测扩展（P0-d）**：
+  - 在 `src/content/prompt.ts`（并同步 `docs/prompt.md`）将 `GENUI_PROMPT_VERSION`、`GENUI_PROMPT_START` 与 `GENUI_PROMPT_TOOL_START` 升级至 `v4.2`（`GENUI_TOOL_PROMPT_TEXT` 通过 `TOOL_LEAD` 自动共享协议主体）：开头区分「本地交互」与「回流交互」，补充「内容分工」中 `form` 与 `quiz` 的选用边界（单次回答末尾最多 1 个 `form`，其后不写需要用户回答的问题），新增 `- 回流表单 form:` 语法与字段/模板规则（统一 `radio|checkbox|text`，测验与批改类禁写 `default`，第一人称 `submit.prompt` 不含 JSON/代码/Markdown 且不超过 200 字），在「内容要求」补充收到回流偏好后不再重复生成同一 `form`，并将示例 1 替换为高尔夫 `form` 范式。
+  - 完整保留 `v4.1`（auto 与 tool 双变体，导出 `GENUI_PROMPT_V41_TEXT` / `GENUI_TOOL_PROMPT_V41_TEXT`）并纳入统一 `GENUI_PROMPT_VARIANTS` 表，确保历史消息剥离与旧草稿识别向后兼容。
+  - 在 `eval/prompts.json` 新增 5 道 `clarify`（`C01`–`C05`）与 5 道 `grade`（`Q01`–`Q05`）题目（共 38 题），在 `eval/score.ts` 新增 `form` 生成率、模板自洽率（占位符正确、非选填全引用、无 JSON/代码块、第一人称、不超过 200 字）、测验无预选率与 `form` 误报率四项指标及结构化汇总；新增 `eval/run.ts` / `eval/cli.mjs` 与 `npm run eval:run` / `eval:score`（按真实扩展注入链路调用 DeepSeek Chat Completions API，支持 `.env.local` 读取、并发控制、429 重试、断点续跑与自动打分），并补充 `tests/unit/prompt.test.ts`、`tests/unit/prompt-schema-consistency.test.ts`、`tests/unit/eval-score.test.ts` 与 `tests/unit/eval-run.test.ts`。
 - **一键回流发送链路、护栏 G1–G9 与工具栏设置项（P0-a）**：
   - 在 `src/content/site-adapter.ts` 新增 `findSendButton(doc)`、`isSendButtonDisabled(button)` 及 `probe()` 的发送按钮探针，在 `src/runtime/diagnostics.ts` 新增 `detection/send-button-missing`，在 `src/content/interceptor.ts` 使全部 2xx 聊天请求派发 `genui:request-delivered`。
   - 在 `src/content/followup.ts` 实现 `createSendCoordinator` / `requestSend`，经页面原生发送按钮写入并触发发送（不在拦截器中伪造请求），并在 `src/content/controller.ts` 与 `src/render/inline/views/FormView.tsx` 接入实时 `followupEnv` 状态与护栏：仅响应 `isTrusted === true` 点击或键盘激活（G1）、1 秒发送防抖（G4）、生成中禁用并提示「等待当前回答结束」（G2）、输入框已有草稿时不覆盖并切回「带入输入框」（G3）、仅发送可见纯文本不附带隐藏卡片引用（G6）、找不到按钮/禁用/超时降级保留在输入框并就近以 `role="status"` 提示（G8）。
@@ -19,6 +34,10 @@
 
 ### Changed
 
+- **统一现有回流入口至直接发送链路并同步合规文档（P0-e）**：
+  - 新增共享 Hook/分发器 `src/render/use-followup.ts`（`useFollowupEnvironment`、`useFollowupDispatcher`、`formatFollowupActionLabel`），统一消除 `FormView`、`ChecklistView`、`CompareView` 与 `Card` 中的环境订阅与护栏 G1–G9 分发重复逻辑。
+  - 将 `ChecklistView`、`CompareView` 与 `Card`「继续讨论」预览面板通过 `InlineWidgetRoot` / `mountCard` / `enhanceDocument` 接入 `onRequestSend` + `followupEnv`（生成中禁用并提示「等待当前回答结束」、输入框有草稿或切为「仅填入输入框」时自动改为带入草稿、受 `requireTrustedClick` 与 G4 全局防抖保护；未传入 `onRequestSend` 时仍保留原 `onContinue` 仅填入行为）。其中 `Card` 预览确认按钮改为「发送 →」（有草稿/填充模式下为「带入输入框」），并新增「仅填入」次要按钮保留纯填入输入框路径；「生成修复请求」仍保持只写入短触发文本、不直接发送。
+  - 同步更新 `README.md`、`docs/privacy.md`、`docs/state-storage.md`、`docs/prompt.md`、`docs/compatibility-investigation.md` 及相关说明面板（`src/content/toggle.ts`）和源码注释，删除「绝不自动发送 / 不会自动发送」的旧描述，明确「仅在你主动点击页面发送按钮或发送类主按钮时发送消息（支持切为仅填入输入框）」，同时补充 `genuiFollowupMode` / `genuiDirectSendNoticed` 存储键与 `fetch` / `XMLHttpRequest` 双通道说明，并将 `eval/runs/` 纳入 `.gitignore`。
 - **统一内联 GenUI 组件框体规格与间距系统**：在 `src/render/inline/inline.css` 的 `.genui-inline-root` 定义 `--inline-radius-outer: 12px`、`--inline-radius-inner: 8px`、`--inline-pad-outer: 14px`、`--inline-pad-inner: 12px`、`--inline-gap: 10px` 等尺寸变量及亮/暗主题适配（`--inline-accent-ink`、`color-scheme`），替换各组件零散像素数值：
   - 外框 `.inline-widget-box` 四边统一使用 `--inline-pad-outer` 内边距与 `--inline-radius-outer` 圆角；去掉顶部按钮后，有标题与无标题组件（如 `note`、无标题 `compare` / `timeline` / `result`）顶部均紧贴内边距，无多余空白行。
   - 所有内层子框（`.inline-compare-col`、`.inline-quiz-option`、`.inline-poll-option`、`.inline-spoiler-content`、`.inline-quiz-explain`、`.inline-note-box`）统一采用 `--inline-radius-inner`、`--inline-pad-inner` 与 `1px solid var(--inline-border)` 边框（`.inline-quiz-explain` 与 `.inline-note-box` 改用 `box-shadow: inset 3px 0 0 ...` 呈现左侧强调条）。
@@ -44,6 +63,9 @@
 
 ### Validation
 
+- **P1 + P2 验收**：`npm run check` 通过（59 个测试文件、750 项单测通过 / 3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` + `copy-katex-fonts.mjs` 与 `scripts/check-dist.mjs` 30 个产物校验均通过，拦截字面 Unicode 非字符与远程资源）；`npm run test:e2e` 通过（Edge 与 Chromium 模拟页共 38 项通过、6 项 `REAL_SITE=1` 按设计跳过，覆盖本地 KaTeX 字体注入与零外部请求、`copy`、`card` 行式布局、`slider` 语义刻度与联动公式、`flow` 流程图/架构图、v5 动态 `formula` 与折线图 `vectors`/`annotations`/`cornerLabel`/`caption` 在 360px 窄栏亮暗主题下的无溢出验证）。
+- **P0-e 验收**：`npm run check` 通过（58 个测试文件、739 项单测通过 / 3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过，覆盖 `ChecklistView`、`CompareView`、`Card` 预览「发送 / 仅填入」及 G1–G9 护栏、以及文档与提示文本同步）；`npm run test:e2e` 通过（Edge 与 Chromium 模拟页共 36 项通过、6 项 `REAL_SITE=1` 按设计跳过，覆盖阶段 6「仅填入」草稿保护、阶段 7 说明面板、以及 `P0-a..e` 表单、模型批改、清单、对比与卡片直接发送/仅填入完整链路）。
+- **P0-d 验收**：`npm run check` 通过（58 个测试文件、733 项单测通过 / 3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过）；真实模型评测 `npm run eval:run -- --out eval/runs/v4.2`（`deepseek-chat`，`mode=auto`）完成 38 / 38 题，经修复 `eval/score.ts` 围栏代码块解析后重算：总通过率 `71.1% (27/38)`、代码块解析成功率 `92.9% (79/85)`、普通问答误触发 `50.0% (3/6)`、`Form 生成率 70.0% (7/10)`（`clarify` 5/5、`grade` 2/5）、`模板自洽率 100.0% (11/11)`、`测验无预选率 100.0% (2/2)`、`Form 误报率 14.3% (4/28)`；Edge 与 Chromium 模拟页 `npm run test:e2e` 在 `v4.2` 提示词构建后通过（36 项通过、6 项 `REAL_SITE=1` 按设计跳过）。
 - **P0-a 至 P0-c 验收**：`npm run check` 通过（57 个测试文件、725 项单测通过 / 3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过，覆盖 `followup-send.test.ts`、`findSendButton`、表单协议与模板注入/截断、`FormView` 与 `quiz` 模型批改单测）；`npm run test:e2e` 通过（Edge 与 Chromium 模拟页共 36 项通过、6 项 `REAL_SITE=1` 按设计跳过，覆盖 360px 亮暗主题布局、首次提示持久化、点击/回车触发发送、用户气泡单次出现、提交锁定态与模型批改流程）。
 - **内联组件样式统一验收**：`npm run check` 通过（56 个测试文件、697 项单测通过、3 项既有跳过，`tsc --noEmit`、`eslint .`、`vite build` 与 `scripts/check-dist.mjs` 均通过）；在无头 Chromium 中加载 `dist/` 扩展逐一检查 `compare`、`quiz`、`checklist`、`slider`、`result`、`note`、`timeline`、`spoiler`、`poll`、`card` 的亮色与暗色主题渲染，确认无「源码」按钮与顶部空白行，外框 `12px` 圆角 / `14px` 内边距与内层子框 `8px` 圆角 / `12px` 内边距 / `1px solid` 边框一致。
 

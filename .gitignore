@@ -5,3 +5,7 @@ test-results/
 playwright-report/
 *.log
 release/
+.env
+.env.local
+.env.*.local
+eval/runs/

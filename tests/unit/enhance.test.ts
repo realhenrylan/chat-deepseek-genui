@@ -203,7 +203,7 @@ describe('enhanceDocument 整链路', () => {
   });
 });
 
-describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）', () => {
+describe('阶段 6 / P0-e：继续讨论与 onRequestSend / onContinue 透传', () => {
   const V2_JSON = JSON.stringify({
     type: 'genui',
     version: 2,
@@ -267,6 +267,48 @@ describe('阶段 6：onContinue 透传（用户主动触发，不自动发送）
     await flushUi();
     expect(() => followup?.click()).not.toThrow();
     await flushUi();
+  });
+
+  it('v2+ 卡片通过 enhanceDocument 接入 onRequestSend：支持预览直接发送与仅填入', async () => {
+    const doc = buildDoc(assistant(codeBlock({ raw: V2_JSON })));
+    const sent: string[] = [];
+    const filled: string[] = [];
+    const flushUi = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    enhanceDocument(doc, {
+      onContinue: (summary) => {
+        filled.push(summary);
+        return 'filled';
+      },
+      onRequestSend: async (message) => {
+        sent.push(message);
+        return { status: 'sent' };
+      },
+      requireTrustedClick: false,
+    });
+
+    const shadow = doc.querySelector<HTMLElement>('.genui-card-host')!.shadowRoot!;
+    await flushUi();
+    shadow.querySelector<HTMLButtonElement>('button.genui-card-followup')!.click();
+    await flushUi();
+
+    const applyBtn = shadow.querySelector<HTMLButtonElement>('.genui-followup-apply')!;
+    const fillBtn = shadow.querySelector<HTMLButtonElement>('.genui-followup-fill')!;
+    expect(applyBtn.textContent).toBe('发送 →');
+    expect(fillBtn.textContent).toBe('仅填入');
+
+    fillBtn.click();
+    await flushUi();
+    expect(filled).toHaveLength(1);
+    expect(sent).toHaveLength(0);
+
+    shadow.querySelector<HTMLButtonElement>('button.genui-card-followup')!.click();
+    await flushUi();
+    shadow.querySelector<HTMLButtonElement>('.genui-followup-apply')!.click();
+    await flushUi();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('总预算：100 元');
+    expect(shadow.querySelector('.genui-card-followup-feedback')?.textContent).toBe('✓ 已发送');
   });
 });
 

@@ -1,14 +1,32 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import type { ChecklistWidget } from '../../../protocol/widget/types';
-import { CONTINUE_FEEDBACK, buildChecklistContinue, type ContinueHandler } from '../feedback';
+import {
+  formatFollowupActionLabel,
+  useFollowupDispatcher,
+  useFollowupEnvironment,
+} from '../../use-followup';
+import {
+  buildChecklistContinue,
+  type ContinueHandler,
+  type FollowupEnvironmentStore,
+  type RequestSendHandler,
+} from '../feedback';
+
+export interface ChecklistViewProps {
+  widget: ChecklistWidget;
+  onContinue?: ContinueHandler;
+  onRequestSend?: RequestSendHandler;
+  followupEnv?: FollowupEnvironmentStore;
+  requireTrustedClick?: boolean;
+}
 
 export function ChecklistView({
   widget,
   onContinue,
-}: {
-  widget: ChecklistWidget;
-  onContinue?: ContinueHandler;
-}) {
+  onRequestSend,
+  followupEnv,
+  requireTrustedClick = true,
+}: ChecklistViewProps) {
   const [checkedMap, setCheckedMap] = useState<Record<number, boolean>>(() => {
     const initial: Record<number, boolean> = {};
     widget.items.forEach((item, idx) => {
@@ -18,28 +36,55 @@ export function ChecklistView({
   });
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  const env = useFollowupEnvironment(followupEnv);
+  const { submitting, dispatch } = useFollowupDispatcher({
+    onRequestSend,
+    onContinue,
+    requireTrustedClick,
+    unavailableMessage: '未找到聊天输入框',
+  });
+
   const toggleCheck = (idx: number) => {
     setCheckedMap((prev) => ({
       ...prev,
       [idx]: !prev[idx],
     }));
-    // 勾选状态已变，旧的「已带入输入框」提示不再有效。
+    // 勾选状态已变，旧的回流状态提示不再有效。
     setFeedback(null);
   };
 
   const total = widget.items.length;
   const completed = Object.values(checkedMap).filter(Boolean).length;
+  const hasSendHandler = Boolean(onRequestSend);
+  const disabled = submitting || (hasSendHandler && env.generationActive);
 
-  const handleContinue = () => {
+  const handleContinue = (event: MouseEvent<HTMLButtonElement>) => {
+    if (disabled) return;
     const done: string[] = [];
     const todo: string[] = [];
     widget.items.forEach((item, idx) => {
       if (checkedMap[idx]) done.push(item.text);
       else todo.push(item.text);
     });
-    const result = onContinue?.(buildChecklistContinue(done, todo)) ?? 'unavailable';
-    setFeedback(CONTINUE_FEEDBACK[result]);
+    dispatch(event, buildChecklistContinue(done, todo), (outcome) => {
+      if (outcome.kind === 'ignored-untrusted') return;
+      setFeedback(outcome.feedback);
+    });
   };
+
+  const fallbackLabel =
+    completed === total
+      ? '📋 将已完成清单带入下一步规划'
+      : '📋 将未完成任务带入下一步规划';
+  const sendBaseLabel =
+    completed === total
+      ? '📋 按已完成清单规划下一步'
+      : '📋 按未完成任务规划下一步';
+  const buttonLabel = formatFollowupActionLabel(sendBaseLabel, env, {
+    hasSendHandler,
+    submitting,
+    fallbackLabel,
+  });
 
   return (
     <div className="inline-checklist-body">
@@ -74,10 +119,13 @@ export function ChecklistView({
 
       {total > 0 && completed > 0 && (
         <div className="inline-feedback-bar">
-          <button type="button" className="inline-feedback-btn" onClick={handleContinue}>
-            {completed === total
-              ? '📋 将已完成清单带入下一步规划'
-              : '📋 将未完成任务带入下一步规划'}
+          <button
+            type="button"
+            className="inline-feedback-btn"
+            disabled={disabled}
+            onClick={handleContinue}
+          >
+            {buttonLabel}
           </button>
           {feedback && (
             <span className="inline-feedback-status" role="status">

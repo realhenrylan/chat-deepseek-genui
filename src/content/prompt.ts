@@ -1,5 +1,25 @@
 /**
- * 智能界面默认增强提示词（v4.1）。
+ * 智能界面默认增强提示词（v4.4）。
+ *
+ * v4.4 升级（P1 + P2 展示与公式能力补齐）：
+ * - 新增 `copy`（可复制话术/模板）与 `flow`（流程图/嵌套架构图，支持带标签箭头、分栏与能力格）；
+ * - `card` 支持分隔线行式布局 `items[{icon,title,detail,math}]` 与 `caption`；
+ * - `slider` / 看板数值状态支持语义刻度 `minLabel`/`maxLabel` 与状态解释；
+ * - `result` 与综合看板新增动态 LaTeX 公式（本地 KaTeX 渲染，文本字段也支持 `$...$`/`$$...$$`）；
+ * - 折线图新增 `vectors`、`annotations`、`cornerLabel` 与 `caption`（数学图解）；
+ * - 保留 `v4.3` / `v4.2` / `v4.1` / `v4.0` 完整文本用于历史消息剥离与草稿识别。
+ *
+ * v4.3 升级（`compare` 区分选方案与概念对比）：
+ * - `compare` 新增可选字段 `selectable`，并在语法行后补充取值规则；
+ * - 渲染层的采纳按钮规则为 `selectable ?? Boolean(highlight)`：只有可采纳的候选方案才显示
+ *   「👉 采用此方案继续细化」，纯概念/信息对比不显示；
+ * - 保留 `v4.2` / `v4.1` / `v4.0` 完整文本用于历史消息剥离与草稿识别。
+ *
+ * v4.2 升级（回流表单 `form` 与本地/回流双交互模型）：
+ * - 开头明确区分「本地交互」（浏览器内计算）与「回流交互」（`form` 主按钮填充模板回流）；
+ * - 新增 `form` 回流表单组件与规则（`radio|checkbox|text`，默认预选澄清 vs 禁预选测验/批改，第一人称 `submit.prompt`）；
+ * - 补充内容分工（何时用 `form` / 末尾最多 1 个）与收到回流偏好的处理约束，示例 1 替换为 `form` 范式；
+ * - 保留 `v4.1` / `v4.0` 完整文本用于历史消息剥离与草稿识别。
  *
  * v4.1 升级（作答回流与三种新内联组件）：
  * - 新增 timeline（时间线）、spoiler（折叠思考块）、poll（倾向投票）三种原子内联组件；
@@ -17,20 +37,34 @@
 
 export type GenuiPromptMode = 'auto' | 'tool' | 'plain';
 
-export const GENUI_PROMPT_VERSION = '4.1';
+export const GENUI_PROMPT_VERSION = '4.4';
 
 export const GENUI_PROMPT_START =
-  '〔GenUI 智能界面 v4.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+  '〔GenUI 智能界面 v4.4｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 
 export const GENUI_PROMPT_TOOL_START =
-  '〔GenUI 本轮生成工具 v4.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+  '〔GenUI 本轮生成工具 v4.4｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
 
 export const GENUI_PROMPT_END = '〔GenUI 增强说明结束〕';
 
 /**
- * v4.0 历史标记与完整文本：逐字保留，确保已发出的旧消息在刷新与拉取历史时
+ * v4.3 / v4.2 / v4.1 / v4.0 历史标记与完整文本：逐字保留，确保已发出的旧消息在刷新与拉取历史时
  * 依然能被 stripGenuiPrompt 100% 剥离，也用于识别未编辑的旧草稿。
  */
+export const GENUI_PROMPT_V43_START =
+  '〔GenUI 智能界面 v4.3｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+export const GENUI_PROMPT_TOOL_V43_START =
+  '〔GenUI 本轮生成工具 v4.3｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+export const GENUI_PROMPT_V42_START =
+  '〔GenUI 智能界面 v4.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+export const GENUI_PROMPT_TOOL_V42_START =
+  '〔GenUI 本轮生成工具 v4.2｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+
+export const GENUI_PROMPT_V41_START =
+  '〔GenUI 智能界面 v4.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
+export const GENUI_PROMPT_TOOL_V41_START =
+  '〔GenUI 本轮生成工具 v4.1｜浏览器扩展自动追加的可见说明，可在页面右侧浮标改回自动适配〕';
+
 export const GENUI_PROMPT_V40_START =
   '〔GenUI 智能界面 v4.0｜浏览器扩展自动追加的可见说明，可在页面右侧浮标关闭〕';
 export const GENUI_PROMPT_TOOL_V40_START =
@@ -262,17 +296,144 @@ visibleIf 读当前 state/derived 与已计算模型值：{"op":"state-eq|state-
  */
 const NOTE_LINE_V40 =
   '- 提示说明 note: {"w":"note","text":"提示内容","tone":"info|warn|error"?}';
+const POLL_LINE_V41 =
+  '- 倾向投票 poll: {"w":"poll","question":"投票问题","options":[{"id":"opt1","label":"选项A","ratio":60},{"id":"opt2","label":"选项B","ratio":40}]}';
 const NEW_WIDGET_LINES_V41 = [
   '- 时间线 timeline: {"w":"timeline","title":"标题"?,"items":[{"time":"阶段/时间","title":"节点标题","desc":"说明"?,"highlight":true?}]}',
   '- 折叠思考块 spoiler: {"w":"spoiler","summary":"思考题或折叠标题","hint":"提示"?,"content":"展开后的详细解析"}',
-  '- 倾向投票 poll: {"w":"poll","question":"投票问题","options":[{"id":"opt1","label":"选项A","ratio":60},{"id":"opt2","label":"选项B","ratio":40}]}',
+  POLL_LINE_V41,
 ].join('\n');
 
-const PROMPT_BODY = PROMPT_BODY_V40
+/**
+ * v4.1 历史文本：内容与 v4.1 发布时逐字一致，仅用于历史剥离与旧草稿识别。
+ */
+const PROMPT_BODY_V41 = PROMPT_BODY_V40
   .replace(NOTE_LINE_V40, `${NOTE_LINE_V40}\n${NEW_WIDGET_LINES_V41}`)
   .replace(
     '在注意事项处配 note。',
     '在注意事项处配 note；在演进脉络与故障时序处配 timeline，在思考自测处配 spoiler，在观点倾向处配 poll。',
+  );
+
+const FORM_WIDGET_SPEC_V42 = [
+  '- 回流表单 form: {"w":"form","title":"问句式标题","fields":[{"id":"字段id","type":"radio|checkbox|text","label":"字段名","options":["选项1","选项2"],"default":"选项1"?,"layout":"inline"?,"optional":true?}],"submit":{"label":"动词+对象，说明下一步做什么","prompt":"用户口吻的完整请求，含 {字段id}"}}',
+  '',
+  'form 规则：fields 1–4 个；radio/checkbox 的选项 2–6 个，text 只用于选填补充（必须写 `"optional":true`）。偏好类和澄清类字段用 default 预选最常见的选项，让用户点一下就能继续；测验和批改类**不写 default**，也不要在任何可见文字或模板里透露答案。',
+  'submit.label 写成「查找场馆和价格」这类动词短语，不要只写「提交」「确定」。submit.prompt 用用户的第一人称，写成一段**不依赖界面也能看懂**的完整请求：包含对话中已经知道的约束、全部非选填字段的占位符，以及明确的下一步请求和期望的输出形式；只能使用 `{字段id}` 和选填段 `{字段id?…}`，不写 JSON、代码或 Markdown，不超过 200 字。',
+].join('\n');
+
+const EXAMPLE_1_V40 = [
+  '示例 1（自然穿插内联组件范式）：',
+  '在回答中穿插轻量组件的范式：',
+  '```genui',
+  '{',
+  '  "w": "compare",',
+  '  "title": "方案对比",',
+  '  "highlight": "方案B",',
+  '  "items": [',
+  '    { "name": "方案A", "pros": ["起步简单"], "cons": ["扩展性受限"] },',
+  '    { "name": "方案B", "pros": ["性能优异", "架构解耦"], "cons": ["学习曲线略陡"] }',
+  '  ]',
+  '}',
+  '```',
+].join('\n');
+
+const EXAMPLE_1_V42 = [
+  '示例 1（回流表单 form 范式）：',
+  '需要用户先选择条件才能继续时，在回答末尾放 1 个 form：',
+  '```genui',
+  '{',
+  '  "w": "form",',
+  '  "title": "你主要想在哪里打？",',
+  '  "fields": [',
+  '    { "id": "area", "type": "radio", "label": "地点", "options": ["昆山", "苏州工业园区", "上海"], "default": "昆山" },',
+  '    { "id": "kind", "type": "radio", "label": "体验类型", "options": ["户外练习场", "正式球场", "室内模拟"], "default": "户外练习场" },',
+  '    { "id": "extra", "type": "text", "label": "补充要求（选填）", "optional": true }',
+  '  ],',
+  '  "submit": {',
+  '    "label": "查找场馆和价格",',
+  '    "prompt": "我是高尔夫新手，想在{area}找{kind}体验一次，不买球杆。{extra?补充：{extra}。}请推荐 3 家并列出价格、是否租杆和预约方式。"',
+  '  }',
+  '}',
+  '```',
+].join('\n');
+
+const COMPARE_LINE_V42 =
+  '- 方案对比 compare: {"w":"compare","title":"对比标题"?,"highlight":"推荐方案名"?,"items":[{"name":"方案名","pros":["优势"],"cons":["劣势"],"fields":{"指标":数值或字符串}}]}';
+const COMPARE_LINE_V43 =
+  '- 方案对比 compare: {"w":"compare","title":"对比标题"?,"highlight":"推荐方案名"?,"selectable":true|false?,"items":[{"name":"方案名","pros":["优势"],"cons":["劣势"],"fields":{"指标":数值或字符串}}]}';
+const COMPARE_RULE_V43 =
+  'compare 规则：各列是用户可以采纳、接着落地的候选方案（技术选型、购买选择、实施路线）时写 "selectable":true，有推荐项再写 highlight；只是解释概念、品牌、层级、历史等的区别或关系（例如“GeForce/GTX/RTX 是什么关系”“TCP 与 UDP 的区别”）时写 "selectable":false，也不写 highlight，pros/cons 改为特点描述即可。';
+
+/**
+ * v4.2 提示词：在 v4.1 基础上补充本地/回流双交互说明、form 分工与模板规则、回流消息处理与示例 1。
+ * 逐字保留，作为历史版本剥离与草稿识别的基准；v4.3 在其上做最小增量替换。
+ */
+const PROMPT_BODY_V42 = PROMPT_BODY_V41
+  .replace(
+    '事实问答、写作、代码、闲聊等直接用普通文字回答，不要为了展示而强行生成界面。',
+    '事实问答、写作、代码、闲聊等直接用普通文字回答，不要为了展示而强行生成界面。界面有两种交互：**本地交互**（滑块、筛选、勾选、quiz 即时判分）只在浏览器内计算，不会再请求你；**回流交互**（form 组件的主按钮）在用户点击后，由扩展把你预先写好的提示词模板填上用户的选择，作为一条普通用户消息发给你。',
+  )
+  .replace(
+    '在观点倾向处配 poll。',
+    '在观点倾向处配 poll。需要用户做选择才能继续时（例如偏好、范围、地点、风格等关键信息缺失，且选项可以列举），先用正文回答已经能确定的部分，再在回答**末尾**放 1 个 form，不要用文字连续追问；需要你批改或解释用户的推理时，用 form 收集答案；答案固定、只需即时自测时仍用 quiz。每次回答最多 1 个 form，form 之后不要再写需要用户回答的问题。',
+  )
+  .replace(POLL_LINE_V41, `${POLL_LINE_V41}\n${FORM_WIDGET_SPEC_V42}`)
+  .replace(
+    '影响理解的必要说明必须保留。继续讨论会自动携带当前状态与时间。',
+    '影响理解的必要说明必须保留。继续讨论会自动携带当前状态与时间。用户已经通过选择或回复给出了偏好时，直接据此继续，不要再生成同一个 form，也不要重复确认；只有仍然缺少关键信息时，才可以再追问一次。',
+  )
+  .replace(EXAMPLE_1_V40, EXAMPLE_1_V42);
+
+/**
+ * v4.3 提示词：在 v4.2 基础上新增 compare 的 `selectable` 字段与取值规则，
+ * 逐字保留，作为历史版本剥离与草稿识别的基准；v4.4 在其上做最小增量替换。
+ */
+const PROMPT_BODY_V43 = PROMPT_BODY_V42.replace(
+  COMPARE_LINE_V42,
+  `${COMPARE_LINE_V43}\n${COMPARE_RULE_V43}`,
+);
+
+const CARD_LINE_V43 =
+  '- 概念卡 card: {"w":"card","title":"标题","subtitle":"副标题"?,"tags":["标签"]?,"points":["要点1","要点2"]?}';
+const CARD_LINE_V44 =
+  '- 概念/条件卡 card: {"w":"card","title":"标题","subtitle":"副标题"?,"tags":["标签"]?,"points":["要点"]?,"items":[{"icon":"✓"?,"title":"条件标题","detail":"说明"?,"math":"LaTeX公式"?}]?,"caption":"图注"?}';
+const SLIDER_LINE_V43 =
+  '- 快速滑块 slider: {"w":"slider","label":"参数名","min":0,"max":100,"step":5,"value":20,"unit":"单位"?}';
+const SLIDER_LINE_V44 =
+  '- 快速滑块 slider: {"w":"slider","id":"参数id"?,"label":"参数名","min":0,"max":100,"step":5,"value":20,"unit":"单位"?,"minLabel":"下限语义"?,"maxLabel":"上限语义"?,"hint":"说明"?,"hints":[{"min"?,"max"?,"text":"随状态解释"}]?}';
+const RESULT_LINE_V43 =
+  '- 关键指标 result: {"w":"result","label":"指标说明"?,"value":数值或字符串,"unit":"单位"?,"emphasis":"normal|primary"?}';
+const RESULT_LINE_V44 =
+  '- 关键指标/联动公式 result: {"w":"result","label":"指标说明"?,"value":数值或字符串,"bind":"滑块id"?,"formula":"LaTeX模板含{id}"?,"unit":"单位"?,"emphasis":"normal|primary"?,"caption":"图注"?}';
+const NEW_WIDGET_LINES_V44 = [
+  '- 可复制话术 copy: {"w":"copy","title":"标题"?,"text":"完整话术/邮件/命令","label":"复制询问话术"?,"note":"提示"?}',
+  '- 流程图/架构图 flow: {"w":"flow","title":"标题"?,"steps":[{"icon":"图标"?,"title":"步骤名","desc":"说明"?,"highlight":true?,"arrowLabel":"箭头标签"?,"arrowDirection":"both"?}],"branches":[{"icon":"图标"?,"title":"分支","desc":"说明"?,"direction":"both"?}]?,"capabilities":[{"icon":"图标"?,"title":"能力","desc":"说明"?}]?,"caption":"图注"?}',
+].join('\n');
+
+/**
+ * v4.4 提示词：在 v4.3 基础上补充 P1/P2 新能力（copy、flow、card 行式布局、滑块语义刻度、
+ * 本地 KaTeX 公式与动态 formula 元素、以及折线图 vectors/annotations/cornerLabel/caption）。
+ */
+const PROMPT_BODY = PROMPT_BODY_V43
+  .replace(
+    '在观点倾向处配 poll。',
+    '在观点倾向处配 poll，在需要线下复制的话术/邮件/命令处配 copy，在流程或架构讲解处配 flow；文本与图注均支持 $...$ / $$...$$ 本地公式渲染。',
+  )
+  .replace(CARD_LINE_V43, CARD_LINE_V44)
+  .replace(SLIDER_LINE_V43, SLIDER_LINE_V44)
+  .replace(RESULT_LINE_V43, RESULT_LINE_V44)
+  .replace(POLL_LINE_V41, `${POLL_LINE_V41}\n${NEW_WIDGET_LINES_V44}`)
+  .replace(
+    '- 数值：{"id","label","kind":"number","initial","min","max","step","unit"?}。',
+    '- 数值：{"id","label","kind":"number","initial","min","max","step","unit"?,"minLabel"?,"maxLabel"?}。',
+  )
+  .replace(
+    '- note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}',
+    '- note {"kind":"note","text","tone"?:"info|warn|error","visibleIf"?}；formula {"kind":"formula","label"?,"template":"LaTeX模板含{stateId}","caption"?,"visibleIf"?}（随滑块实时改写的居中公式）',
+  )
+  .replace(
+    '折线 {"kind":"chart","chartType":"line","xLabel","yLabel","series":[…]}。',
+    '折线/数学图解 {"kind":"chart","chartType":"line","xLabel"?,"yLabel"?,"series":[…],"vectors"?:[{"from"?:[0,0],"to":[x,y],"label"?,"color"?}],"annotations"?:[{"x":0,"y":0,"text":"标签","point"?:true,"color"?}],"cornerLabel"?:"R²","caption"?}（支持纯向量图解，series 可为空数组但至少需 1 个系列、向量或标注）。',
   );
 
 /** tool 变体首段：能力说明加本轮明确生成意图；其后与 auto 共享同一协议主体。 */
@@ -280,6 +441,27 @@ const TOOL_LEAD = '你正在与用户对话。用户的浏览器装有 GenUI 扩
 
 /** 共享协议主体：从 auto 正文截取「内容分工」起至示例结束围栏，保证逐字节一致。 */
 const PROTOCOL_BODY = PROMPT_BODY.slice(PROMPT_BODY.indexOf('内容分工与穿插排版'));
+
+/** v4.3 历史文本：内容与 v4.3 发布时逐字一致，仅用于历史剥离与旧草稿识别。 */
+const PROTOCOL_BODY_V43 = PROMPT_BODY_V43.slice(
+  PROMPT_BODY_V43.indexOf('内容分工与穿插排版'),
+);
+export const GENUI_PROMPT_V43_TEXT = `${GENUI_PROMPT_V43_START}\n${PROMPT_BODY_V43}\n${GENUI_PROMPT_END}`;
+export const GENUI_TOOL_PROMPT_V43_TEXT = `${GENUI_PROMPT_TOOL_V43_START}\n${TOOL_LEAD}\n\n${PROTOCOL_BODY_V43}\n${GENUI_PROMPT_END}`;
+
+/** v4.2 历史文本：内容与 v4.2 发布时逐字一致，仅用于历史剥离与旧草稿识别。 */
+const PROTOCOL_BODY_V42 = PROMPT_BODY_V42.slice(
+  PROMPT_BODY_V42.indexOf('内容分工与穿插排版'),
+);
+export const GENUI_PROMPT_V42_TEXT = `${GENUI_PROMPT_V42_START}\n${PROMPT_BODY_V42}\n${GENUI_PROMPT_END}`;
+export const GENUI_TOOL_PROMPT_V42_TEXT = `${GENUI_PROMPT_TOOL_V42_START}\n${TOOL_LEAD}\n\n${PROTOCOL_BODY_V42}\n${GENUI_PROMPT_END}`;
+
+/** v4.1 历史文本：内容与 v4.1 发布时逐字一致，仅用于历史剥离与旧草稿识别。 */
+const PROTOCOL_BODY_V41 = PROMPT_BODY_V41.slice(
+  PROMPT_BODY_V41.indexOf('内容分工与穿插排版'),
+);
+export const GENUI_PROMPT_V41_TEXT = `${GENUI_PROMPT_V41_START}\n${PROMPT_BODY_V41}\n${GENUI_PROMPT_END}`;
+export const GENUI_TOOL_PROMPT_V41_TEXT = `${GENUI_PROMPT_TOOL_V41_START}\n${TOOL_LEAD}\n\n${PROTOCOL_BODY_V41}\n${GENUI_PROMPT_END}`;
 
 /** v4.0 历史文本：内容与 v4.0 发布时逐字一致，仅用于历史剥离与旧草稿识别。 */
 const PROTOCOL_BODY_V40 = PROMPT_BODY_V40.slice(
@@ -387,23 +569,33 @@ interface GenuiProtocolBlock {
  * 只有尾部块与某个已知版本逐字相等（或仅空白差异）时才删除。
  * 用户可以放心引用标记文本而不担心自己的消息被截断。
  */
-const GENUI_PROTOCOL_BLOCKS: ReadonlyArray<GenuiProtocolBlock> = [
-  GENUI_PROMPT_TEXT,
-  GENUI_TOOL_PROMPT_TEXT,
-  GENUI_PROMPT_V40_TEXT,
-  GENUI_TOOL_PROMPT_V40_TEXT,
-  GENUI_PROMPT_V32_TEXT,
-  GENUI_TOOL_PROMPT_V32_TEXT,
-  GENUI_PROMPT_V31_TEXT,
-  GENUI_TOOL_PROMPT_V31_TEXT,
-  GENUI_PROMPT_V30_TEXT,
-  GENUI_TOOL_PROMPT_V30_TEXT,
-].map((text) => ({
-  start: text.slice(0, text.indexOf('\n')),
-  end: GENUI_PROMPT_END,
-  text,
-  normalized: normalizeBlockText(text),
-}));
+const GENUI_PROMPT_VARIANTS: ReadonlyArray<{ start: string; text: string }> = [
+  { start: GENUI_PROMPT_START, text: GENUI_PROMPT_TEXT },
+  { start: GENUI_PROMPT_TOOL_START, text: GENUI_TOOL_PROMPT_TEXT },
+  { start: GENUI_PROMPT_V43_START, text: GENUI_PROMPT_V43_TEXT },
+  { start: GENUI_PROMPT_TOOL_V43_START, text: GENUI_TOOL_PROMPT_V43_TEXT },
+  { start: GENUI_PROMPT_V42_START, text: GENUI_PROMPT_V42_TEXT },
+  { start: GENUI_PROMPT_TOOL_V42_START, text: GENUI_TOOL_PROMPT_V42_TEXT },
+  { start: GENUI_PROMPT_V41_START, text: GENUI_PROMPT_V41_TEXT },
+  { start: GENUI_PROMPT_TOOL_V41_START, text: GENUI_TOOL_PROMPT_V41_TEXT },
+  { start: GENUI_PROMPT_V40_START, text: GENUI_PROMPT_V40_TEXT },
+  { start: GENUI_PROMPT_TOOL_V40_START, text: GENUI_TOOL_PROMPT_V40_TEXT },
+  { start: GENUI_PROMPT_V32_START, text: GENUI_PROMPT_V32_TEXT },
+  { start: GENUI_PROMPT_TOOL_V32_START, text: GENUI_TOOL_PROMPT_V32_TEXT },
+  { start: GENUI_PROMPT_V31_START, text: GENUI_PROMPT_V31_TEXT },
+  { start: GENUI_PROMPT_TOOL_V31_START, text: GENUI_TOOL_PROMPT_V31_TEXT },
+  { start: GENUI_PROMPT_V30_START, text: GENUI_PROMPT_V30_TEXT },
+  { start: GENUI_PROMPT_TOOL_V30_START, text: GENUI_TOOL_PROMPT_V30_TEXT },
+];
+
+const GENUI_PROTOCOL_BLOCKS: ReadonlyArray<GenuiProtocolBlock> = GENUI_PROMPT_VARIANTS.map(
+  ({ start, text }) => ({
+    start,
+    end: GENUI_PROMPT_END,
+    text,
+    normalized: normalizeBlockText(text),
+  }),
+);
 
 export interface StripGenuiPromptResult {
   text: string;
@@ -563,18 +755,7 @@ export function appendGenuiPrompt(value: string, mode: GenuiPromptMode = 'auto')
 
 export function hasGenuiPrompt(value: string): boolean {
   if (typeof value !== 'string') return false;
-  return (
-    value.includes(GENUI_PROMPT_START) ||
-    value.includes(GENUI_PROMPT_TOOL_START) ||
-    value.includes(GENUI_PROMPT_V40_START) ||
-    value.includes(GENUI_PROMPT_TOOL_V40_START) ||
-    value.includes(GENUI_PROMPT_V32_START) ||
-    value.includes(GENUI_PROMPT_TOOL_V32_START) ||
-    value.includes(GENUI_PROMPT_V31_START) ||
-    value.includes(GENUI_PROMPT_TOOL_V31_START) ||
-    value.includes(GENUI_PROMPT_V30_START) ||
-    value.includes(GENUI_PROMPT_TOOL_V30_START)
-  );
+  return GENUI_PROMPT_VARIANTS.some(({ start }) => value.includes(start));
 }
 
 export interface GenuiDraftPromptInfo {
@@ -584,64 +765,23 @@ export interface GenuiDraftPromptInfo {
 }
 
 export function describeGenuiDraftPrompt(value: string): GenuiDraftPromptInfo {
-  const candidateStarts = [
-    GENUI_PROMPT_START,
-    GENUI_PROMPT_TOOL_START,
-    GENUI_PROMPT_V40_START,
-    GENUI_PROMPT_TOOL_V40_START,
-    GENUI_PROMPT_V32_START,
-    GENUI_PROMPT_TOOL_V32_START,
-    GENUI_PROMPT_V31_START,
-    GENUI_PROMPT_TOOL_V31_START,
-    GENUI_PROMPT_V30_START,
-    GENUI_PROMPT_TOOL_V30_START,
-  ];
   let startIndex = -1;
   let matchingStart: string | undefined;
 
-  for (const s of candidateStarts) {
-    const idx = value.lastIndexOf(s);
+  for (const { start } of GENUI_PROMPT_VARIANTS) {
+    const idx = value.lastIndexOf(start);
     if (idx > startIndex) {
       startIndex = idx;
-      matchingStart = s;
+      matchingStart = start;
     }
   }
 
   if (startIndex < 0 || matchingStart === undefined) return { kind: 'none' };
 
-  if (value.endsWith(GENUI_PROMPT_TEXT) && startIndex === value.length - GENUI_PROMPT_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_PROMPT_TEXT, start: GENUI_PROMPT_START };
-  }
-  if (value.endsWith(GENUI_TOOL_PROMPT_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_TEXT, start: GENUI_PROMPT_TOOL_START };
-  }
-
-  if (value.endsWith(GENUI_PROMPT_V40_TEXT) && startIndex === value.length - GENUI_PROMPT_V40_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_PROMPT_V40_TEXT, start: GENUI_PROMPT_V40_START };
-  }
-  if (value.endsWith(GENUI_TOOL_PROMPT_V40_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_V40_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_V40_TEXT, start: GENUI_PROMPT_TOOL_V40_START };
-  }
-
-  if (value.endsWith(GENUI_PROMPT_V32_TEXT) && startIndex === value.length - GENUI_PROMPT_V32_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_PROMPT_V32_TEXT, start: GENUI_PROMPT_V32_START };
-  }
-  if (value.endsWith(GENUI_TOOL_PROMPT_V32_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_V32_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_V32_TEXT, start: GENUI_TOOL_PROMPT_V32_START };
-  }
-
-  if (value.endsWith(GENUI_PROMPT_V31_TEXT) && startIndex === value.length - GENUI_PROMPT_V31_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_PROMPT_V31_TEXT, start: GENUI_PROMPT_V31_START };
-  }
-  if (value.endsWith(GENUI_TOOL_PROMPT_V31_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_V31_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_V31_TEXT, start: GENUI_PROMPT_TOOL_V31_START };
-  }
-
-  if (value.endsWith(GENUI_PROMPT_V30_TEXT) && startIndex === value.length - GENUI_PROMPT_V30_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_PROMPT_V30_TEXT, start: GENUI_PROMPT_V30_START };
-  }
-  if (value.endsWith(GENUI_TOOL_PROMPT_V30_TEXT) && startIndex === value.length - GENUI_TOOL_PROMPT_V30_TEXT.length) {
-    return { kind: 'intact', suffix: GENUI_TOOL_PROMPT_V30_TEXT, start: GENUI_TOOL_PROMPT_V30_START };
+  for (const { start, text } of GENUI_PROMPT_VARIANTS) {
+    if (value.endsWith(text) && startIndex === value.length - text.length) {
+      return { kind: 'intact', suffix: text, start };
+    }
   }
 
   return {

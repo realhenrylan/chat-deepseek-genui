@@ -1,6 +1,7 @@
 import { createElement, useMemo } from 'react';
 import type {
   ExplainElement,
+  FormulaElement,
   GenuiV3Document,
   GenuiV3Element,
   GenuiV4Document,
@@ -19,6 +20,7 @@ import type { TableViewState } from '../runtime/card-state';
 import { ElementErrorBoundary } from './boundaries';
 import { ChartElementView } from './charts';
 import { UnknownElementView } from './elements';
+import { interpolateFormula, MathFormula, MathText } from './math';
 import { InteractiveElementView } from './interactive';
 import type { ElementRegistry } from './registry';
 import { TableElementView } from './table';
@@ -63,7 +65,7 @@ function ConditionError({ message }: { message: string }) {
 }
 
 function gatedVisible(
-  element: TextElement | NoteElement | TableElement | ModelTableElement | ExplainElement,
+  element: TextElement | NoteElement | FormulaElement | TableElement | ModelTableElement | ExplainElement,
   context: CompositeContext,
 ): { visible: boolean; error?: string } {
   if (!element.visibleIf) return { visible: true };
@@ -196,7 +198,30 @@ function ElementContent({
             className={`genui-note genui-note-${element.tone ?? 'info'}`}
             role={element.tone === 'error' ? 'alert' : undefined}
           >
-            {element.text}
+            <MathText text={element.text} />
+          </div>
+        </>
+      );
+    }
+    case 'formula': {
+      const gate = gatedVisible(element, context);
+      if (!gate.visible) return null;
+      const values: Record<string, number | string> = {
+        ...context.state,
+        ...context.evaluation.derived.values,
+      };
+      const renderedTex = interpolateFormula(element.template, values);
+      return (
+        <>
+          {gate.error ? <ConditionError message={gate.error} /> : null}
+          <div className="genui-formula">
+            {element.label ? <div className="genui-formula-label">{element.label}</div> : null}
+            <MathFormula tex={renderedTex} displayMode />
+            {element.caption ? (
+              <p className="genui-formula-caption">
+                <MathText text={element.caption} />
+              </p>
+            ) : null}
           </div>
         </>
       );

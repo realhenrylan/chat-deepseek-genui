@@ -1,4 +1,5 @@
 import type { TextElement } from '../protocol/types';
+import { MathText } from './math';
 
 /**
  * genui 元素视图（阶段 2）。
@@ -10,7 +11,7 @@ import type { TextElement } from '../protocol/types';
 
 /** v1 唯一元素：纯文本。 */
 export function TextElementView({ element }: { element: TextElement }) {
-  return <p className="genui-text">{element.value}</p>;
+  return <p className="genui-text"><MathText text={element.value} /></p>;
 }
 
 /** 注册表缺失 kind 时的占位（防御层：协议演进或注册遗漏时不崩溃）。 */

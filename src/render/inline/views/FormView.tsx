@@ -1,29 +1,16 @@
-import {
-  useId,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-  type MouseEvent,
-} from 'react';
+import { useId, useMemo, useState, type MouseEvent } from 'react';
 import { renderFormPrompt } from '../../../protocol/widget/template';
 import type { FormField, FormWidget } from '../../../protocol/widget/types';
 import {
-  CONTINUE_FEEDBACK,
-  formatRequestSendFeedback,
-  type ContinueHandler,
-  type FollowupEnvironmentState,
-  type FollowupEnvironmentStore,
-  type RequestSendHandler,
+  formatFollowupActionLabel,
+  useFollowupDispatcher,
+  useFollowupEnvironment,
+} from '../../use-followup';
+import type {
+  ContinueHandler,
+  FollowupEnvironmentStore,
+  RequestSendHandler,
 } from '../feedback';
-
-const DEFAULT_ENV: FollowupEnvironmentState = {
-  generationActive: false,
-  hasDraft: false,
-  followupMode: 'send',
-};
-
-const EMPTY_SUBSCRIBE = () => () => undefined;
-const GET_DEFAULT_ENV = () => DEFAULT_ENV;
 
 type FieldStateValue = string | string[];
 
@@ -96,13 +83,15 @@ export function FormView({
     createInitialValues(widget.fields),
   );
   const [locked, setLocked] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const env = useSyncExternalStore(
-    followupEnv ? followupEnv.subscribe : EMPTY_SUBSCRIBE,
-    followupEnv ? followupEnv.getSnapshot : GET_DEFAULT_ENV,
-  );
+  const env = useFollowupEnvironment(followupEnv);
+  const { submitting, dispatch } = useFollowupDispatcher({
+    onRequestSend,
+    onContinue,
+    requireTrustedClick,
+    enforceTrustedOnContinue: true,
+  });
 
   const missingFields = useMemo(
     () => widget.fields.filter((field) => isFieldMissing(field, values[field.id])),
@@ -135,8 +124,7 @@ export function FormView({
     setFeedback(null);
   };
 
-  const handlePrimaryClick = async (event: MouseEvent<HTMLButtonElement>) => {
-    if (requireTrustedClick && !event.nativeEvent.isTrusted) return;
+  const handlePrimaryClick = (event: MouseEvent<HTMLButtonElement>) => {
     if (!canSubmit) return;
 
     const formatted: Record<string, string> = {};
@@ -144,31 +132,13 @@ export function FormView({
       formatted[field.id] = formatFieldValue(field, values[field.id]);
     }
     const prompt = renderFormPrompt(widget, formatted);
-
-    if (onRequestSend) {
-      setSubmitting(true);
-      try {
-        const result = await onRequestSend(prompt, {
-          isTrusted: event.nativeEvent.isTrusted,
-        });
-        if (result.status === 'untrusted') return;
-        setFeedback(formatRequestSendFeedback(result));
-        if (result.status === 'sent') {
-          setLocked(true);
-        }
-      } finally {
-        setSubmitting(false);
+    dispatch(event, prompt, (outcome) => {
+      if (outcome.kind === 'ignored-untrusted') return;
+      setFeedback(outcome.feedback);
+      if (outcome.kind === 'sent') {
+        setLocked(true);
       }
-      return;
-    }
-
-    if (onContinue) {
-      const result = onContinue(prompt);
-      setFeedback(CONTINUE_FEEDBACK[result]);
-      return;
-    }
-
-    setFeedback('当前环境不支持发送消息');
+    });
   };
 
   const handleUnlock = () => {
@@ -177,14 +147,10 @@ export function FormView({
   };
 
   const baseLabel = widget.submit.label.replace(/\s*→\s*$/, '').trim() || '提交并继续';
-  const fillOnly = env.followupMode === 'fill' || env.hasDraft;
-  const primaryLabel = env.generationActive
-    ? '等待当前回答结束'
-    : submitting
-      ? '正在发送…'
-      : fillOnly
-        ? `${baseLabel}（带入输入框）`
-        : `${baseLabel} →`;
+  const primaryLabel = formatFollowupActionLabel(baseLabel, env, {
+    hasSendHandler: true,
+    submitting,
+  });
 
   const disabledHint = env.generationActive
     ? '模型正在回答中，回答结束后可继续发送'

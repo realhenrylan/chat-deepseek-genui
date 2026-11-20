@@ -1,4 +1,5 @@
 import type { TimelineItem, TimelineWidget } from '../../../protocol/widget/types';
+import { MathText } from '../../math';
 
 function TimelineNode({ item }: { item: TimelineItem }) {
   return (
@@ -6,8 +7,8 @@ function TimelineNode({ item }: { item: TimelineItem }) {
       <span className="inline-timeline-dot" aria-hidden="true" />
       <div className="inline-timeline-main">
         <div className="inline-timeline-time">{item.time}</div>
-        <div className="inline-timeline-title">{item.title}</div>
-        {item.desc && <div className="inline-timeline-desc">{item.desc}</div>}
+        <div className="inline-timeline-title"><MathText text={item.title} /></div>
+        {item.desc && <div className="inline-timeline-desc"><MathText text={item.desc} /></div>}
       </div>
     </div>
   );

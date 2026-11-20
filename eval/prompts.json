@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "description": "GenUI 评测集（M0 基线，共 28 题，分 6 类）",
+  "version": "1.1",
+  "description": "GenUI 评测集（P0-d，共 38 题，分 8 类：含澄清 clarify 5 题与批改 grade 5 题）",
   "prompts": [
     {
       "id": "L01",
@@ -225,6 +225,86 @@
       "prompt": "我想把生活过得更有条理一点，你有什么建议？",
       "expectGenui": false,
       "expectedIntent": []
+    },
+    {
+      "id": "C01",
+      "category": "clarify",
+      "title": "周末周边游行程规划",
+      "prompt": "我想这周末在长三角周边找个地方放松两三天，能帮我安排一下路线吗？",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "C02",
+      "category": "clarify",
+      "title": "入门公路车选购推荐",
+      "prompt": "最近想买一辆入门公路车日常通勤兼周末骑行，帮我推荐几款合适的车型。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "C03",
+      "category": "clarify",
+      "title": "团队内部技术文档站选型",
+      "prompt": "我们团队打算搭建一套内部技术文档站，想看看用什么方案最合适。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "C04",
+      "category": "clarify",
+      "title": "周末亲子科普活动推荐",
+      "prompt": "想带家里小学三年级的孩子周末去参加一次线下科普体验活动，有什么好去处推荐？",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "C05",
+      "category": "clarify",
+      "title": "全画幅微单主力镜头推荐",
+      "prompt": "刚入手一台全画幅微单相机，想配一支主力镜头日常扫街和旅游拍风景，给点推荐吧。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "Q01",
+      "category": "grade",
+      "title": "HTTP 幂等性与重试机制批改",
+      "prompt": "出两道关于 HTTP 方法幂等性和超时重试的场景题考考我，提交后你帮我批改并点评思路。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "Q02",
+      "category": "grade",
+      "title": "React 渲染时机与状态批量更新测验",
+      "prompt": "给我出一两道 React useEffect 和状态批量更新的小测题，我选完以后你来批改，顺便指出容易踩坑的地方。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "Q03",
+      "category": "grade",
+      "title": "SQL 索引失效案例判断与批改",
+      "prompt": "帮我出 2 道判断 SQL 查询是否会走索引的实战题，让我选一选，然后你逐题批改并解释原因。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "Q04",
+      "category": "grade",
+      "title": "二分查找与二叉搜索树复杂度辨析",
+      "prompt": "围绕二分查找和二叉搜索树的时间复杂度出两道辨析题，我作答后请你根据我的选择来批改和纠偏。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
+    },
+    {
+      "id": "Q05",
+      "category": "grade",
+      "title": "名义利率与实际年化利率辨析测验",
+      "prompt": "出 2 道关于名义利率与实际年化利率对比的选择题测试一下我，提交后你结合我的答案帮我复盘哪里理解错了。",
+      "expectGenui": true,
+      "expectedIntent": ["form"]
     }
   ]
 }
