@@ -1195,12 +1195,15 @@ for (const { label, channel } of CHANNELS) {
         };
       };
 
+      // 边框/背景颜色有 120ms 过渡（numberInput 失焦及后续输入校验），等过渡结束再采样，避免读到中间色导致对比度抖动。
+      await page.waitForTimeout(250);
       const lightNormal = ratios(await readColors());
       expect(lightNormal.border).toBeGreaterThanOrEqual(3);
       expect(lightNormal.focus).toBeGreaterThanOrEqual(3);
 
       await numberInput.fill('');
       await expect(host.locator('.genui-input-error')).toContainText('请输入有限数字');
+      await page.waitForTimeout(250);
       const lightInvalid = ratios(await readColors());
       expect(lightInvalid.border).toBeGreaterThanOrEqual(3);
       expect(lightInvalid.error).toBeGreaterThanOrEqual(4.5);
